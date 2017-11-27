@@ -475,7 +475,9 @@ namespace ufo
         if (isOpX<NEG>(exp)) exp = mkNeg(exp->left());
 
         if (!bind::isBoolConst(var) && var != exp->left())
-          exp = ineqReverter(ineqMover(exp, var));
+          exp = ineqMover(exp, var);
+
+        if (var != exp->left()) exp = ineqReverter(exp);
         // TODO: write a similar simplifier fo booleans
 
         assert (var == exp->left());
