@@ -397,7 +397,7 @@ namespace ufo
     Expr getDefaultAssignment(Expr var)
     {
       if (bind::isBoolConst(var)) return mk<TRUE>(efac);
-      if (bind::isIntConst(var)) return mkTerm (mpz_class (0), efac);
+      if (bind::isIntConst(var)) return mkMPZ(0, efac);
       else           // that is, isRealConst(var) == true
         return mkTerm (mpq_class (0), efac);
     }
@@ -1179,6 +1179,80 @@ namespace ufo
       return conjoin(constrs, efac);
     }
   };
+
+  Expr eliminateQuantifiers(Expr cond, ExprSet& vars)
+  {
+    ExprFactory &efac = cond->getFactory();
+    SMTUtils u(efac);
+    if (vars.size() == 0) return simplifyBool(cond);
+
+    Expr newCond = simpleQE(cond, vars);
+    if (!emptyIntersect(newCond, vars) &&
+        !containsOp<FORALL>(cond) && !containsOp<EXISTS>(cond) && !isNonlinear(newCond))
+    {
+      AeValSolver ae(mk<TRUE>(efac), newCond, vars); // exists quantified . formula
+      if (ae.solve()) {
+        newCond = ae.getValidSubset();
+      } else {
+        return mk<TRUE>(efac);
+      }
+    }
+
+    ExprSet cnj;
+    getConj(newCond, cnj);
+    for (auto it = cnj.begin(); it != cnj.end(); )
+    {
+      ExprVector av;
+      filter (*it, bind::IsConst (), inserter(av, av.begin()));
+      map<Expr, ExprVector> qv;
+      getQVars (*it, qv);
+      for (auto & a : qv)
+        for (auto & b : a.second)
+          for (auto it1 = av.begin(); it1 != av.end(); )
+            if (*it1 == b) { it1 = av.erase(it1); break; }
+            else ++it1;
+
+      if (emptyIntersect(av, vars)) ++it;
+        else it = cnj.erase(it);
+    }
+
+    return simplifyBool(conjoin(cnj, efac));
+  }
+
+  Expr abduce (Expr goal, Expr assm)
+  {
+    ExprFactory &efac = goal->getFactory();
+    SMTUtils u(efac);
+    ExprSet complex;
+    findComplexNumerics(assm, complex);
+    findComplexNumerics(goal, complex);
+    ExprMap repls;
+    ExprMap replsRev;
+    for (auto & a : complex)
+    {
+      Expr repl = bind::intConst(mkTerm<string>
+            ("__repl_" + lexical_cast<string>(repls.size()), efac));
+      repls[a] = repl;
+      replsRev[repl] = a;
+    }
+    Expr goalTmp = replaceAll(goal, repls);
+    Expr assmTmp = replaceAll(assm, repls);
+
+    ExprSet vars;
+    filter (assmTmp, bind::IsConst (), inserter(vars, vars.begin()));
+    Expr tmp = mkNeg(eliminateQuantifiers(mkNeg(mk<IMPL>(assmTmp, goalTmp)), vars));
+    tmp = replaceAll(tmp, replsRev);
+
+    if (isOpX<FALSE>(tmp)) return NULL; // abduction unsuccessful
+
+    // sanity check:
+    if (!u.implies(mk<AND>(tmp, assm), goal))
+    {
+      errs () << "WARNING: abduction fail: "<< * mk<AND>(tmp, assm) << "   does not imply " << *goal << "\n";
+      return NULL;
+    }
+    return tmp;
+  }
 
   /**
    * Simple wrapper
