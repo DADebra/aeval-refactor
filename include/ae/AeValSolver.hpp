@@ -7,6 +7,7 @@
 
 using namespace std;
 using namespace boost;
+using namespace expr::op::bind;
 namespace ufo
 {
 
@@ -1186,7 +1187,8 @@ namespace ufo
     SMTUtils u(efac);
     if (vars.size() == 0) return simplifyBool(cond);
 
-    Expr newCond = simpleQE(cond, vars);
+    Expr newCond = simplifyArithm(simpleQE(cond, vars));
+
     if (!emptyIntersect(newCond, vars) &&
         !containsOp<FORALL>(cond) && !containsOp<EXISTS>(cond) && !isNonlinear(newCond))
     {
@@ -1200,6 +1202,8 @@ namespace ufo
 
     ExprSet cnj;
     getConj(newCond, cnj);
+    ineqMerger(cnj, true);
+
     for (auto it = cnj.begin(); it != cnj.end(); )
     {
       ExprVector av;
