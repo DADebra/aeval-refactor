@@ -1181,7 +1181,7 @@ namespace ufo
     }
   };
 
-  Expr eliminateQuantifiers(Expr cond, ExprSet& vars)
+  inline static Expr eliminateQuantifiers(Expr cond, ExprSet& vars)
   {
     ExprFactory &efac = cond->getFactory();
     SMTUtils u(efac);
@@ -1217,13 +1217,28 @@ namespace ufo
             else ++it1;
 
       if (emptyIntersect(av, vars)) ++it;
-        else it = cnj.erase(it);
+      else it = cnj.erase(it);
     }
 
     return simplifyBool(conjoin(cnj, efac));
   }
 
-  Expr abduce (Expr goal, Expr assm)
+  inline static Expr eliminateQuantifiers(Expr cond, ExprVector& vars)
+  {
+    ExprSet varsSet;
+    for (auto & v : vars) varsSet.insert(v);
+    return eliminateQuantifiers(cond, varsSet);
+  }
+
+  inline static Expr keepQuantifiers(Expr cond, ExprVector& vars)
+  {
+    ExprSet varsSet;
+    filter (cond, bind::IsConst (), inserter(varsSet, varsSet.begin()));
+    minusSets(varsSet, vars);
+    return eliminateQuantifiers(cond, varsSet);
+  }
+
+  inline static Expr abduce (Expr goal, Expr assm)
   {
     ExprFactory &efac = goal->getFactory();
     SMTUtils u(efac);
@@ -1256,6 +1271,11 @@ namespace ufo
       return NULL;
     }
     return tmp;
+  }
+
+  inline static bool qeUnsupported (Expr e)
+  {
+    return (isNonlinear(e) /* || containsOp<MOD>(e)  || containsOp<DIV>(e) */|| containsOp<ARRAY_TY>(e));
   }
 
   /**
