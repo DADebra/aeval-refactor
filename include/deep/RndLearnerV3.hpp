@@ -42,8 +42,8 @@ namespace ufo
     public:
 
     RndLearnerV3 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp,
-                  bool _dAllMbp, bool _dAddProp, bool _dAddDat, bool _dStrenMbp) :
-      RndLearnerV2 (efac, z3, r, to, freqs, aggp),
+                  bool _dAllMbp, bool _dAddProp, bool _dAddDat, bool _dStrenMbp, bool debug) :
+      RndLearnerV2 (efac, z3, r, to, freqs, aggp, debug),
                   dAllMbp(_dAllMbp), dAddProp(_dAddProp), dAddDat(_dAddDat), dStrenMbp(_dStrenMbp) {}
 
     bool checkInit(Expr rel)
@@ -1524,7 +1524,7 @@ namespace ufo
 
   inline void learnInvariants3(string smt, unsigned maxAttempts, unsigned to, bool freqs, bool aggp,
                                bool enableDataLearning, bool doElim, bool doDisj,
-                               bool dAllMbp, bool dAddProp, bool dAddDat, bool dStrenMbp)
+                               bool dAllMbp, bool dAddProp, bool dAddDat, bool dStrenMbp, bool debug)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -1538,7 +1538,7 @@ namespace ufo
       return;
     }
 
-    RndLearnerV3 ds(m_efac, z3, ruleManager, to, freqs, aggp, dAllMbp, dAddProp, dAddDat, dStrenMbp);
+    RndLearnerV3 ds(m_efac, z3, ruleManager, to, freqs, aggp, dAllMbp, dAddProp, dAddDat, dStrenMbp, debug);
     map<Expr, ExprSet> cands;
     for (auto& dcl: ruleManager.decls) ds.initializeDecl(dcl);
 

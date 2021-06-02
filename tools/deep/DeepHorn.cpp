@@ -71,6 +71,7 @@ int main (int argc, char ** argv)
   const char *OPT_D2 = "--phase-prop";
   const char *OPT_D3 = "--phase-data";
   const char *OPT_D4 = "--stren-mbp";
+  const char *OPT_DEBUG = "--debug";
 
   if (getBoolValue(OPT_HELP, false, argc, argv) || argc == 1){
     outs () <<
@@ -87,7 +88,8 @@ int main (int argc, char ** argv)
         " " << OPT_AGG_PRUNING << "                          prioritize and prune the search space aggressively\n" <<
         "                                 (if not specified, sample from uniform distributions)\n" <<
         " " << OPT_MAX_ATTEMPTS << " <N>                  maximal number of candidates to sample and check\n" <<
-        " " << OPT_TO << "                            timeout for each Z3 run in ms (default: 1000)\n\n" <<
+        " " << OPT_TO << "                            timeout for each Z3 run in ms (default: 1000)\n" <<
+        " " << OPT_DEBUG << "                         print debugging information during run\n\n" << 
         "V1 options only:\n" <<
         " " << OPT_ADD_EPSILON << "                           add small probabilities to features that never happen in the code\n" <<
         " " << OPT_K_IND << "                          run k-induction after each learned lemma\n" <<
@@ -126,6 +128,7 @@ int main (int argc, char ** argv)
   bool densecode = getBoolValue(OPT_GET_FREQS, false, argc, argv);
   bool addepsilon = getBoolValue(OPT_ADD_EPSILON, false, argc, argv);
   bool aggressivepruning = getBoolValue(OPT_AGG_PRUNING, false, argc, argv);
+  bool debug = getBoolValue(OPT_DEBUG, false, argc, argv);
   int itp = getIntValue(OPT_ITP, 0, argc, argv);
   int batch = getIntValue(OPT_BATCH, 3, argc, argv);
   int retry = getIntValue(OPT_RETRY, 3, argc, argv);
@@ -140,12 +143,13 @@ int main (int argc, char ** argv)
 
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
-                     do_dl, do_elim, do_disj, d_m, d_p, d_d, d_s);
+                     do_dl, do_elim, do_disj, d_m, d_p, d_d, d_s, debug);
   else if (vers2) // run the TACAS'18 algorithm
     learnInvariants2(string(argv[argc-1]), to, outfile, max_attempts,
-                  itp, batch, retry, densecode, aggressivepruning);
+                  itp, batch, retry, densecode, aggressivepruning, debug);
   else            // run the FMCAD'17 algorithm
-    learnInvariants(string(argv[argc-1]), to, outfile, max_attempts,
+    learnInvariants(string(argv[argc-1]), to, outfile, max_attempts, debug,
                   kinduction, itp, densecode, addepsilon, aggressivepruning);
+  
   return 0;
 }
