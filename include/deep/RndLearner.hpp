@@ -51,6 +51,9 @@ namespace ufo
 
     public:
 
+    // The CFG parsed from the --grammar option
+    Expr gram;
+
     RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, bool debug) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3), u(efac, to),
       invNumber(0), numOfSMTChecks(0), oneInductiveProof(true), kind_succeeded (!k),
@@ -420,7 +423,7 @@ namespace ufo
       for(auto ind : rels2update)
       {
         vector<SamplFactory>& sf = sfs[ind];
-        sf.push_back(SamplFactory (m_efac, aggressivepruning));
+        sf.push_back(SamplFactory (m_efac, aggressivepruning, gram));
 
         SamplFactory& sf_before = sf[sf.size()-2];
         SamplFactory& sf_after = sf.back();
@@ -454,7 +457,7 @@ namespace ufo
       curCandidates.push_back(NULL);
 
       sfs.push_back(vector<SamplFactory> ());
-      sfs.back().push_back(SamplFactory (m_efac, aggressivepruning));
+      sfs.back().push_back(SamplFactory (m_efac, aggressivepruning, gram));
       SamplFactory& sf = sfs.back().back();
 
       for (int i = 0; i < ruleManager.invVars[decls.back()].size(); i++)
@@ -692,7 +695,7 @@ namespace ufo
     }
   };
 
-  inline void learnInvariants(string smt, unsigned to, char * outfile, int maxAttempts, bool debug,
+  inline void learnInvariants(string smt, string grammar, unsigned to, char * outfile, int maxAttempts, bool debug,
                               bool kind=false, int itp=0, bool b1=true, bool b2=true, bool b3=true)
   {
     ExprFactory m_efac;
@@ -701,6 +704,11 @@ namespace ufo
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
     RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug);
+
+    if (!grammar.empty())
+      ds.gram = z3_from_smtlib_file<EZ3>(z3, grammar.c_str());
+    else
+      ds.gram = NULL;
 
     ds.setupSafetySolver();
     std::srand(std::time(0));

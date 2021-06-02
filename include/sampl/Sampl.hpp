@@ -42,6 +42,15 @@ namespace ufo
     density orAritiesDensity;
     bool hasArrays = false;
 
+    //Previously generated candidates from sample grammar
+    unordered_set<Expr> gramCands;
+
+    //Key: Non-terminal, Value: Productions in b/ieither# format
+    std::map<Expr, Expr> defs;
+
+    //The root of the tree of the grammar
+    Expr inv;
+
     public:
 
     LAfactory lf;
@@ -52,8 +61,29 @@ namespace ufo
 
     bool initilized = true;
 
-    SamplFactory(ExprFactory &_efac, bool aggp) :
-      m_efac(_efac), lf(_efac, aggp), bf(_efac), af(_efac, aggp) {}
+    SamplFactory(ExprFactory &_efac, bool aggp, Expr gram) :
+      m_efac(_efac), lf(_efac, aggp), bf(_efac), af(_efac, aggp)
+    {
+      // gram will be NULL if we don't pass `--grammar` option
+      if (gram != NULL)
+      {
+        // Find root of grammar and fill in `defs` map.
+        for (auto iter = gram->args_begin(); iter != gram->args_end(); ++iter)
+        {
+          //ex is an assertion
+          Expr ex = *iter;
+          if (isOpX<EQ>(ex))
+          {
+            if (lexical_cast<string>(bind::fname(ex->left())->left()) == "inv")
+            {
+              inv = ex->left();
+            }
+
+            defs[ex->left()] = ex->right();
+          }
+        }
+      }
+    }
 
     Expr getAllLemmas()
     {
@@ -192,8 +222,77 @@ namespace ufo
       }
     }
 
+    Expr getRandCand(Expr root)
+    {
+      if (isOpX<FAPP>(root))
+      {
+        string fname = lexical_cast<string>(bind::fname(root)->left());
+        if (fname.find("_FH_") != fname.npos)
+        {
+          // Root is a symbolic variable; don't expand.
+          return root;
+        }
+
+        // Else, root is a user-defined non-terminal or *either*
+
+        if (fname.find("either") != fname.npos)
+        {
+          // Randomly select from the available productions.
+          // Offset by 1 because arg(0) is the fdecl.
+          int randindex = (rand() % (root->arity() - 1)) + 1;
+
+          return getRandCand(root->arg(randindex));
+        }
+        else
+        {
+          // Root is user-defined non-terminal
+          return getRandCand(defs[root]);
+        }
+      }
+      else if (root->arity() == 0)
+      {
+        // Root is a Z3 terminal, e.g. Int constant, e.g. 3
+        return root;
+      }
+      else
+      {
+        // Root is Z3-defined non-terminal
+
+        ExprVector expanded_args;
+
+        for (auto itr = root->args_begin();
+             itr != root->args_end(); ++itr)
+        {
+          expanded_args.push_back(getRandCand(*itr));
+        }
+
+        return m_efac.mkNary(root->op(), expanded_args);
+      }
+    }
+
     Expr getFreshCandidate(bool arrSimpl = true)
     {
+      // If we weren't provided a grammar on the command line, then
+      // inv will be NULL.
+      if (inv != NULL)
+      {
+        Expr randcand;
+
+        while (true)
+        {
+          // Generate a (possibly old) candidate from the grammar
+          randcand = getRandCand(inv);
+          auto ret = gramCands.insert(randcand);
+          if (ret.second)
+            // We generated a new candidate, so return to caller.
+            break;
+
+          // Else, we generated an existing grammar. Try again.
+        }
+
+        return randcand;
+      }
+
       // for now, if a CHC system has arrays, we try candidates only with array
       // in the future, we will need arithmetic candidates as well
       if (hasArrays && initilized)

@@ -72,6 +72,7 @@ int main (int argc, char ** argv)
   const char *OPT_D3 = "--phase-data";
   const char *OPT_D4 = "--stren-mbp";
   const char *OPT_DEBUG = "--debug";
+  const char *OPT_GRAMMAR = "--grammar";
 
   if (getBoolValue(OPT_HELP, false, argc, argv) || argc == 1){
     outs () <<
@@ -93,7 +94,8 @@ int main (int argc, char ** argv)
         "V1 options only:\n" <<
         " " << OPT_ADD_EPSILON << "                           add small probabilities to features that never happen in the code\n" <<
         " " << OPT_K_IND << "                          run k-induction after each learned lemma\n" <<
-        " " << OPT_OUT_FILE << " <file.smt2>               serialize invariants to `file.smt2`\n\n" <<
+        " " << OPT_OUT_FILE << " <file.smt2>               serialize invariants to `file.smt2`\n" <<
+        " " << OPT_GRAMMAR << " <grammar.smt2>        generate candidates using CFG from `grammar.smt2`\n\n" <<
         "V2 options only:\n" <<
         " " << OPT_ITP << "                           bound for itp-based proofs\n" <<
         " " << OPT_BATCH << "                         threshold for how many candidates to check at once\n" <<
@@ -140,6 +142,14 @@ int main (int argc, char ** argv)
   bool d_p = getBoolValue(OPT_D2, false, argc, argv);
   bool d_d = getBoolValue(OPT_D3, false, argc, argv);
   bool d_s = getBoolValue(OPT_D4, false, argc, argv);
+  char * gram_cstr = getStrValue(OPT_GRAMMAR, NULL, argc, argv);
+  string grammar = gram_cstr != NULL ? string(gram_cstr) : "";
+
+  if (gram_cstr != NULL && (vers3 || vers2))
+  {
+    outs() << "Cannot use --grammar option with --v3 or --v2" << endl;
+    return 0;
+  }
 
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
@@ -148,7 +158,7 @@ int main (int argc, char ** argv)
     learnInvariants2(string(argv[argc-1]), to, outfile, max_attempts,
                   itp, batch, retry, densecode, aggressivepruning, debug);
   else            // run the FMCAD'17 algorithm
-    learnInvariants(string(argv[argc-1]), to, outfile, max_attempts, debug,
+    learnInvariants(string(argv[argc-1]), grammar, to, outfile, max_attempts, debug,
                   kinduction, itp, densecode, addepsilon, aggressivepruning);
   
   return 0;
