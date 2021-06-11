@@ -142,10 +142,10 @@ int main (int argc, char ** argv)
   bool d_p = getBoolValue(OPT_D2, false, argc, argv);
   bool d_d = getBoolValue(OPT_D3, false, argc, argv);
   bool d_s = getBoolValue(OPT_D4, false, argc, argv);
-  char * gram_cstr = getStrValue(OPT_GRAMMAR, NULL, argc, argv);
-  string grammar = gram_cstr != NULL ? string(gram_cstr) : "";
+  vector<string> grammars;
+  getStrValues(OPT_GRAMMAR, grammars, argc, argv);
 
-  if (gram_cstr != NULL && (vers3 || vers2))
+  if (!grammars.empty() && (vers3 || vers2))
   {
     outs() << "Cannot use --grammar option with --v3 or --v2" << endl;
     return 0;
@@ -158,7 +158,7 @@ int main (int argc, char ** argv)
     learnInvariants2(string(argv[argc-1]), to, outfile, max_attempts,
                   itp, batch, retry, densecode, aggressivepruning, debug);
   else            // run the FMCAD'17 algorithm
-    learnInvariants(string(argv[argc-1]), grammar, to, outfile, max_attempts, debug,
+    learnInvariants(string(argv[argc-1]), grammars, to, outfile, max_attempts, debug,
                   kinduction, itp, densecode, addepsilon, aggressivepruning);
   
   return 0;

@@ -7,6 +7,9 @@
 #include "BoolCom.hpp"
 #include "ArrCom.hpp"
 
+#include <fstream>
+#include <cctype>
+
 using namespace std;
 using namespace boost;
 
@@ -36,20 +39,32 @@ namespace ufo
     private:
     ExprFactory &m_efac;
 
+    EZ3 &z3;
+
     vector<Sampl> samples;
 
     density hasBooleanComb;
     density orAritiesDensity;
     bool hasArrays = false;
 
-    //Previously generated candidates from sample grammar
+    // Previously generated candidates from sample grammar
     unordered_set<Expr> gramCands;
 
-    //Key: Non-terminal, Value: Productions in b/ieither# format
+    // Key: Non-terminal, Value: Productions in b/ieither# format
     std::map<Expr, Expr> defs;
 
-    //The root of the tree of the grammar
+    // The root of the tree of the grammar
     Expr inv;
+
+    // The file location of the grammar SMT2 file
+    string gram_file;
+
+    // All variables mentioned in the file, regardless of type.
+    // Key: Sort, Value: List of variables of that sort.
+    unordered_map<Expr, ExprVector> all_vars;
+
+    // Whether to print debugging information or not
+    bool printLog;
 
     public:
 
@@ -61,12 +76,117 @@ namespace ufo
 
     bool initilized = true;
 
-    SamplFactory(ExprFactory &_efac, bool aggp, Expr gram) :
-      m_efac(_efac), lf(_efac, aggp), bf(_efac), af(_efac, aggp)
+    SamplFactory(ExprFactory &_efac, EZ3 &_z3, bool aggp, bool _printLog, 
+        string grammar) :
+      m_efac(_efac), z3(_z3), lf(_efac, aggp), bf(_efac), af(_efac, aggp),
+      gram_file(grammar), printLog(_printLog), inv(NULL) {}
+
+    // Parse the grammar file. Must be called after addVar(s)
+    void initialize_gram(Expr invDecl)
     {
-      // gram will be NULL if we don't pass `--grammar` option
-      if (gram != NULL)
+      // Maximum number of arguments for generated either functions
+      int eithersize = 10; 
+
+      // The name of the invariant in invDecl
+      string inv_fname = lexical_cast<string>(invDecl->left());
+
+      // gram_file will be empty if we don't pass `--grammar` option
+      if (!gram_file.empty())
       {
+        // The provided grammar, plus variable definitions and special
+        //   variables that we define.
+        ostringstream aug_gram;
+
+        auto generate_eithers = [&] (string sort_name, string sort_smt) {
+            // Generate either functions for given sort
+            for (int i = 2; i <= eithersize; ++i)
+            {
+              aug_gram << "(declare-fun " << sort_name << "_either_" << i << " (";
+              for (int x = 1; x <= i; ++x)
+              {
+                aug_gram << sort_smt << " ";
+              }
+              aug_gram << ") " << sort_smt << ")\n";
+            }
+        };
+
+        // We need the Bool eithers for the inv definition (rel is Bool)
+        generate_eithers("Bool", "Bool");
+
+        aug_gram << "(declare-fun ANY_INT () Int)\n";
+
+        for (auto& pair : all_vars)
+        {
+          string sort_smt = z3_to_smtlib<EZ3>(z3, pair.first);
+
+          string sort_name(sort_smt);
+
+          if (sort_name.find("(") != string::npos)
+          {
+            // We have a parameterized sort (e.g. Array)
+            for (auto&c : sort_name)
+            {
+              if (c == '(' || c == ')')
+                c = '$';
+              else if (c == ' ')
+                c = '_';
+            }
+          }
+
+          // Generate special variable for this sort
+          string vars_name(sort_name);
+            vars_name += "_VARS";
+          for (auto& c : vars_name)
+            c = (char)toupper(c);
+
+          aug_gram << "(declare-fun " << vars_name << " () " << sort_smt << ")\n";
+
+          // We already generated either functions for Bool
+          if (sort_name != "Bool")
+          {
+            generate_eithers(sort_name, sort_smt);
+          }
+
+          // Generate _FH_* decls for this sort
+          for (auto& var : pair.second)
+          {
+            // var is a FAPP
+            aug_gram << z3_to_smtlib(z3, bind::fname(var)) << endl;
+          }
+
+          // Generate definition (i.e. productions) for this sort
+          if (pair.second.size() != 1)
+          {
+            aug_gram << "(assert (= " << vars_name << 
+              " (" << sort_name << "_either_" << pair.second.size();
+
+            for (auto& var : pair.second)
+            {
+              aug_gram << " " << var;
+            }
+
+            aug_gram << ")))" << endl;
+          }
+          else
+          {
+            aug_gram << "(assert (= " << vars_name << " " << pair.second[0] <<
+              "))" << endl;
+          }
+        }
+
+        // Read in entire user grammar
+        ifstream infile(gram_file);
+        aug_gram << infile.rdbuf();
+
+        if (printLog)
+        {
+          outs() << ";Provided user grammar: " << endl;
+          outs() << aug_gram.str() << endl << endl;
+        }
+
+        // Parse combined grammar
+        Expr gram = z3_from_smtlib<EZ3>(z3, aug_gram.str());
+
         // Find root of grammar and fill in `defs` map.
         for (auto iter = gram->args_begin(); iter != gram->args_end(); ++iter)
         {
@@ -74,7 +194,13 @@ namespace ufo
           Expr ex = *iter;
           if (isOpX<EQ>(ex))
           {
-            if (lexical_cast<string>(bind::fname(ex->left())->left()) == "inv")
+            string ex_fname = lexical_cast<string>(bind::fname(ex->left())->left());
+            if (ex_fname == "ANY_INV" && inv == NULL)
+            {
+              // Only use ANY_INV if we don't already have a specific one
+              inv = ex->left();
+            }
+            else if (ex_fname == inv_fname)
             {
               inv = ex->left();
             }
@@ -109,6 +235,10 @@ namespace ufo
         added = true;
         hasArrays = true;
       }
+
+      all_vars[bind::typeOf(var)].push_back(var);
+      added = true;
+
       return added;
     }
 
@@ -235,7 +365,7 @@ namespace ufo
 
         // Else, root is a user-defined non-terminal or *either*
 
-        if (fname.find("either") != fname.npos)
+        if (fname.find("either") != string::npos)
         {
           // Randomly select from the available productions.
           // Offset by 1 because arg(0) is the fdecl.
@@ -245,8 +375,12 @@ namespace ufo
         }
         else
         {
-          // Root is user-defined non-terminal
-          return getRandCand(defs[root]);
+          // Root is user-defined non-terminal or function
+          if (defs[root] != NULL)
+            // Root is user-defined non-terminal
+            return getRandCand(defs[root]);
+
+          // Else, root is user-defined function without eithers
         }
       }
       else if (root->arity() == 0)
@@ -254,20 +388,18 @@ namespace ufo
         // Root is a Z3 terminal, e.g. Int constant, e.g. 3
         return root;
       }
-      else
+
+      // Root is Z3-defined non-terminal or user-defined function (w/o eithers)
+
+      ExprVector expanded_args;
+
+      for (auto itr = root->args_begin();
+           itr != root->args_end(); ++itr)
       {
-        // Root is Z3-defined non-terminal
-
-        ExprVector expanded_args;
-
-        for (auto itr = root->args_begin();
-             itr != root->args_end(); ++itr)
-        {
-          expanded_args.push_back(getRandCand(*itr));
-        }
-
-        return m_efac.mkNary(root->op(), expanded_args);
+        expanded_args.push_back(getRandCand(*itr));
       }
+
+      return m_efac.mkNary(root->op(), expanded_args);
     }
 
     Expr getFreshCandidate(bool arrSimpl = true)

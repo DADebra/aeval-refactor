@@ -1,20 +1,9 @@
 ; Sample CFG for Freqhorn.
 
-; Non-terminal declarations
-(declare-fun iconst () Int)
-(declare-fun ivar () Int)
-(declare-fun bvar () Bool)
-(declare-fun term () Int)
-
 ; Declaration of invariant. Required. Must match the name of an invariant
 ;   in the input file. There must only be one invariant per grammar file.
-; Sort must be "Bool".
-(declare-fun inv () Bool)
-
-; Generic declaration of invariant. Optional. Will match any invariant
-;   specified in the input file and not declared by any passed grammar.
-; Sort must be "Bool".
-;(declare-fun ANY_INV () Bool)
+;   Sort must be "Bool".
+(declare-fun ANY_INV () Bool)
 
 ; Special variables:
 
@@ -32,19 +21,15 @@
 ;(declare-fun BOOL_VARS () Bool)
 ;(declare-fun $ARRAY_INT_INT$_VARS () (Array Int Int))
 
-; Used to indicate that a non-terminal can expand to any
-;   of the given arguments. The expansion is picked randomly,
-;   with a uniform distribution.
-; E.g. (assert (= iconst (Int_either_3 0 -1 1))) means iconst can be
-;   expanded to 0, -1, or 1 randomly.
-; Defined by Freqhorn (DO NOT DEFINE HERE).
-;(declare-fun Int_either_3 (Int Int Int) Int)
-;(declare-fun $Array_Int_Int$_either_3 (
-;   (Array Int Int) (Array Int Int) (Array Int Int) ) (Array Int Int))
+; Non-terminal declarations
+(declare-fun iconst () Int)
+(declare-fun ivar () Int)
+(declare-fun bvar () Bool)
+(declare-fun term () Int)
 
 (assert (= ivar INT_VARS))
 (assert (= iconst (Int_either_3 0 -1 1)))
 (assert (= term (Int_either_4 iconst ivar (* iconst ivar) (+ term term))))
-(assert (= inv (Bool_either_4 (= term term) (< term term) (not inv) (or inv inv))))
+(assert (= ANY_INV (Bool_either_4 (= term term) (< term term) (not ANY_INV) (or ANY_INV ANY_INV))))
 
 (check-sat)
