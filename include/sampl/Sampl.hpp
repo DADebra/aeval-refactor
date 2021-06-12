@@ -87,8 +87,19 @@ namespace ufo
       // Maximum number of arguments for generated either functions
       int eithersize = 10; 
 
+      // Generate enough eithers for INT_CONSTS
       eithersize = eithersize > lf.getConsts().size() ? eithersize :
         lf.getConsts().size();
+
+      // Generate enough eithers for *_VARS
+      int largestnumvars = 0;
+      for (auto& pair : all_vars)
+      {
+        if (pair.second.size() > largestnumvars)
+          largestnumvars = pair.second.size();
+      }
+
+      eithersize = eithersize > largestnumvars ? eithersize : largestnumvars;
 
       // The name of the invariant in invDecl
       string inv_fname = lexical_cast<string>(invDecl->left());
