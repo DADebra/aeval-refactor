@@ -32,6 +32,10 @@
 ;(declare-fun BOOL_VARS () Bool)
 ;(declare-fun $ARRAY_INT_INT$_VARS () (Array Int Int))
 
+; Expands to all integer constants found in the input file.
+; Defined by Freqhorn (DO NOT DEFINE HERE).
+;(declare-fun INT_CONSTS () Int)
+
 ; Used to indicate that a non-terminal can expand to any
 ;   of the given arguments. The expansion is picked randomly,
 ;   with a uniform distribution.

@@ -525,8 +525,6 @@ namespace ufo
         if (sf.addVar(var)) invarVars[invNumber][i] = var;
       }
 
-      sf.initialize_gram(invDecl);
-
       arrCands.push_back(ExprSet());
       arrAccessVars.push_back(ExprVector());
       arrIterRanges.push_back(ExprSet());
@@ -611,6 +609,8 @@ namespace ufo
       }
 
       sf.initialize(arrCands[ind], arrAccessVars[ind], arrIterRanges[ind]);
+
+      sf.initialize_gram(invRel);
 
       ExprSet allCands;
       for (auto &cs : css)

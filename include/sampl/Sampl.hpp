@@ -87,6 +87,9 @@ namespace ufo
       // Maximum number of arguments for generated either functions
       int eithersize = 10; 
 
+      eithersize = eithersize > lf.getConsts().size() ? eithersize :
+        lf.getConsts().size();
+
       // The name of the invariant in invDecl
       string inv_fname = lexical_cast<string>(invDecl->left());
 
@@ -173,6 +176,17 @@ namespace ufo
               "))" << endl;
           }
         }
+
+        // Generate INT_CONSTS definition
+        aug_gram << "(declare-fun INT_CONSTS () Int)" << endl;
+
+        aug_gram << "(assert (= INT_CONSTS ";
+        aug_gram << "(Int_either_" << lf.getConsts().size() << " ";
+        for (auto& c : lf.getConsts())
+        {
+          aug_gram << c << " ";
+        }
+        aug_gram << ")))" << endl;
 
         // Read in entire user grammar
         ifstream infile(gram_file);

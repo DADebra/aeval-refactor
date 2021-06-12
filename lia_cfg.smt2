@@ -28,8 +28,8 @@
 (declare-fun term () Int)
 
 (assert (= ivar INT_VARS))
-(assert (= iconst (Int_either_3 0 -1 1)))
-(assert (= term (Int_either_4 iconst ivar (* iconst ivar) (+ term term))))
+(assert (= iconst INT_CONSTS))
+(assert (= term (Int_either_5 iconst ivar (* iconst ivar) (+ term term) (mod term iconst))))
 (assert (= ANY_INV (Bool_either_4 (= term term) (< term term) (not ANY_INV) (or ANY_INV ANY_INV))))
 
 (check-sat)
