@@ -437,8 +437,9 @@ namespace ufo
 
         while (true)
         {
-          // Generate a (possibly old) candidate from the grammar
-          randcand = getRandCand(inv);
+          // Generate a (possibly old) candidate from the grammar,
+          // and simplify
+          randcand = simplifyBool(simplifyArithm(getRandCand(inv), false, false));
           auto ret = gramCands.insert(randcand);
           if (ret.second)
             // We generated a new candidate, so return to caller.
@@ -447,6 +448,9 @@ namespace ufo
           // Else, we generated an existing grammar. Try again.
         }
 
+        // We return 'false' and 'true' once, but since they get added
+        // to gramCands we never return them again.
+        // Thus, we don't bother checking for them.
         return randcand;
       }
 

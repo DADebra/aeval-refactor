@@ -820,6 +820,12 @@ namespace ufo
     {
       cpp_int coef = 1;
       cpp_int divider = lexical_cast<cpp_int>(e->right());
+
+      if (divider == 0)
+        // Don't try to calculate; causes Div by 0 otherwise.
+        // We can't simplify, because mod by 0 is undefined in Z3
+        return e;
+
       ExprVector ops;
       getMultOps (e->left(), ops);
 
