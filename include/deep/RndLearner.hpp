@@ -498,7 +498,7 @@ namespace ufo
           sf_after.assignPrioritiesForLearned();
         }
 
-        sf_after.initialize_gram(decls[ind]);
+        sf_after.initialize_gram(lexical_cast<string>(bind::fname(decls[ind])));
       }
     }
 
@@ -610,7 +610,7 @@ namespace ufo
 
       sf.initialize(arrCands[ind], arrAccessVars[ind], arrIterRanges[ind]);
 
-      sf.initialize_gram(invRel);
+      sf.initialize_gram(lexical_cast<string>(invRel));
 
       ExprSet allCands;
       for (auto &cs : css)

@@ -82,7 +82,7 @@ namespace ufo
       gram_file(grammar), printLog(_printLog), inv(NULL) {}
 
     // Parse the grammar file. Must be called after addVar(s)
-    void initialize_gram(Expr invDecl)
+    void initialize_gram(string inv_fname)
     {
       // Maximum number of arguments for generated either functions
       int eithersize = 10; 
@@ -100,9 +100,6 @@ namespace ufo
       }
 
       eithersize = eithersize > largestnumvars ? eithersize : largestnumvars;
-
-      // The name of the invariant in invDecl
-      string inv_fname = lexical_cast<string>(invDecl->left());
 
       // gram_file will be empty if we don't pass `--grammar` option
       if (!gram_file.empty())
@@ -233,6 +230,12 @@ namespace ufo
             defs[ex->left()] = ex->right();
           }
         }
+      }
+
+      if (printLog)
+      {
+        if (inv == NULL) outs() << "Using built-in grammar." << endl;
+        else outs() << "Using user-provided grammar(s)." << endl;
       }
     }
 
