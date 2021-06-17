@@ -744,6 +744,10 @@ namespace ufo
         {
           assignPrioritiesForLearned();
           generalizeArrInvars(sf);
+
+          if (printLog)
+            outs() << " - - - learned cand\n";
+
           if (checkAllLemmas())
           {
             outs () << "Success after " << (i+1) << " iterations "
@@ -752,6 +756,8 @@ namespace ufo
             return true;
           }
         }
+        else if (printLog)
+          outs() << " - - - bad cand\n";
       }
       outs() << "unknown\n";
       return false;
@@ -1522,9 +1528,10 @@ namespace ufo
     }
   };
 
-  inline void learnInvariants3(string smt, unsigned maxAttempts, unsigned to, bool freqs, bool aggp,
-                               bool enableDataLearning, bool doElim, bool doDisj,
-                               bool dAllMbp, bool dAddProp, bool dAddDat, bool dStrenMbp, bool debug)
+  inline void learnInvariants3(string smt, vector<string> grammars,
+      unsigned maxAttempts, unsigned to, bool freqs, bool aggp,
+      bool enableDataLearning, bool doElim, bool doDisj,
+      bool dAllMbp, bool dAddProp, bool dAddDat, bool dStrenMbp, bool debug)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -1539,6 +1546,10 @@ namespace ufo
     }
 
     RndLearnerV3 ds(m_efac, z3, ruleManager, to, freqs, aggp, dAllMbp, dAddProp, dAddDat, dStrenMbp, debug);
+
+    if (!ds.fillgrams(grammars))
+      return; // Couldn't find grammars for all invariants.
+
     map<Expr, ExprSet> cands;
     for (auto& dcl: ruleManager.decls) ds.initializeDecl(dcl);
 

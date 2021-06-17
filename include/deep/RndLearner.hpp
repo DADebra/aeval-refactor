@@ -439,6 +439,26 @@ namespace ufo
       }
     }
 
+    bool fillgrams(vector<string>& grammars)
+    {
+      if (grammars.empty())
+        return true;
+      // Figure out which CFG corresponds to which invariant
+      for (auto& dcl : ruleManager.decls)
+      {
+        string gram = std::move(findGram(grammars, dcl));
+        if (gram.empty())
+        {
+          outs() << "Error: No CFG provided for invariant \"" << dcl << "\"";
+          outs() << endl;
+          return false;
+        }
+        grams[lexical_cast<string>(bind::fname(dcl))] = gram;
+      }
+
+      return true;
+    }
+
     void updateRels()
     {
       // this should not affect the learning process for a CHC system with one (declare-rel ...)
@@ -766,18 +786,8 @@ namespace ufo
     ruleManager.parse(smt);
     RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug);
 
-    // Figure out which CFG corresponds to which invariant
-    for (auto& dcl : ruleManager.decls)
-    {
-      string gram = std::move(ds.findGram(grammars, dcl));
-      if (gram.empty())
-      {
-        outs() << "Error: No CFG provided for invariant \"" << dcl << "\"";
-        outs() << endl;
-        return;
-      }
-      ds.grams[lexical_cast<string>(bind::fname(dcl))] = gram;
-    }
+    if (!ds.fillgrams(grammars))
+      return; // Couldn't find grammars for all invariants.
 
     ds.setupSafetySolver();
     std::srand(std::time(0));

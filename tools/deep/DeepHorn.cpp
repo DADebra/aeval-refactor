@@ -145,14 +145,14 @@ int main (int argc, char ** argv)
   vector<string> grammars;
   getStrValues(OPT_GRAMMAR, grammars, argc, argv);
 
-  if (!grammars.empty() && (vers3 || vers2))
+  if (!grammars.empty() && vers2)
   {
-    outs() << "Cannot use --grammar option with --v3 or --v2" << endl;
+    outs() << "Cannot use --grammar option with --v2" << endl;
     return 0;
   }
 
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
-    learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
+    learnInvariants3(string(argv[argc-1]), grammars, max_attempts, to, densecode, aggressivepruning,
                      do_dl, do_elim, do_disj, d_m, d_p, d_d, d_s, debug);
   else if (vers2) // run the TACAS'18 algorithm
     learnInvariants2(string(argv[argc-1]), to, outfile, max_attempts,
