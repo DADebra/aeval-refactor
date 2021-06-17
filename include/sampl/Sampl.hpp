@@ -427,6 +427,13 @@ namespace ufo
         expanded_args.push_back(getRandCand(*itr));
       }
 
+      // Don't generate undefined candidates (e.g. mod by 0)
+      if (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root))
+      {
+        while (isOpX<MPZ>(expanded_args.back()) && lexical_cast<cpp_int>(expanded_args.back()) <= 0)
+            expanded_args.back() = getRandCand(root->last());
+      }
+
       return m_efac.mkNary(root->op(), expanded_args);
     }
 
