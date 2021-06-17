@@ -829,6 +829,17 @@ namespace ufo
       ExprVector ops;
       getMultOps (e->left(), ops);
 
+      // Simplify trivial cases, e.g. 4 mod 2
+      if (ops.size() == 1 && isOpX<MPZ>(e->left()))
+      {
+        cpp_int arg = lexical_cast<cpp_int>(e->left());
+        // C++'s % operator doesn't handle negatives properly.
+        if (arg < 0)
+          arg += ((-arg / divider) + 1) * divider;
+        arg = arg % divider;
+        return mkMPZ (arg, e->getFactory());
+      }
+
       for (auto a : ops)
         if (isOpX<MPZ>(a))
           coef *= lexical_cast<cpp_int>(a);
