@@ -129,9 +129,10 @@ namespace ufo
       if (invVars[a->left()].size() == 0)
       {
         decls.insert(a);
+        string invName = lexical_cast<string>(bind::fname(a));
         for (int i = 1; i < a->arity()-1; i++)
         {
-          Expr new_name = mkTerm<string> (varname + to_string(i - 1), m_efac);
+          Expr new_name = mkTerm<string> (varname + invName + "_" + to_string(i - 1), m_efac);
           Expr var;
           if (isOpX<INT_TY> (a->arg(i)))
             var = bind::intConst(new_name);

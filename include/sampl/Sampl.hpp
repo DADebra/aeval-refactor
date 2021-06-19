@@ -60,8 +60,13 @@ namespace ufo
     string gram_file;
 
     // All variables mentioned in the file, regardless of type.
+    // Variables are for the invariant stored in 'inv'
     // Key: Sort, Value: List of variables of that sort.
-    unordered_map<Expr, ExprVector> all_vars;
+    unordered_map<Expr, ExprVector> inv_vars;
+
+    // Variables for the other invariants in the input file.
+    // Key: Sort, Value: List of variables of that sort.
+    unordered_map<Expr, ExprVector> other_inv_vars;
 
     // Whether to print debugging information or not
     bool printLog;
@@ -93,7 +98,7 @@ namespace ufo
 
       // Generate enough eithers for *_VARS
       int largestnumvars = 0;
-      for (auto& pair : all_vars)
+      for (auto& pair : inv_vars)
       {
         if (pair.second.size() > largestnumvars)
           largestnumvars = pair.second.size();
@@ -108,7 +113,8 @@ namespace ufo
         //   variables that we define.
         ostringstream aug_gram;
 
-        auto generate_eithers = [&] (string sort_name, string sort_smt) {
+        auto generate_either_decl = [&] (string sort_name, string sort_smt)
+        {
             // Generate either functions for given sort
             for (int i = 2; i <= eithersize; ++i)
             {
@@ -122,68 +128,84 @@ namespace ufo
         };
 
         // We need the Bool eithers for the inv definition (rel is Bool)
-        generate_eithers("Bool", "Bool");
+        aug_gram << "(declare-fun BOOL_VARS () Bool)" << endl;
+        generate_either_decl("Bool", "Bool");
 
-        aug_gram << "(declare-fun ANY_INT () Int)\n";
+        // Which sorts we've already generated eithers and *_VARS for.
+        ExprSet donesorts;
+        donesorts.insert(mk<BOOL_TY>(m_efac));
 
-        for (auto& pair : all_vars)
+        // Easiest way to handle all_inv_vars and inv_vars
+        auto generate_all = [&] (unordered_map<Expr, ExprVector> vars, 
+            bool thisinv) 
         {
-          string sort_smt = z3_to_smtlib<EZ3>(z3, pair.first);
-
-          string sort_name(sort_smt);
-
-          if (sort_name.find("(") != string::npos)
+          for (auto& pair : vars)
           {
-            // We have a parameterized sort (e.g. Array)
-            for (auto&c : sort_name)
+            string sort_smt = z3_to_smtlib<EZ3>(z3, pair.first);
+
+            string sort_name(sort_smt);
+
+            if (sort_name.find("(") != string::npos)
             {
-              if (c == '(' || c == ')')
-                c = '$';
-              else if (c == ' ')
-                c = '_';
+              // We have a parameterized sort (e.g. Array)
+              for (auto&c : sort_name)
+              {
+                if (c == '(' || c == ')')
+                  c = '$';
+                else if (c == ' ')
+                  c = '_';
+              }
             }
-          }
 
-          // Generate special variable for this sort
-          string vars_name(sort_name);
-            vars_name += "_VARS";
-          for (auto& c : vars_name)
-            c = (char)toupper(c);
+            // Generate special variable for this sort
+            string vars_name(sort_name);
+              vars_name += "_VARS";
+            for (auto& c : vars_name)
+              c = (char)toupper(c);
 
-          aug_gram << "(declare-fun " << vars_name << " () " << sort_smt << ")\n";
+            // If we haven't already generated an either
+            if (donesorts.find(bind::typeOf(pair.first)) == donesorts.end())
+            {
+              aug_gram << "(declare-fun " << vars_name << " () " << sort_smt << ")\n";
 
-          // We already generated either functions for Bool
-          if (sort_name != "Bool")
-          {
-            generate_eithers(sort_name, sort_smt);
-          }
+              generate_either_decl(sort_name, sort_smt);
+              donesorts.insert(bind::typeOf(pair.first));
+            }
 
-          // Generate _FH_* decls for this sort
-          for (auto& var : pair.second)
-          {
-            // var is a FAPP
-            aug_gram << z3_to_smtlib(z3, bind::fname(var)) << endl;
-          }
-
-          // Generate definition (i.e. productions) for this sort
-          if (pair.second.size() != 1)
-          {
-            aug_gram << "(assert (= " << vars_name << 
-              " (" << sort_name << "_either_" << pair.second.size();
-
+            // Generate _FH_* decls for this sort
             for (auto& var : pair.second)
             {
-              aug_gram << " " << var;
+              // var is a FAPP
+              aug_gram << z3_to_smtlib(z3, bind::fname(var)) << endl;
             }
 
-            aug_gram << ")))" << endl;
+            // Only generate definitions for variables of this SamplFactory's invariant
+            if (thisinv)
+            {
+              // Generate definition (i.e. productions) for this sort's *_VARS
+              if (pair.second.size() != 1)
+              {
+                aug_gram << "(assert (= " << vars_name << 
+                  " (" << sort_name << "_either_" << pair.second.size();
+
+                for (auto& var : pair.second)
+                {
+                  aug_gram << " " << var;
+                }
+
+                aug_gram << ")))" << endl;
+              }
+              else
+              {
+                aug_gram << "(assert (= " << vars_name << " " << pair.second[0] <<
+                  "))" << endl;
+              }
+            }
           }
-          else
-          {
-            aug_gram << "(assert (= " << vars_name << " " << pair.second[0] <<
-              "))" << endl;
-          }
-        }
+        };
+
+        generate_all(inv_vars, true);
+        generate_all(other_inv_vars, false);
 
         // Generate INT_CONSTS definition
         aug_gram << "(declare-fun INT_CONSTS () Int)" << endl;
@@ -244,6 +266,7 @@ namespace ufo
       return conjoin(learnedExprs, m_efac);
     }
 
+    // Add variable for this invariant
     bool addVar(Expr var)
     {
       bool added = false;
@@ -264,10 +287,16 @@ namespace ufo
         hasArrays = true;
       }
 
-      all_vars[bind::typeOf(var)].push_back(var);
+      inv_vars[bind::typeOf(var)].push_back(var);
       added = true;
 
       return added;
+    }
+
+    // Add variable for other invariants
+    void addOtherVar(Expr var)
+    {
+      other_inv_vars[bind::typeOf(var)].push_back(var);
     }
 
     void initialize(ExprSet& arrCands, ExprVector& arrAccessVars, ExprSet& arrRange)
@@ -395,20 +424,32 @@ namespace ufo
 
         if (fname.find("either") != string::npos)
         {
-          // Randomly select from the available productions.
-          // Offset by 1 because arg(0) is the fdecl.
-          int randindex = (rand() % (root->arity() - 1)) + 1;
+          Expr cand = NULL;
+          while (cand == NULL)
+          {
+            // Randomly select from the available productions.
+            // Offset by 1 because arg(0) is the fdecl.
+            int randindex = (rand() % (root->arity() - 1)) + 1;
 
-          return getRandCand(root->arg(randindex));
+            cand = getRandCand(root->arg(randindex));
+            return cand;
+          }
         }
         else
         {
-          // Root is user-defined non-terminal or function
+          // Root is user-defined non-terminal
           if (defs[root] != NULL)
-            // Root is user-defined non-terminal
             return getRandCand(defs[root]);
-
-          // Else, root is user-defined function without eithers
+          else
+          {
+            // There's no definition, we're expanding an empty *_VARS
+            outs() << "ERROR: There is no definition for user-defined " << 
+              "non-terminal " << root << " in the CFG for " << inv << 
+              ". Exiting." << endl;
+            exit(1);
+            // We never get here
+            return NULL;
+          }
         }
       }
       else if (root->arity() == 0)
@@ -417,21 +458,19 @@ namespace ufo
         return root;
       }
 
-      // Root is Z3-defined non-terminal or user-defined function (w/o eithers)
+      // Root is Z3-defined non-terminal
 
       ExprVector expanded_args;
 
       for (auto itr = root->args_begin();
            itr != root->args_end(); ++itr)
-      {
         expanded_args.push_back(getRandCand(*itr));
-      }
 
       // Don't generate undefined candidates (e.g. mod by 0)
       if (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root))
       {
         while (isOpX<MPZ>(expanded_args.back()) && lexical_cast<cpp_int>(expanded_args.back()) <= 0)
-            expanded_args.back() = getRandCand(root->last());
+          expanded_args.back() = getRandCand(root->last());
       }
 
       return m_efac.mkNary(root->op(), expanded_args);

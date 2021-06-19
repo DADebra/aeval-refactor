@@ -505,6 +505,10 @@ namespace ufo
         SamplFactory& sf_after = sf.back();
 
         for (auto & var : invarVars[ind]) sf_after.addVar(var.second);
+        for (int i = 0; i < invarVars.size(); i++)
+          if (i != ind)
+            for (auto& var : invarVars[i])
+              sf_after.addOtherVar(var.second);
         sf_after.lf.nonlinVars = sf_before.lf.nonlinVars;
 
         ExprSet stub;
@@ -539,10 +543,18 @@ namespace ufo
             printLog, grams[lexical_cast<string>(bind::fname(invDecl))]));
       SamplFactory& sf = sfs.back().back();
 
-      for (int i = 0; i < ruleManager.invVars[decls.back()].size(); i++)
+      for (auto& pair : ruleManager.invVars)
       {
-        Expr var = ruleManager.invVars[decls.back()][i];
-        if (sf.addVar(var)) invarVars[invNumber][i] = var;
+        for (int i = 0; i < pair.second.size(); i++)
+        {
+          Expr var = pair.second[i];
+          if (pair.first == decls.back())
+          {
+            if (sf.addVar(var)) invarVars[invNumber][i] = var;
+          }
+          else
+            sf.addOtherVar(var);
+        }
       }
 
       arrCands.push_back(ExprSet());

@@ -20,9 +20,10 @@
 
 ; Freqhorn will treat these as terminals and not expand them;
 ;   they have whatever sort is specified by the invariant in the input file.
-; _FH_0 is the first argument to the invariant, _FH_1 is the second, etc.
+; They're the variables (arguments) to the invariant
+; For invariant "(declare-rel inv (Int Int))", _FH_inv_0 is the first argument to the invariant (of sort Int), _FH_inv_1 is the second, etc.
 ; Defined by Freqhorn (DO NOT DEFINE HERE).
-;(declare-fun _FH_0 () Int)
+;(declare-fun _FH_inv_0 () Int)
 
 ; Will expand to all variables of given sort.
 ; Parameterized sorts (e.g. Array) are defined with below pattern;
