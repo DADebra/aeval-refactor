@@ -332,8 +332,9 @@ namespace ufo
     }
   };
   
-  inline void learnInvariants2(string smt, unsigned to, char * outfile, int maxAttempts,
-                               int itp, int batch, int retry, bool freqs, bool aggp, bool debug)
+  inline void learnInvariants2(string smt, vector<string> grammars, 
+      unsigned to, char * outfile, int maxAttempts, int itp, int batch, 
+      int retry, bool freqs, bool aggp, bool debug)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -341,6 +342,10 @@ namespace ufo
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
     RndLearnerV2 ds(m_efac, z3, ruleManager, to, freqs, aggp, debug);
+
+    if (!ds.fillgrams(grammars))
+      return; // Couldn't find grammars for all invariants.
+
     ds.categorizeCHCs();
 
     std::srand(std::time(0));

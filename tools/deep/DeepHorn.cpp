@@ -90,12 +90,13 @@ int main (int argc, char ** argv)
         "                                 (if not specified, sample from uniform distributions)\n" <<
         " " << OPT_MAX_ATTEMPTS << " <N>                  maximal number of candidates to sample and check\n" <<
         " " << OPT_TO << "                            timeout for each Z3 run in ms (default: 1000)\n" <<
+        " " << OPT_GRAMMAR << " <grammar.smt2>        generate candidates using CFG from `grammar.smt2`\n" <<
+        "                                 (can be specified multiple times for inputs with multiple invariants)\n" <<
         " " << OPT_DEBUG << "                         print debugging information during run\n\n" << 
         "V1 options only:\n" <<
         " " << OPT_ADD_EPSILON << "                           add small probabilities to features that never happen in the code\n" <<
         " " << OPT_K_IND << "                          run k-induction after each learned lemma\n" <<
-        " " << OPT_OUT_FILE << " <file.smt2>               serialize invariants to `file.smt2`\n" <<
-        " " << OPT_GRAMMAR << " <grammar.smt2>        generate candidates using CFG from `grammar.smt2`\n\n" <<
+        " " << OPT_OUT_FILE << " <file.smt2>               serialize invariants to `file.smt2`\n\n" <<
         "V2 options only:\n" <<
         " " << OPT_ITP << "                           bound for itp-based proofs\n" <<
         " " << OPT_BATCH << "                         threshold for how many candidates to check at once\n" <<
@@ -145,17 +146,11 @@ int main (int argc, char ** argv)
   vector<string> grammars;
   getStrValues(OPT_GRAMMAR, grammars, argc, argv);
 
-  if (!grammars.empty() && vers2)
-  {
-    outs() << "Cannot use --grammar option with --v2" << endl;
-    return 0;
-  }
-
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), grammars, max_attempts, to, densecode, aggressivepruning,
                      do_dl, do_elim, do_disj, d_m, d_p, d_d, d_s, debug);
   else if (vers2) // run the TACAS'18 algorithm
-    learnInvariants2(string(argv[argc-1]), to, outfile, max_attempts,
+    learnInvariants2(string(argv[argc-1]), grammars, to, outfile, max_attempts,
                   itp, batch, retry, densecode, aggressivepruning, debug);
   else            // run the FMCAD'17 algorithm
     learnInvariants(string(argv[argc-1]), grammars, to, outfile, max_attempts, debug,
