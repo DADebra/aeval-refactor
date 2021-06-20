@@ -164,12 +164,12 @@ namespace ufo
               c = (char)toupper(c);
 
             // If we haven't already generated an either
-            if (donesorts.find(bind::typeOf(pair.first)) == donesorts.end())
+            if (donesorts.find(pair.first) == donesorts.end())
             {
               aug_gram << "(declare-fun " << vars_name << " () " << sort_smt << ")\n";
 
               generate_either_decl(sort_name, sort_smt);
-              donesorts.insert(bind::typeOf(pair.first));
+              donesorts.insert(pair.first);
             }
 
             // Generate _FH_* decls for this sort
@@ -210,13 +210,16 @@ namespace ufo
         // Generate INT_CONSTS definition
         aug_gram << "(declare-fun INT_CONSTS () Int)" << endl;
 
-        aug_gram << "(assert (= INT_CONSTS ";
-        aug_gram << "(Int_either_" << lf.getConsts().size() << " ";
-        for (auto& c : lf.getConsts())
+        if (lf.getConsts().size() != 0)
         {
-          aug_gram << c << " ";
+          aug_gram << "(assert (= INT_CONSTS ";
+          aug_gram << "(Int_either_" << lf.getConsts().size() << " ";
+          for (auto& c : lf.getConsts())
+          {
+            aug_gram << c << " ";
+          }
+          aug_gram << ")))" << endl;
         }
-        aug_gram << ")))" << endl;
 
         // Read in entire user grammar
         ifstream infile(gram_file);
