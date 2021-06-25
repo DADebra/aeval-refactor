@@ -9,6 +9,7 @@
 
 #include <fstream>
 #include <cctype>
+#include <regex>
 
 using namespace std;
 using namespace boost;
@@ -89,26 +90,39 @@ namespace ufo
     // Parse the grammar file. Must be called after addVar(s)
     void initialize_gram(string inv_fname)
     {
-      // Maximum number of arguments for generated either functions
-      int eithersize = 10; 
-
-      // Generate enough eithers for INT_CONSTS
-      eithersize = eithersize > lf.getConsts().size() ? eithersize :
-        lf.getConsts().size();
-
-      // Generate enough eithers for *_VARS
-      int largestnumvars = 0;
-      for (auto& pair : inv_vars)
-      {
-        if (pair.second.size() > largestnumvars)
-          largestnumvars = pair.second.size();
-      }
-
-      eithersize = eithersize > largestnumvars ? eithersize : largestnumvars;
-
       // gram_file will be empty if we don't pass `--grammar` option
       if (!gram_file.empty())
       {
+        // Read in entire user grammar
+        ostringstream user_cfg;
+        ifstream infile(gram_file);
+        user_cfg << infile.rdbuf();
+
+        // The set of eithers we need to generate. 
+        // Not worth making a distinction between sorts.
+        unordered_set<int> eithers_to_gen;
+
+        // Generate enough eithers for INT_CONSTS
+        eithers_to_gen.insert(lf.getConsts().size());
+
+        // Generate enough eithers for *_VARS
+        for (auto& pair : inv_vars)
+        {
+          eithers_to_gen.insert(pair.second.size());
+        }
+
+        // Generate the eithers the user CFG uses.
+        smatch eithermatch;
+        regex eitherregex("either_([0-9]+)");
+        string searchstr = user_cfg.str();
+
+        while (regex_search(searchstr, eithermatch, eitherregex))
+        {
+          eithers_to_gen.insert(stoi(eithermatch[1]));
+          if (printLog) outs() << "Found either_" << eithermatch[1] << endl;
+          searchstr = eithermatch.suffix().str();
+        }
+
         // The provided grammar, plus variable definitions and special
         //   variables that we define.
         ostringstream aug_gram;
@@ -116,7 +130,7 @@ namespace ufo
         auto generate_either_decl = [&] (string sort_name, string sort_smt)
         {
             // Generate either functions for given sort
-            for (int i = 2; i <= eithersize; ++i)
+            for (auto& i : eithers_to_gen)
             {
               aug_gram << "(declare-fun " << sort_name << "_either_" << i << " (";
               for (int x = 1; x <= i; ++x)
@@ -221,9 +235,7 @@ namespace ufo
           aug_gram << ")))" << endl;
         }
 
-        // Read in entire user grammar
-        ifstream infile(gram_file);
-        aug_gram << infile.rdbuf();
+        aug_gram << user_cfg.str();
 
         if (printLog)
         {
