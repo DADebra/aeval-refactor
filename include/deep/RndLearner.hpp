@@ -144,7 +144,7 @@ namespace ufo
 
         numOfSMTChecks++;
         boost::tribool res = m_smt_solver.solve ();
-        if (res)    // SAT   == candidate failed
+        if (res || indeterminate(res))    // SAT   == candidate failed
         {
           curCandidates[ind2] = mk<TRUE>(m_efac);
           return checkCandidates();
