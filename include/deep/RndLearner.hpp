@@ -55,7 +55,7 @@ namespace ufo
     unordered_map<string, string> grams;
 
     RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, bool debug) :
-      m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3), u(efac, to),
+      m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3, to), u(efac, to),
       invNumber(0), numOfSMTChecks(0), oneInductiveProof(true), kind_succeeded (!k),
       densecode(b1), addepsilon(b2), aggressivepruning(b3),
       printLog(debug){}
@@ -351,14 +351,14 @@ namespace ufo
       return true;
     }
 
-    void setupSafetySolver()
+    void setupSafetySolver(unsigned to)
     {
       // setup the safety solver
       for (auto &hr: ruleManager.chcs)
       {
         if (hr.isQuery)
         {
-          m_smt_safety_solvers.push_back(ufo::ZSolver<ufo::EZ3>(m_z3));
+          m_smt_safety_solvers.push_back(ufo::ZSolver<ufo::EZ3>(m_z3, to));
           m_smt_safety_solvers.back().assertExpr (hr.body);
           safety_progress[safety_progress.size()] = false;
         }
@@ -801,7 +801,7 @@ namespace ufo
     if (!ds.fillgrams(grammars))
       return; // Couldn't find grammars for all invariants.
 
-    ds.setupSafetySolver();
+    ds.setupSafetySolver(to);
     std::srand(std::time(0));
     ExprSet itpCands;
 
@@ -844,7 +844,7 @@ namespace ufo
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(string(chcfile));
     RndLearner ds(m_efac, z3, ruleManager, to, false, false, false, false, false);
-    ds.setupSafetySolver();
+    ds.setupSafetySolver(to);
 
     vector<string> invNames;
     for (auto& dcl: ruleManager.decls)
