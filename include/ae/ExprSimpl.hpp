@@ -1185,6 +1185,12 @@ namespace ufo
         if (isOpX<FALSE>(exp->right()))
           return mkNeg(exp->left());
 
+        if (isOpX<TRUE>(exp->left()))
+          return exp->right();
+
+        if (isOpX<FALSE>(exp->left()))
+          return mk<TRUE>(efac);
+
 //        return simplifyBool(mk<OR>(
 //                 mkNeg(exp->left()),
 //                 exp->right()));
@@ -1291,6 +1297,12 @@ namespace ufo
           (isOp<ComparissonOp>(exp->left()) ||
            isOpX<TRUE>(exp->left()) || isOpX<FALSE>(exp->left())))
         return mkNeg(exp->left());
+
+      if (isOpX<NEG>(exp) && isOpX<NEG>(exp->left()))
+        return exp->left()->left();
+
+      if ((isOpX<FORALL>(exp) || isOpX<EXISTS>(exp)) && (isOpX<TRUE>(exp->last()) || isOpX<FALSE>(exp->last())))
+        return exp->last();
 
       return exp;
     }
