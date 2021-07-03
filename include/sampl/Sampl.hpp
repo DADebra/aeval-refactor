@@ -424,7 +424,9 @@ namespace ufo
       }
     }
 
-    Expr getRandCand(Expr root)
+    // qvars is set of quantifier variables for this expression.
+    // Using pointer because we need it to be nullable.
+    Expr getRandCand(Expr root, unordered_set<Expr> *qvars)
     {
       if (isOpX<FAPP>(root))
       {
@@ -446,7 +448,7 @@ namespace ufo
             // Offset by 1 because arg(0) is the fdecl.
             int randindex = (rand() % (root->arity() - 1)) + 1;
 
-            cand = getRandCand(root->arg(randindex));
+            cand = getRandCand(root->arg(randindex), qvars);
             return cand;
           }
         }
@@ -454,7 +456,11 @@ namespace ufo
         {
           // Root is user-defined non-terminal
           if (defs[root] != NULL)
-            return getRandCand(defs[root]);
+            return getRandCand(defs[root], qvars);
+          else if (qvars != NULL && 
+           qvars->find(root->first()) != qvars->end())
+            // Root is a variable for a surrounding quantifier
+            return root;
           else
           {
             // There's no definition, we're expanding an empty *_VARS
@@ -476,16 +482,30 @@ namespace ufo
       // Root is Z3-defined non-terminal
 
       ExprVector expanded_args;
+      unordered_set<Expr> localqvars;
+
+      if (qvars != NULL)
+        for (auto& var : *qvars)
+          localqvars.insert(var);
+
+      if (isOpX<FORALL>(root) || isOpX<EXISTS>(root))
+      {
+        // Add quantifier variables to qvars
+        for (int i = 0; i < root->arity() - 1; ++i)
+        {
+          localqvars.insert(root->arg(i));
+        }
+      }
 
       for (auto itr = root->args_begin();
            itr != root->args_end(); ++itr)
-        expanded_args.push_back(getRandCand(*itr));
+        expanded_args.push_back(getRandCand(*itr, &localqvars));
 
       // Don't generate undefined candidates (e.g. mod by 0)
       if (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root))
       {
         while (isOpX<MPZ>(expanded_args.back()) && lexical_cast<cpp_int>(expanded_args.back()) <= 0)
-          expanded_args.back() = getRandCand(root->last());
+          expanded_args.back() = getRandCand(root->last(), qvars);
       }
 
       return m_efac.mkNary(root->op(), expanded_args);
@@ -503,7 +523,7 @@ namespace ufo
         {
           // Generate a (possibly old) candidate from the grammar,
           // and simplify
-          randcand = simplifyBool(simplifyArithm(getRandCand(inv), false, false));
+          randcand = simplifyBool(simplifyArithm(getRandCand(inv, NULL)));
           auto ret = gramCands.insert(randcand);
           if (ret.second)
             // We generated a new candidate, so return to caller.

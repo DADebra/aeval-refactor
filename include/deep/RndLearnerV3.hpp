@@ -265,7 +265,7 @@ namespace ufo
       Expr allLemmas = sf.getAllLemmas();
       if (containsOp<FORALL>(cnd) || containsOp<FORALL>(allLemmas))
       {
-        if (containsOp<FORALL>(cnd))
+        if (containsOp<FORALL>(cnd) && grams.empty())
         {
           auto hr = ruleManager.getFirstRuleOutside(decls[invNum]);
           assert(hr != NULL);
