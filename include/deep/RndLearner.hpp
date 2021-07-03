@@ -499,7 +499,7 @@ namespace ufo
       {
         vector<SamplFactory>& sf = sfs[ind];
         sf.push_back(SamplFactory (m_efac, m_z3, aggressivepruning, 
-              printLog, grams[lexical_cast<string>(decls[ind])]));
+              printLog));
 
         SamplFactory& sf_before = sf[sf.size()-2];
         SamplFactory& sf_after = sf.back();
@@ -522,7 +522,7 @@ namespace ufo
           sf_after.assignPrioritiesForLearned();
         }
 
-        sf_after.initialize_gram(lexical_cast<string>(bind::fname(decls[ind])));
+        sf_after.initialize_gram(grams[lexical_cast<string>(decls[ind])], lexical_cast<string>(bind::fname(decls[ind])));
       }
     }
 
@@ -540,7 +540,7 @@ namespace ufo
 
       sfs.push_back(vector<SamplFactory> ());
       sfs.back().push_back(SamplFactory (m_efac, m_z3, aggressivepruning, 
-            printLog, grams[lexical_cast<string>(bind::fname(invDecl))]));
+            printLog));
       SamplFactory& sf = sfs.back().back();
 
       for (auto& pair : ruleManager.invVars)
@@ -560,6 +560,8 @@ namespace ufo
       arrCands.push_back(ExprSet());
       arrAccessVars.push_back(ExprVector());
       arrIterRanges.push_back(ExprSet());
+
+      sf.initialize_gram(grams[lexical_cast<string>(bind::fname(invDecl))], lexical_cast<string>(invDecl));
 
       invNumber++;
     }
@@ -642,7 +644,7 @@ namespace ufo
 
       sf.initialize(arrCands[ind], arrAccessVars[ind], arrIterRanges[ind]);
 
-      sf.initialize_gram(lexical_cast<string>(invRel));
+      sf.initialize_intconsts();
 
       ExprSet allCands;
       for (auto &cs : css)

@@ -57,9 +57,6 @@ namespace ufo
     // The root of the tree of the grammar
     Expr inv;
 
-    // The file location of the grammar SMT2 file
-    string gram_file;
-
     // All variables mentioned in the file, regardless of type.
     // Variables are for the invariant stored in 'inv'
     // Key: Sort, Value: List of variables of that sort.
@@ -82,13 +79,12 @@ namespace ufo
 
     bool initilized = true;
 
-    SamplFactory(ExprFactory &_efac, EZ3 &_z3, bool aggp, bool _printLog, 
-        string grammar) :
+    SamplFactory(ExprFactory &_efac, EZ3 &_z3, bool aggp, bool _printLog) :
       m_efac(_efac), z3(_z3), lf(_efac, aggp), bf(_efac), af(_efac, aggp),
-      gram_file(grammar), printLog(_printLog), inv(NULL) {}
+      printLog(_printLog), inv(NULL) {}
 
     // Parse the grammar file. Must be called after addVar(s)
-    void initialize_gram(string inv_fname)
+    void initialize_gram(string gram_file, string inv_fname)
     {
       // gram_file will be empty if we don't pass `--grammar` option
       if (!gram_file.empty())
@@ -101,9 +97,6 @@ namespace ufo
         // The set of eithers we need to generate. 
         // Not worth making a distinction between sorts.
         unordered_set<int> eithers_to_gen;
-
-        // Generate enough eithers for INT_CONSTS
-        eithers_to_gen.insert(lf.getConsts().size());
 
         // Generate enough eithers for *_VARS
         for (auto& pair : inv_vars)
@@ -221,19 +214,8 @@ namespace ufo
         generate_all(inv_vars, true);
         generate_all(other_inv_vars, false);
 
-        // Generate INT_CONSTS definition
+        // Generate INT_CONSTS declaration
         aug_gram << "(declare-fun INT_CONSTS () Int)" << endl;
-
-        if (lf.getConsts().size() != 0)
-        {
-          aug_gram << "(assert (= INT_CONSTS ";
-          aug_gram << "(Int_either_" << lf.getConsts().size() << " ";
-          for (auto& c : lf.getConsts())
-          {
-            aug_gram << c << " ";
-          }
-          aug_gram << ")))" << endl;
-        }
 
         aug_gram << user_cfg.str();
 
@@ -273,6 +255,22 @@ namespace ufo
       {
         if (inv == NULL) outs() << "Using built-in grammar." << endl;
         else outs() << "Using user-provided grammar(s)." << endl;
+      }
+    }
+
+    // Properly initialize INT_CONSTS now that we've found them
+    void initialize_intconsts() {
+      if (lf.getConsts().size() != 0)
+      {
+        Expr eitherfunc = bind::fdecl(mkTerm(string("Int_either_") + to_string(lf.getConsts().size()), m_efac),
+            ExprVector(lf.getConsts().size(), m_efac.mkTerm(INT_TY())));
+
+        ExprVector intconstsargs;
+        for (auto& c : lf.getConsts())
+          intconstsargs.push_back(mkMPZ(c, m_efac));
+
+        Expr int_consts = bind::intConst(mkTerm(string("INT_CONSTS"), m_efac));
+        defs[int_consts] = bind::fapp(eitherfunc, intconstsargs);
       }
     }
 
@@ -466,7 +464,7 @@ namespace ufo
             // There's no definition, we're expanding an empty *_VARS
             outs() << "ERROR: There is no definition for user-defined " << 
               "non-terminal " << root << " in the CFG for " << inv << 
-              ". Exiting." << endl;
+              ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
             exit(1);
             // We never get here
             return NULL;
