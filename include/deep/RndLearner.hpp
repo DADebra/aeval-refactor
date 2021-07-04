@@ -6,9 +6,7 @@
 #include "ae/SMTUtils.hpp"
 #include "sampl/SeedMiner.hpp"
 #include "sampl/Sampl.hpp"
-
-#include <iostream>
-#include <fstream>
+#include "sampl/GramFac.hpp"
 
 using namespace std;
 using namespace boost;
@@ -384,61 +382,6 @@ namespace ufo
       outs () << "\nInvariant serialized to " << outfile << "\n";
     }
 
-    // Returns the path to the CFG (within 'grams') corresponding to invDecl.
-    // Returns the empty string if no appropriate CFG is found.
-    // Set 'useany' to only look for ANY_INV.
-    static string findGram(vector<string>& grams, Expr invDecl, 
-        bool useany = false)
-    {
-      string invName = lexical_cast<string>(invDecl->left());
-
-      // The declarations in the grammar we're looking for.
-      // Note: a (declare-rel) won't work, so we don't need to look for it.
-      string finddecl1 = "(declare-fun " + invName + " () Bool)";
-      string finddecl2 = "(declare-var " + invName + " Bool)";
-      string finddecl3 = "(declare-fun ANY_INV () Bool)";
-      string finddecl4 = "(declare-var ANY_INV Bool)";
-
-      for (auto& gramstr : grams)
-      {
-        ifstream gramfile(gramstr);
-        string line;
-        while (getline(gramfile, line))
-        {
-          if (!useany)
-          {
-            // Prioritize the exact invariant decl over ANY_INV
-            if (line.find(finddecl1) != string::npos || 
-              line.find(finddecl2) != string::npos)
-            {
-              gramfile.close();
-              return gramstr;
-            }
-          }
-          else
-          {
-            if (line.find(finddecl3) != string::npos || 
-              line.find(finddecl4) != string::npos)
-            {
-              gramfile.close();
-              return gramstr;
-            }
-          }
-        }
-      }
-
-      if (!useany)
-      {
-        // Retry, looking for ANY_INV this time.
-        return std::move(findGram(grams, invDecl, true));
-      }
-      else
-      {
-        // We've exhausted the list of grammars, return failure.
-        return "";
-      }
-    }
-
     bool fillgrams(vector<string>& grammars)
     {
       if (grammars.empty())
@@ -446,7 +389,7 @@ namespace ufo
       // Figure out which CFG corresponds to which invariant
       for (auto& dcl : ruleManager.decls)
       {
-        string gram = std::move(findGram(grammars, dcl));
+        string gram = std::move(CFGUtils::findGram(grammars, dcl));
         if (gram.empty())
         {
           outs() << "Error: No CFG provided for invariant \"" << dcl << "\"";
@@ -498,8 +441,7 @@ namespace ufo
       for(auto ind : rels2update)
       {
         vector<SamplFactory>& sf = sfs[ind];
-        sf.push_back(SamplFactory (m_efac, m_z3, aggressivepruning, 
-              printLog));
+        sf.push_back(SamplFactory (m_efac, m_z3, aggressivepruning, false));
 
         SamplFactory& sf_before = sf[sf.size()-2];
         SamplFactory& sf_after = sf.back();
@@ -511,6 +453,8 @@ namespace ufo
               sf_after.addOtherVar(var.second);
         sf_after.lf.nonlinVars = sf_before.lf.nonlinVars;
 
+        sf_after.initialize_gram(grams[lexical_cast<string>(decls[ind])], lexical_cast<string>(bind::fname(decls[ind])));
+
         ExprSet stub;
         doSeedMining(decls[ind], stub);
 
@@ -521,8 +465,6 @@ namespace ufo
           sf_after.exprToSampl(a);
           sf_after.assignPrioritiesForLearned();
         }
-
-        sf_after.initialize_gram(grams[lexical_cast<string>(decls[ind])], lexical_cast<string>(bind::fname(decls[ind])));
       }
     }
 
@@ -639,12 +581,10 @@ namespace ufo
           }
         }
         progConsts.erase(min);
-        sf.lf.addConst(min);
+        sf.addIntConst(min);
       }
 
       sf.initialize(arrCands[ind], arrAccessVars[ind], arrIterRanges[ind]);
-
-      sf.initialize_intconsts();
 
       ExprSet allCands;
       for (auto &cs : css)
