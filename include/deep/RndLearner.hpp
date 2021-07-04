@@ -503,7 +503,7 @@ namespace ufo
       arrAccessVars.push_back(ExprVector());
       arrIterRanges.push_back(ExprSet());
 
-      sf.initialize_gram(grams[lexical_cast<string>(bind::fname(invDecl))], lexical_cast<string>(invDecl));
+      sf.initialize_gram(grams[lexical_cast<string>(bind::fname(invDecl))], lexical_cast<string>(bind::fname(invDecl)));
 
       invNumber++;
     }
