@@ -6,9 +6,13 @@
 #include <fstream>
 #include <cctype>
 #include <regex>
+#include <tuple>
+
+#include <boost/coroutine2/coroutine.hpp>
 
 using namespace std;
 using namespace boost;
+using namespace boost::coroutines2;
 
 namespace ufo
 {
@@ -18,11 +22,30 @@ namespace ufo
   typedef unordered_set<Expr> ExprUSet;
   typedef unordered_map<Expr, Expr> ExprUMap;
 
+  // Candidate generation method.
+  //   RND - Completely random candidate without replacement.
+  //   TRAV - Traverse full grammar up to specified depth.
+  enum class GramGenMethod { RND, TRAV };
+
+  // Parameters for generation using grammar.
+  //   1st - GramGenMethod
+  //   2nd - Maximum recursion depth
+  typedef std::tuple<GramGenMethod, int> GramParams;
+
   class GRAMfactory
   {
     private:
 
+    // A coroutine returning an Expr.
+    typedef coroutine<Expr>::pull_type ExprCoro;
+
+    // The main coroutine we use to traverse the grammar.
+    std::unique_ptr<ExprCoro> getNextCandTrav;
+
+    // Needed for candidate generation.
     ExprFactory &m_efac;
+
+    // Needed for parsing grammar.
     EZ3 &z3;
 
     // Previously generated candidates from sample grammar
@@ -49,14 +72,188 @@ namespace ufo
     // Whether to print debugging information or not.
     bool printLog;
 
+    /*** PARAMETERS (respective to GramParams) ***/
+
+    // How this GRAMfactory will generate candidates.
+    GramGenMethod genmethod;
+
+    // The maximum recursion depth during traversal.
+    int maxrecdepth;
+
     public:
 
     bool initialized = false;
 
-    GRAMfactory(ExprFactory &_efac, EZ3 &_z3, bool _printLog) :
-      m_efac(_efac), z3(_z3), printLog(_printLog) {}
-
     private:
+
+    // exp is e.g. (= iterm iterm), nonterm is e.g. iterm
+    bool isRecursive(Expr exp, Expr nonterm)
+    {
+      for (auto itr = exp->args_begin(); itr != exp->args_end(); ++itr)
+      {
+        if (*itr == nonterm)
+          return true;
+      }
+      // Handle simple recursion
+      if (exp == nonterm)
+        return true;
+
+      return false;
+    }
+
+    void getNextCandTrav_fn(coroutine<Expr>::push_type &sink, Expr root = NULL,
+        int currdepth = 0, ExprUSet *qvars = NULL, Expr currnt = NULL)
+    {
+      if (root == NULL)
+        root = inv;
+
+      if (isOpX<FAPP>(root))
+      {
+        string fname = lexical_cast<string>(bind::fname(root)->left());
+        const ExprUSet &sortvars = inv_vars[bind::typeOf(root)];
+        if (sortvars.find(root) != sortvars.end())
+        {
+          // Root is a symbolic variable; don't expand.
+          sink(root);
+          return;
+        }
+
+        // Else, root is a user-defined non-terminal or *either*
+
+        if (fname.find("either") != string::npos)
+        {
+          // Randomly select from the available productions.
+          vector<int> order;
+          set<int> done;
+          while (done.size() < root->arity() - 1)
+          {
+            // Offset by 1 because arg(0) is the fdecl.
+            int randnum = (rand() % (root->arity() - 1)) + 1;
+
+            if (!done.insert(randnum).second)
+              continue;
+
+            // Don't traverse past maximum depth
+            if (!isRecursive(root->arg(randnum), currnt) ||
+            currdepth + 1 <= maxrecdepth)
+              order.push_back(randnum);
+          }
+
+          for (int i : order)
+          {
+            int newdepth;
+            if (isRecursive(root->arg(i), currnt))
+              newdepth = currdepth + 1;
+            else
+              newdepth = currdepth;
+
+            for (Expr exp : getCandCoro(root->arg(i), newdepth, qvars, currnt))
+              sink(exp);
+          }
+          return;
+        }
+        else
+        {
+          // Root is user-defined non-terminal
+          if (defs[root] != NULL)
+          {
+            for (Expr exp : getCandCoro(defs[root], root == currnt ? currdepth : 0, qvars, root))
+              sink(exp);
+            return;
+          }
+          else if (qvars != NULL &&
+          qvars->find(root->first()) != qvars->end())
+          {
+              // Root is a variable for a surrounding quantifier
+              sink(root);
+              return;
+          }
+          else
+          {
+            // There's no definition, we're expanding an empty *_VARS
+            outs() << "ERROR: There is no definition for user-defined " <<
+              "non-terminal " << root << " in the CFG for " << inv <<
+              ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
+            exit(1);
+          }
+        }
+      }
+      else if (root->arity() == 0)
+      {
+        // Root is a Z3 terminal, e.g. Int constant, e.g. 3
+        sink(root);
+        return;
+      }
+
+      // Root is Z3-defined non-terminal
+
+      ExprUSet localqvars;
+
+      if (qvars != NULL)
+        for (auto& var : *qvars)
+          localqvars.insert(var);
+
+      if (isOpX<FORALL>(root) || isOpX<EXISTS>(root))
+      {
+        // Add quantifier variables to qvars
+        for (int i = 0; i < root->arity() - 1; ++i)
+        {
+          localqvars.insert(root->arg(i));
+        }
+      }
+
+      // The set of Expr's we'll use to generate this n-ary expression.
+      ExprVector expanded_args;
+      // The corresponding coroutines for each entry in expanded_args.
+      vector<ExprCoro> argcoros;
+
+      // Initialize all arguments to valid Expr's;
+      //   otherwise we can't do mkNary below.
+      for (auto itr = root->args_begin();
+           itr != root->args_end(); ++itr)
+      {
+        argcoros.push_back(getCandCoro(*itr, currdepth, &localqvars, currnt));
+        expanded_args.push_back(argcoros.back().get());
+        argcoros.back()();
+      }
+
+      // We just generated the first candidate; sink it.
+      sink(m_efac.mkNary(root->op(), expanded_args));
+
+      for (int x = 0; x < argcoros.size(); ++x)
+      {
+        ExprCoro &corox = argcoros[x];
+        for (Expr expx : corox)
+        {
+          expanded_args[x] = expx;
+
+          if (x == 0)
+            // If x == 0, then bottom for loop never runs and we never sink.
+            sink(m_efac.mkNary(root->op(), expanded_args));
+
+          for (int y = 0; y < x; ++y)
+          {
+            ExprCoro &coroy = argcoros[y];
+            if (!coroy)
+              coroy = getCandCoro(root->arg(y), currdepth, &localqvars, currnt);
+            for (Expr expy : coroy)
+            {
+              expanded_args[y] = expy;
+              sink(m_efac.mkNary(root->op(), expanded_args));
+            }
+          }
+        }
+      }
+
+      // Traversal of root done.
+      return;
+    }
+    ExprCoro getCandCoro(Expr root = NULL, int currdepth = 0,
+      ExprUSet *qvars = NULL, Expr currnt = NULL)
+    {
+      return std::move(ExprCoro(std::bind(&GRAMfactory::getNextCandTrav_fn, this,
+            std::placeholders::_1, root, currdepth, qvars, currnt)));
+    }
 
     // qvars is set of quantifier variables for this expression.
     // Using pointer because we need it to be nullable.
@@ -148,6 +345,10 @@ namespace ufo
 
     public:
 
+    GRAMfactory(ExprFactory &_efac, EZ3 &_z3, bool _printLog) :
+      m_efac(_efac), z3(_z3), printLog(_printLog), inv(NULL),
+      getNextCandTrav(nullptr) {}
+
     void addVar(Expr var)
     {
       inv_vars[bind::typeOf(var)].insert(var);
@@ -161,6 +362,16 @@ namespace ufo
     void addIntConst(cpp_int iconst)
     {
       int_consts.insert(mkMPZ(iconst, m_efac));
+    }
+
+    void setParams(GramParams params)
+    {
+      std::tie(genmethod, maxrecdepth) = params;
+    }
+
+    GramParams getParams()
+    {
+      return std::move(std::make_tuple(genmethod, maxrecdepth));
     }
 
     // Parse the grammar file. Must be called after addVar(s).
@@ -352,6 +563,16 @@ namespace ufo
         Expr int_consts_decl = bind::intConst(mkTerm(string(INT_CONSTS), m_efac));
         defs[int_consts_decl] = bind::fapp(eitherfunc, int_consts);
       }
+
+      if (initialized && genmethod == GramGenMethod::TRAV)
+      {
+        ExprUSet *qvars = NULL;
+        int currdepth = 0;
+        Expr currnt = NULL;
+        getNextCandTrav = std::unique_ptr<ExprCoro>(new ExprCoro(
+            std::bind(&GRAMfactory::getNextCandTrav_fn, this,
+            std::placeholders::_1, inv, currdepth, qvars, currnt)));
+      }
     }
 
     Expr getFreshCandidate()
@@ -361,23 +582,34 @@ namespace ufo
 
       Expr randcand;
 
-      while (true)
+      switch (genmethod)
       {
-        // Generate a (possibly old) candidate from the grammar,
-        // and simplify
-        randcand = simplifyBool(simplifyArithm(getRandCand(inv)));
-        auto ret = gramCands.insert(randcand);
-        if (ret.second)
-          // We generated a new candidate, so return to caller.
-          break;
-
-        // Else, we generated an existing grammar. Try again.
+        case GramGenMethod::TRAV:
+          // Generate a (possibly old) candidate from the grammar,
+          // and simplify
+          if (!*getNextCandTrav)
+          {
+            outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
+            exit(0);
+            return NULL;
+          }
+          randcand = simplifyBool(simplifyArithm(getNextCandTrav->get()));
+          (*getNextCandTrav)();
+          return randcand;
+        case GramGenMethod::RND:
+          /*while (true)
+          {*/
+            randcand = simplifyBool(simplifyArithm(getRandCand(inv)));
+            /*auto ret = gramCands.insert(randcand);
+            if (ret.second)
+              // Candidate is new
+              break;
+          }*/
+          return randcand;
       }
 
-      // We return 'false' and 'true' once, but since they get added
-      // to gramCands we never return them again.
-      // Thus, we don't bother checking for them.
-      return randcand;
+      // Should never happen.
+      return NULL;
     }
   };
 
@@ -438,6 +670,16 @@ namespace ufo
         // We've exhausted the list of grammars, return failure.
         return "";
       }
+    }
+
+    static GramGenMethod strtogenmethod(const char* methodstr)
+    {
+      if (!strcmp(methodstr, "rnd"))
+        return GramGenMethod::RND;
+      if (!strcmp(methodstr, "traverse"))
+        return GramGenMethod::TRAV;
+
+      return GramGenMethod::RND;
     }
   };
 }

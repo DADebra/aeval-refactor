@@ -13,7 +13,7 @@ bool getBoolValue(const char * opt, bool defValue, int argc, char ** argv)
   return defValue;
 }
 
-char * getStrValue(const char * opt, char * defValue, int argc, char ** argv)
+const char * getStrValue(const char * opt, const char * defValue, int argc, char ** argv)
 {
   for (int i = 1; i < argc-1; i++)
   {
@@ -73,6 +73,8 @@ int main (int argc, char ** argv)
   const char *OPT_D4 = "--stren-mbp";
   const char *OPT_DEBUG = "--debug";
   const char *OPT_GRAMMAR = "--grammar";
+  const char *OPT_GRAM_GEN = "--gen_method";
+  const char *OPT_GRAM_MAXREC = "--maxrecdepth";
 
   if (getBoolValue(OPT_HELP, false, argc, argv) || argc == 1){
     outs () <<
@@ -104,6 +106,10 @@ int main (int argc, char ** argv)
         "V3 options only:\n" <<
         " " << OPT_DATA_LEARNING << "                          bootstrap candidates from behaviors\n" <<
         " " << OPT_ELIM << "                     do not minimize CHC rules (and do not slice)\n\n" <<
+        "Grammar options only:\n" <<
+        " " << OPT_GRAM_GEN << " <rnd, traverse>    use specified method to generate candidates from grammar\n" <<
+        "                                 'rnd' is completely random, 'traverse' will traverse the CFG\n" <<
+        " " << OPT_GRAM_MAXREC << " <n>               maximum recursion depth\n\n" <<
         "ImplCheck options only (\"" << OPT_DATA_LEARNING << "\" enabled automatically):\n" <<
         " " << OPT_DISJ << "                          prioritize disjunctive invariants\n" <<
         " " << OPT_D1 << "                       search for phases among all MBPs (needs \"" << OPT_DISJ <<"\")\n" <<
@@ -137,7 +143,7 @@ int main (int argc, char ** argv)
   int retry = getIntValue(OPT_RETRY, 3, argc, argv);
   int do_elim = !getBoolValue(OPT_ELIM, false, argc, argv);
   int do_disj = getBoolValue(OPT_DISJ, false, argc, argv);
-  char * outfile = getStrValue(OPT_OUT_FILE, NULL, argc, argv);
+  const char * outfile = getStrValue(OPT_OUT_FILE, NULL, argc, argv);
   bool do_dl = do_disj || getBoolValue(OPT_DATA_LEARNING, false, argc, argv);
   bool d_m = getBoolValue(OPT_D1, false, argc, argv);
   bool d_p = getBoolValue(OPT_D2, false, argc, argv);
@@ -145,16 +151,22 @@ int main (int argc, char ** argv)
   bool d_s = getBoolValue(OPT_D4, false, argc, argv);
   vector<string> grammars;
   getStrValues(OPT_GRAMMAR, grammars, argc, argv);
+  GramParams gramparams = make_tuple(
+    CFGUtils::strtogenmethod(getStrValue(OPT_GRAM_GEN, "rnd", argc, argv)),
+    getIntValue(OPT_GRAM_MAXREC, 3, argc, argv));
 
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
-    learnInvariants3(string(argv[argc-1]), grammars, max_attempts, to, densecode, aggressivepruning,
-                     do_dl, do_elim, do_disj, d_m, d_p, d_d, d_s, debug);
+    learnInvariants3(string(argv[argc-1]), grammars, max_attempts, to,
+      densecode, aggressivepruning, do_dl, do_elim, do_disj, d_m, d_p, d_d, d_s,
+      debug, gramparams);
   else if (vers2) // run the TACAS'18 algorithm
-    learnInvariants2(string(argv[argc-1]), grammars, to, outfile, max_attempts,
-                  itp, batch, retry, densecode, aggressivepruning, debug);
+    learnInvariants2(string(argv[argc-1]), grammars, to, outfile,
+      max_attempts, itp, batch, retry, densecode, aggressivepruning, debug,
+      gramparams);
   else            // run the FMCAD'17 algorithm
-    learnInvariants(string(argv[argc-1]), grammars, to, outfile, max_attempts, debug,
-                  kinduction, itp, densecode, addepsilon, aggressivepruning);
+    learnInvariants(string(argv[argc-1]), grammars, to, outfile,
+      max_attempts, debug, gramparams, kinduction, itp, densecode,
+      addepsilon, aggressivepruning);
   
   return 0;
 }

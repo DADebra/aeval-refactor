@@ -8,6 +8,8 @@
 #include "sampl/Sampl.hpp"
 #include "sampl/GramFac.hpp"
 
+#include <boost/optional.hpp>
+
 using namespace std;
 using namespace boost;
 namespace ufo
@@ -454,6 +456,7 @@ namespace ufo
         sf_after.lf.nonlinVars = sf_before.lf.nonlinVars;
 
         sf_after.initialize_gram(grams[lexical_cast<string>(decls[ind])], lexical_cast<string>(bind::fname(decls[ind])));
+        sf_after.gf.setParams(sf_before.gf.getParams());
 
         ExprSet stub;
         doSeedMining(decls[ind], stub);
@@ -468,7 +471,7 @@ namespace ufo
       }
     }
 
-    void initializeDecl(Expr invDecl)
+    void initializeDecl(Expr invDecl, optional<GramParams> gramparams=none)
     {
 //      assert (invDecl->arity() > 2);
       assert(decls.size() == invNumber);
@@ -504,6 +507,8 @@ namespace ufo
       arrIterRanges.push_back(ExprSet());
 
       sf.initialize_gram(grams[lexical_cast<string>(bind::fname(invDecl))], lexical_cast<string>(bind::fname(invDecl)));
+      if (gramparams)
+        sf.gf.setParams(*gramparams);
 
       invNumber++;
     }
@@ -620,7 +625,8 @@ namespace ufo
       }
     }
 
-    void synthesize(int maxAttempts, char * outfile, ExprSet& itpCands)
+    void synthesize(int maxAttempts, const char * outfile,
+      ExprSet& itpCands)
     {
       bool success = false;
       int iter = 1;
@@ -730,8 +736,10 @@ namespace ufo
     }
   };
 
-  inline void learnInvariants(string smt, vector<string> grammars, unsigned to, char * outfile, int maxAttempts, bool debug,
-                              bool kind=false, int itp=0, bool b1=true, bool b2=true, bool b3=true)
+  inline void learnInvariants(string smt, vector<string> grammars,
+      unsigned to, const char * outfile, int maxAttempts, bool debug,
+      GramParams gramparams, bool kind=false, int itp=0, bool b1=true,
+      bool b2=true, bool b3=true)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -768,7 +776,7 @@ namespace ufo
     ExprSet stub;
     for (auto& dcl: ruleManager.decls)
     {
-      ds.initializeDecl(dcl);
+      ds.initializeDecl(dcl, gramparams);
       ds.doSeedMining(dcl->arg(0), stub);
     }
 

@@ -1530,8 +1530,8 @@ namespace ufo
 
   inline void learnInvariants3(string smt, vector<string> grammars,
       unsigned maxAttempts, unsigned to, bool freqs, bool aggp,
-      bool enableDataLearning, bool doElim, bool doDisj,
-      bool dAllMbp, bool dAddProp, bool dAddDat, bool dStrenMbp, bool debug)
+      bool enableDataLearning, bool doElim, bool doDisj, bool dAllMbp,
+      bool dAddProp, bool dAddDat, bool dStrenMbp, bool debug, GramParams gramps)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -1551,7 +1551,7 @@ namespace ufo
       return; // Couldn't find grammars for all invariants.
 
     map<Expr, ExprSet> cands;
-    for (auto& dcl: ruleManager.decls) ds.initializeDecl(dcl);
+    for (auto& dcl: ruleManager.decls) ds.initializeDecl(dcl, gramps);
 
     for (int i = 0; i < ruleManager.cycles.size(); i++)
     {

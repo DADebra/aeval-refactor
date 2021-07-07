@@ -824,7 +824,7 @@ namespace ufo
       if (divider == 0)
         // Don't try to calculate; causes Div by 0 otherwise.
         // We can't simplify, because mod by 0 is undefined in Z3
-        return e;
+        return e->left();
 
       ExprVector ops;
       getMultOps (e->left(), ops);
@@ -833,6 +833,9 @@ namespace ufo
       if (ops.size() == 1 && isOpX<MPZ>(e->left()))
       {
         cpp_int arg = lexical_cast<cpp_int>(e->left());
+        // Z3 doesn't handle negative dividers properly.
+        if (divider < 0)
+          divider = -divider;
         // C++'s % operator doesn't handle negatives properly.
         if (arg < 0)
           arg += ((-arg / divider) + 1) * divider;
