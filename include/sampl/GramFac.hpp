@@ -9,6 +9,8 @@
 #include <tuple>
 
 #include <boost/coroutine2/coroutine.hpp>
+#include <boost/optional.hpp>
+#include <boost/optional/optional_io.hpp>
 
 using namespace std;
 using namespace boost;
@@ -18,6 +20,8 @@ namespace ufo
 {
   const char* ANY_INV = "ANY_INV";
   const char* INT_CONSTS = "INT_CONSTS";
+  // The maximum number of previous candidates we store.
+  const int MAXGRAMCANDS = 100;
 
   typedef unordered_set<Expr> ExprUSet;
   typedef unordered_map<Expr, Expr> ExprUMap;
@@ -27,10 +31,16 @@ namespace ufo
   //   TRAV - Traverse full grammar up to specified depth.
   enum class GramGenMethod { RND, TRAV };
 
+  enum class TravParamDirection { LTR, RTL, RND };
+  enum class TravParamOrder { FORWARD, REVERSE, RND };
+  enum class TravParamType { ORDERED, STRIPED };
+  enum class TravParamPrio { SFS, DFS, BFS };
+
   // Parameters for generation using grammar.
   //   1st - GramGenMethod
   //   2nd - Maximum recursion depth
-  typedef std::tuple<GramGenMethod, int> GramParams;
+  typedef std::tuple<GramGenMethod, int, TravParamDirection, TravParamOrder,
+          TravParamType, TravParamPrio> GramParams;
 
   class GRAMfactory
   {
@@ -38,6 +48,111 @@ namespace ufo
 
     // A coroutine returning an Expr.
     typedef coroutine<Expr>::pull_type ExprCoro;
+
+    class ExprCoroCacheIter;
+
+    class ExprCoroCache
+    {
+      public:
+      vector<Expr> outcache;
+      ExprCoro coro;
+
+
+      friend class ExprCoroCacheIter;
+
+      ExprCoroCache(ExprCoro _coro) : coro(std::move(_coro)) {}
+
+      ExprCoroCacheIter begin()
+      {
+        return ExprCoroCacheIter(0, *this);
+      }
+
+      ExprCoroCacheIter end()
+      {
+        return ExprCoroCacheIter(-1, *this);
+      }
+    };
+
+    class ExprCoroCacheIter
+    {
+      int pos = 0;
+      ExprCoroCache &cache;
+
+      inline void advancecoro()
+      {
+        while (cache.outcache.size() <= pos && cache.coro)
+        {
+          cache.outcache.push_back(cache.coro.get());
+          cache.coro();
+        }
+        if (cache.outcache.size() <= pos)
+          pos = -1;
+      }
+
+      public:
+
+      ExprCoroCacheIter(int _pos, ExprCoroCache& _cache) : pos(_pos),
+        cache(_cache) {}
+
+      operator bool()
+      {
+        return pos >= 0;
+      }
+
+      Expr get()
+      {
+        if (pos < 0)
+          return nullptr;
+
+        advancecoro();
+
+        if (pos < 0)
+          return nullptr;
+
+        return cache.outcache[pos];
+      }
+
+      void operator()()
+      {
+        ++pos;
+        advancecoro();
+      }
+
+      ExprCoroCacheIter& operator++()
+      {
+        ++pos;
+        advancecoro();
+        return *this;
+      }
+
+      Expr operator*()
+      {
+        return get();
+      }
+
+      ExprCoroCacheIter begin()
+      {
+        return std::move(ExprCoroCacheIter(pos, cache));
+      }
+
+      ExprCoroCacheIter end()
+      {
+        return std::move(ExprCoroCacheIter(-1, cache));
+      }
+    };
+
+    class tuplehash
+    {
+      public:
+      size_t operator()(const std::tuple<Expr,int,std::shared_ptr<ExprUSet>,
+      Expr>& tup) const
+      {
+        return std::hash<Expr>()(std::get<0>(tup)) *
+          std::hash<int>()(std::get<1>(tup)) *
+          std::hash<std::shared_ptr<ExprUSet>>()(std::get<2>(tup)) *
+          std::hash<Expr>()(std::get<3>(tup));
+      }
+    };
 
     // The main coroutine we use to traverse the grammar.
     std::unique_ptr<ExprCoro> getNextCandTrav;
@@ -50,6 +165,15 @@ namespace ufo
 
     // Previously generated candidates from sample grammar
     ExprUSet gramCands;
+    deque<Expr> gramCandsOrder;
+
+    // Variables for debugging coroutine creation/deletion
+    //unordered_map<Expr, int> currnumtravcoros;
+    //int currnumcandcoros = 0;
+
+    // The sub-candidates previously generated with root == key
+    unordered_map<std::tuple<Expr,int,std::shared_ptr<ExprUSet>,Expr>,
+      ExprCoroCache,tuplehash> corocache;
 
     // Key: Non-terminal, Value: Productions in b/ieither# format
     ExprUMap defs;
@@ -80,6 +204,11 @@ namespace ufo
     // The maximum recursion depth during traversal.
     int maxrecdepth;
 
+    TravParamDirection travdir;
+    TravParamOrder travorder;
+    TravParamType travtype;
+    TravParamPrio travprio;
+
     public:
 
     bool initialized = false;
@@ -91,7 +220,7 @@ namespace ufo
     {
       for (auto itr = exp->args_begin(); itr != exp->args_end(); ++itr)
       {
-        if (*itr == nonterm)
+        if (isRecursive(*itr, nonterm))
           return true;
       }
       // Handle simple recursion
@@ -101,11 +230,20 @@ namespace ufo
       return false;
     }
 
-    void getNextCandTrav_fn(coroutine<Expr>::push_type &sink, Expr root = NULL,
-        int currdepth = 0, ExprUSet *qvars = NULL, Expr currnt = NULL)
+    void getNextCandTrav_fn(coroutine<Expr>::push_type &sink,
+        Expr root = NULL, int currdepth = 0,
+        std::shared_ptr<ExprUSet> qvars = NULL, Expr currnt = NULL)
     {
+      //currnumcandcoros++;
       if (root == NULL)
         root = inv;
+
+      /*outs() << "getNextCandTrav(" << root << ", " << currdepth << ", ";
+      if (qvars != NULL)
+        printvec(outs(), *qvars);
+      else
+        outs() << "NULL";
+      outs() << ", " << currnt << ")" << endl;*/
 
       if (isOpX<FAPP>(root))
       {
@@ -115,6 +253,7 @@ namespace ufo
         {
           // Root is a symbolic variable; don't expand.
           sink(root);
+          //currnumcandcoros--;
           return;
         }
 
@@ -122,23 +261,47 @@ namespace ufo
 
         if (fname.find("either") != string::npos)
         {
-          // Randomly select from the available productions.
           vector<int> order;
-          set<int> done;
-          while (done.size() < root->arity() - 1)
+
+          if (travorder == TravParamOrder::FORWARD)
+            for (int i = 1; i < root->arity(); ++i)
+            {
+              if (!isRecursive(root->arg(i), currnt) ||
+              currdepth + 1 <= maxrecdepth)
+                order.push_back(i);
+            }
+          else if (travorder == TravParamOrder::REVERSE)
+            for (int i = root->arity() - 1; i >= 1; --i)
+            {
+              if (!isRecursive(root->arg(i), currnt) ||
+              currdepth + 1 <= maxrecdepth)
+                order.push_back(i);
+            }
+          else if (travorder == TravParamOrder::RND)
           {
-            // Offset by 1 because arg(0) is the fdecl.
-            int randnum = (rand() % (root->arity() - 1)) + 1;
+            set<int> done;
+            while (done.size() < root->arity() - 1)
+            {
+              // Offset by 1 because arg(0) is the fdecl.
+              int randnum = (rand() % (root->arity() - 1)) + 1;
 
-            if (!done.insert(randnum).second)
-              continue;
+              if (!done.insert(randnum).second)
+                continue;
 
-            // Don't traverse past maximum depth
-            if (!isRecursive(root->arg(randnum), currnt) ||
-            currdepth + 1 <= maxrecdepth)
-              order.push_back(randnum);
+              // Don't traverse past maximum depth
+              if (!isRecursive(root->arg(randnum), currnt) ||
+              currdepth + 1 <= maxrecdepth)
+                order.push_back(randnum);
+            }
           }
 
+          if (order.size() == 0)
+          {
+            sink(NULL);
+            return;
+          }
+
+          vector<ExprCoroCacheIter> coros;
           for (int i : order)
           {
             int newdepth;
@@ -147,9 +310,44 @@ namespace ufo
             else
               newdepth = currdepth;
 
-            for (Expr exp : getCandCoro(root->arg(i), newdepth, qvars, currnt))
-              sink(exp);
+            /*for (Expr exp : getCandCoro(root->arg(i), newdepth, qvars,
+            currnt))
+              sink(exp);*/
+            if (travtype == TravParamType::ORDERED)
+              getNextCandTrav_fn(sink, root->arg(i), newdepth, qvars, currnt);
+            else
+            {
+              coros.push_back(getCandCoro(root->arg(i), newdepth, qvars,
+                currnt));
+              if (*coros.back() == NULL)
+                coros.pop_back();
+              else
+              {
+                sink(*coros.back());
+                ++coros.back();
+              }
+            }
           }
+
+          if (coros.size() != 0)
+          {
+            bool coroavail = true;
+            while (coroavail)
+            {
+              coroavail = false;
+              for (int i = 0; i < coros.size(); ++i)
+              {
+                if (coros[i])
+                {
+                  sink(*coros[i]);
+                  ++coros[i];
+                  coroavail = true;
+                }
+              }
+            }
+          }
+
+          //currnumcandcoros--;
           return;
         }
         else
@@ -157,15 +355,20 @@ namespace ufo
           // Root is user-defined non-terminal
           if (defs[root] != NULL)
           {
-            for (Expr exp : getCandCoro(defs[root], root == currnt ? currdepth : 0, qvars, root))
+            /*for (Expr exp : getCandCoro(defs[root], root == currnt ?
+            currdepth : 0, qvars, root))
               sink(exp);
-            return;
+            return;*/
+            //currnumcandcoros--;
+            return getNextCandTrav_fn(sink, defs[root], root == currnt ?
+              currdepth : 0, qvars, root);
           }
           else if (qvars != NULL &&
           qvars->find(root->first()) != qvars->end())
           {
               // Root is a variable for a surrounding quantifier
               sink(root);
+              //currnumcandcoros--;
               return;
           }
           else
@@ -182,77 +385,264 @@ namespace ufo
       {
         // Root is a Z3 terminal, e.g. Int constant, e.g. 3
         sink(root);
+        //currnumcandcoros--;
         return;
       }
 
       // Root is Z3-defined non-terminal
 
-      ExprUSet localqvars;
+      std::shared_ptr<ExprUSet> localqvars(new ExprUSet());
 
       if (qvars != NULL)
         for (auto& var : *qvars)
-          localqvars.insert(var);
+          localqvars->insert(var);
 
       if (isOpX<FORALL>(root) || isOpX<EXISTS>(root))
       {
         // Add quantifier variables to qvars
         for (int i = 0; i < root->arity() - 1; ++i)
         {
-          localqvars.insert(root->arg(i));
+          localqvars->insert(root->arg(i));
         }
       }
 
       // The set of Expr's we'll use to generate this n-ary expression.
       ExprVector expanded_args;
       // The corresponding coroutines for each entry in expanded_args.
-      vector<ExprCoro> argcoros;
+      vector<optional<ExprCoroCacheIter>> argcoros;
 
       // Initialize all arguments to valid Expr's;
       //   otherwise we can't do mkNary below.
       for (auto itr = root->args_begin();
            itr != root->args_end(); ++itr)
       {
-        argcoros.push_back(getCandCoro(*itr, currdepth, &localqvars, currnt));
-        expanded_args.push_back(argcoros.back().get());
-        argcoros.back()();
+        if (travtype == TravParamType::ORDERED)
+        {
+          argcoros.push_back(boost::none);
+          expanded_args.push_back(NULL);
+        }
+        else
+        {
+          argcoros.push_back(getCandCoro(*itr,currdepth,localqvars,currnt));
+          expanded_args.push_back(argcoros.back()->get());
+          (*argcoros.back())();
+        }
       }
 
-      // We just generated the first candidate; sink it.
-      sink(m_efac.mkNary(root->op(), expanded_args));
+      ExprCoro thistrav = getTravCoro(std::move(argcoros),
+        std::move(expanded_args), std::move(set<int>()), root, currdepth,
+        localqvars, currnt);
 
-      for (int x = 0; x < argcoros.size(); ++x)
+      for (Expr exp : thistrav)
+        sink(exp);
+
+      // Traversal of root done.
+      //currnumcandcoros--;
+      return;
+    }
+    ExprCoroCacheIter getCandCoro(Expr root = NULL, int currdepth = 0,
+      std::shared_ptr<ExprUSet> qvars = NULL, Expr currnt = NULL)
+    {
+      std::tuple<Expr,int,std::shared_ptr<ExprUSet>,Expr> tup =
+        make_tuple(root, currdepth, qvars, currnt);
+      bool didemplace = false;
+      if (corocache.find(tup) == corocache.end())
       {
-        ExprCoro &corox = argcoros[x];
-        for (Expr expx : corox)
+        corocache.emplace(tup, std::move(ExprCoroCache(std::move(
+          ExprCoro(std::bind(&GRAMfactory::getNextCandTrav_fn, this,
+          std::placeholders::_1, root, currdepth, qvars, currnt))))));
+        didemplace = true;
+      }
+      if (!corocache.at(tup).coro)
+        int bp = 0;
+      return corocache.at(tup).begin();
+    }
+
+    template<typename T>
+    void printvec(std::ostream &os, T vec)
+    {
+      os << "[";
+      for (auto &t : vec)
+      {
+        os << " " << t;
+      }
+      os << " ]";
+    }
+
+    void travCand_fn(coroutine<Expr>::push_type& sink,
+        vector<optional<ExprCoroCacheIter>> coros, ExprVector cand,
+        set<int> stuck, Expr root, int currdepth,
+        std::shared_ptr<ExprUSet> qvars, Expr currnt)
+    {
+      //currnumtravcoros[root]++;
+      /*outs() << "travCand_fn([";
+      for (auto &opt : coros)
+      {
+        if (opt)
+          outs() << " " << &*opt;
+        else
+          outs() << " none";
+      }
+      outs() << " ], ";
+      printvec(outs(), cand);
+      outs() << ", ";
+      printvec(outs(), stuck);
+      outs() << ")" << endl;*/
+      if (travtype == TravParamType::STRIPED ||
+      stuck.size() == cand.size())
+        sink(m_efac.mkNary(root->op(), cand));
+
+      if (stuck.size() == cand.size())
+        return;
+
+      vector<ExprCoro> methcoros;
+      auto emptymethcoros = [&] () {
+        bool methcoroavail = true;
+        while (methcoroavail)
         {
-          expanded_args[x] = expx;
-
-          if (x == 0)
-            // If x == 0, then bottom for loop never runs and we never sink.
-            sink(m_efac.mkNary(root->op(), expanded_args));
-
-          for (int y = 0; y < x; ++y)
+          methcoroavail = false;
+          for (auto& meth : methcoros)
           {
-            ExprCoro &coroy = argcoros[y];
-            if (!coroy)
-              coroy = getCandCoro(root->arg(y), currdepth, &localqvars, currnt);
-            for (Expr expy : coroy)
+            if (meth)
             {
-              expanded_args[y] = expy;
-              sink(m_efac.mkNary(root->op(), expanded_args));
+              sink(meth.get());
+              meth();
+              methcoroavail = true;
             }
+          }
+        }
+        methcoros.clear();
+      };
+
+      if (travtype == TravParamType::STRIPED)
+      {
+        vector<int> free;
+        int min_i = 0, max_i = coros.size();
+        if (stuck.size() != 0)
+          min_i = *(--stuck.end()) + 1;
+        if (travdir == TravParamDirection::LTR)
+          for (int i = min_i; i < max_i; ++i)
+            free.push_back(i);
+        else if (travdir == TravParamDirection::RTL)
+          for (int i = max_i - 1; i >= min_i; --i)
+            free.push_back(i);
+
+        if (travdir == TravParamDirection::RND)
+          random_shuffle(free.begin(), free.end());
+
+        auto inloopfn = [&] (int pos) -> bool {
+          if (!*coros[pos])
+            return false;
+
+          ExprVector newcand = cand;
+          newcand[pos] = coros[pos]->get();
+          (*coros[pos])();
+          set<int> newstuck = stuck;
+          for (int i = 0; i <= pos; ++i)
+            newstuck.insert(i);
+
+          if (newstuck.size() == newcand.size())
+            sink(m_efac.mkNary(root->op(), newcand));
+          else
+          {
+            vector<optional<ExprCoroCacheIter>> newcoros;
+            for (int i = 0; i < coros.size(); ++i)
+            {
+              if (newstuck.find(i) == newstuck.end())
+              {
+                newcoros.push_back(getCandCoro(root->arg(i), currdepth,
+                    qvars, currnt));
+                newcand[i] = newcoros[i]->get();
+                (*newcoros[i])();
+              }
+              else
+                newcoros.push_back(boost::none);
+            }
+
+            methcoros.push_back(getTravCoro(std::move(newcoros),
+              std::move(newcand), std::move(newstuck), root, currdepth, qvars,
+              currnt));
+            sink(methcoros.back().get());
+            methcoros.back()();
+          }
+
+          return true;
+        };
+
+        if (travprio != TravParamPrio::DFS)
+        {
+          bool coroavail = true;
+          while (coroavail)
+          {
+            coroavail = false;
+            for (int i : free)
+              coroavail |= inloopfn(i);
+            if (travprio == TravParamPrio::BFS)
+              emptymethcoros();
+          }
+        }
+        else
+        {
+          for (int i : free)
+          {
+            bool coroavail = true;
+            while (coroavail)
+              coroavail = inloopfn(i);
+          }
+        }
+      }
+      else if (travtype == TravParamType::ORDERED)
+      {
+        vector<int> free;
+        for (int i = 0; i < cand.size(); ++i)
+          if (stuck.find(i) == stuck.end())
+            free.push_back(i);
+
+        int nextstuck;
+        if (travdir == TravParamDirection::LTR)
+          nextstuck = free.back();
+        else if (travdir == TravParamDirection::RTL)
+          nextstuck = free.front();
+        else if (travdir == TravParamDirection::RND)
+          nextstuck = free[rand() % free.size()];
+
+        ExprCoroCacheIter nextcoro = getCandCoro(root->arg(nextstuck),
+          currdepth, qvars, currnt);
+
+        set<int> newstuck = stuck;
+        newstuck.insert(nextstuck);
+
+        for (Expr exp : nextcoro)
+        {
+          cand[nextstuck] = exp;
+          vector<optional<ExprCoroCacheIter>> newcoros;
+          for (int i = 0; i < coros.size(); ++i)
+            newcoros.push_back(boost::none);
+
+          if (newstuck.size() == cand.size())
+            sink(m_efac.mkNary(root->op(), cand));
+          else
+          {
+            ExprCoro newmeth = getTravCoro(std::move(newcoros), cand,
+              newstuck, root, currdepth, qvars, currnt);
+            for (Expr exp : newmeth)
+              sink(exp);
           }
         }
       }
 
-      // Traversal of root done.
-      return;
+      emptymethcoros();
+      //currnumtravcoros[root]--;
     }
-    ExprCoro getCandCoro(Expr root = NULL, int currdepth = 0,
-      ExprUSet *qvars = NULL, Expr currnt = NULL)
+
+    ExprCoro getTravCoro(vector<optional<ExprCoroCacheIter>> coros,
+      ExprVector cand, set<int> stuck, Expr root, int currdepth,
+      std::shared_ptr<ExprUSet> qvars, Expr currnt)
     {
-      return std::move(ExprCoro(std::bind(&GRAMfactory::getNextCandTrav_fn, this,
-            std::placeholders::_1, root, currdepth, qvars, currnt)));
+      // We can't use std::bind, since that will try to copy coros
+      return std::move(ExprCoro([&] (coroutine<Expr>::push_type &sink) {
+        return travCand_fn(sink, std::move(coros), std::move(cand),
+          std::move(stuck), root, currdepth, qvars, currnt); }));
     }
 
     // qvars is set of quantifier variables for this expression.
@@ -366,12 +756,14 @@ namespace ufo
 
     void setParams(GramParams params)
     {
-      std::tie(genmethod, maxrecdepth) = params;
+      std::tie(genmethod, maxrecdepth, travdir, travorder, travtype,
+          travprio) = params;
     }
 
     GramParams getParams()
     {
-      return std::move(std::make_tuple(genmethod, maxrecdepth));
+      return std::move(std::make_tuple(genmethod, maxrecdepth, travdir,
+            travorder, travtype, travprio));
     }
 
     // Parse the grammar file. Must be called after addVar(s).
@@ -566,7 +958,7 @@ namespace ufo
 
       if (initialized && genmethod == GramGenMethod::TRAV)
       {
-        ExprUSet *qvars = NULL;
+        std::shared_ptr<ExprUSet> qvars = NULL;
         int currdepth = 0;
         Expr currnt = NULL;
         getNextCandTrav = std::unique_ptr<ExprCoro>(new ExprCoro(
@@ -580,36 +972,55 @@ namespace ufo
       if (inv == NULL)
         return NULL; // Should never happen, but handle just in case
 
-      Expr randcand;
+      Expr nextcand = NULL;
 
-      switch (genmethod)
+      /*for (auto& kv : currnumtravcoros)
+        outs() << "currnumtravcoros[" << kv.first << "] = " << kv.second << "\n";
+      outs() << "currnumcandcoros = " << currnumcandcoros << "\n";*/
+
+      // Generate a new candidate from the grammar, and simplify
+      while (!nextcand)
       {
-        case GramGenMethod::TRAV:
-          // Generate a (possibly old) candidate from the grammar,
-          // and simplify
+        if (genmethod == GramGenMethod::TRAV)
+        {
           if (!*getNextCandTrav)
           {
             outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
             exit(0);
             return NULL;
           }
-          randcand = simplifyBool(simplifyArithm(getNextCandTrav->get()));
+          nextcand = getNextCandTrav->get();
           (*getNextCandTrav)();
-          return randcand;
-        case GramGenMethod::RND:
-          /*while (true)
-          {*/
-            randcand = simplifyBool(simplifyArithm(getRandCand(inv)));
-            /*auto ret = gramCands.insert(randcand);
-            if (ret.second)
-              // Candidate is new
-              break;
-          }*/
-          return randcand;
+        }
+        else if (genmethod == GramGenMethod::RND)
+        {
+          nextcand = getRandCand(inv);
+        }
+        //outs() << "Before simplification: " << nextcand << endl;
+        nextcand = simplifyBool(simplifyArithm(nextcand));
+        if (isOpX<TRUE>(nextcand) || isOpX<FALSE>(nextcand))
+        {
+          nextcand = NULL;
+          //outs() << "Tautology/Contradiction" << endl;
+        }
+        else if (!gramCands.insert(nextcand).second)
+        {
+          nextcand = NULL;
+          //outs() << "Old candidate" << endl;
+        }
+        else
+        {
+          if (gramCandsOrder.size() == MAXGRAMCANDS)
+          {
+            gramCands.erase(gramCandsOrder[0]);
+            gramCandsOrder.pop_front();
+          }
+          gramCandsOrder.push_back(nextcand);
+          break;
+        }
       }
 
-      // Should never happen.
-      return NULL;
+      return nextcand;
     }
   };
 
@@ -679,7 +1090,59 @@ namespace ufo
       if (!strcmp(methodstr, "traverse"))
         return GramGenMethod::TRAV;
 
+      outs() << "Error: Unrecognized --gen_method \"" << methodstr << "\"" << endl;
+      exit(1);
       return GramGenMethod::RND;
+    }
+    static TravParamDirection strtotravdir(const char* str)
+    {
+      if (!strcmp(str, "ltr"))
+        return TravParamDirection::LTR;
+      if (!strcmp(str, "rtl"))
+        return TravParamDirection::RTL;
+      if (!strcmp(str, "rnd"))
+        return TravParamDirection::RND;
+
+      outs() << "Error: Unrecognized --trav_direction \"" << str << "\"" << endl;
+      exit(1);
+      return TravParamDirection::LTR;
+    }
+    static TravParamOrder strtotravord(const char* str)
+    {
+      if (!strcmp(str, "forward"))
+        return TravParamOrder::FORWARD;
+      if (!strcmp(str, "reverse"))
+        return TravParamOrder::REVERSE;
+      if (!strcmp(str, "rnd"))
+        return TravParamOrder::RND;
+
+      outs() << "Error: Unrecognized --trav_order \"" << str << "\"" << endl;
+      exit(1);
+      return TravParamOrder::FORWARD;
+    }
+    static TravParamType strtotravtype(const char* str)
+    {
+      if (!strcmp(str, "ordered"))
+        return TravParamType::ORDERED;
+      if (!strcmp(str, "striped"))
+        return TravParamType::STRIPED;
+
+      outs() << "Error: Unrecognized --trav_type \"" << str << "\"" << endl;
+      exit(1);
+      return TravParamType::STRIPED;
+    }
+    static TravParamPrio strtotravprio(const char* str)
+    {
+      if (!strcmp(str, "sfs"))
+        return TravParamPrio::SFS;
+      if (!strcmp(str, "bfs"))
+        return TravParamPrio::BFS;
+      if (!strcmp(str, "dfs"))
+        return TravParamPrio::DFS;
+
+      outs() << "Error: Unrecognized --trav_priority \"" << str << "\"" << endl;
+      exit(1);
+      return TravParamPrio::SFS;
     }
   };
 }

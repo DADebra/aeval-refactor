@@ -75,6 +75,10 @@ int main (int argc, char ** argv)
   const char *OPT_GRAMMAR = "--grammar";
   const char *OPT_GRAM_GEN = "--gen_method";
   const char *OPT_GRAM_MAXREC = "--maxrecdepth";
+  const char *OPT_GRAM_TRAV_DIR = "--trav_direction";
+  const char *OPT_GRAM_TRAV_ORD = "--trav_order";
+  const char *OPT_GRAM_TRAV_TYPE = "--trav_type";
+  const char *OPT_GRAM_TRAV_PRIO = "--trav_priority";
 
   if (getBoolValue(OPT_HELP, false, argc, argv) || argc == 1){
     outs () <<
@@ -109,7 +113,11 @@ int main (int argc, char ** argv)
         "Grammar options only:\n" <<
         " " << OPT_GRAM_GEN << " <rnd, traverse>    use specified method to generate candidates from grammar\n" <<
         "                                 'rnd' is completely random, 'traverse' will traverse the CFG\n" <<
-        " " << OPT_GRAM_MAXREC << " <n>               maximum recursion depth\n\n" <<
+        " " << OPT_GRAM_MAXREC << " <n>               maximum recursion depth\n" <<
+        " " << OPT_GRAM_TRAV_TYPE << " <ordered, striped>  parameter for " << OPT_GRAM_GEN << " traverse\n" <<
+        " " << OPT_GRAM_TRAV_PRIO << " <sfs, bfs, dfs> parameter for " << OPT_GRAM_GEN << " traverse and " << OPT_GRAM_TRAV_TYPE << " striped\n" <<
+        " " << OPT_GRAM_TRAV_DIR << " <ltr, rtl>     parameter for " << OPT_GRAM_GEN << " traverse\n" <<
+        " " << OPT_GRAM_TRAV_ORD << " <forward, reverse> parameter for " << OPT_GRAM_GEN << " traverse\n\n" <<
         "ImplCheck options only (\"" << OPT_DATA_LEARNING << "\" enabled automatically):\n" <<
         " " << OPT_DISJ << "                          prioritize disjunctive invariants\n" <<
         " " << OPT_D1 << "                       search for phases among all MBPs (needs \"" << OPT_DISJ <<"\")\n" <<
@@ -151,9 +159,25 @@ int main (int argc, char ** argv)
   bool d_s = getBoolValue(OPT_D4, false, argc, argv);
   vector<string> grammars;
   getStrValues(OPT_GRAMMAR, grammars, argc, argv);
+  const char* gram_trav_type = getStrValue(OPT_GRAM_TRAV_TYPE, "striped", argc, argv);
+  const char* gram_trav_prio = getStrValue(OPT_GRAM_TRAV_PRIO, NULL, argc, argv);
+
+  if (gram_trav_prio != NULL && strcmp(gram_trav_type, "ordered") == 0)
+  {
+    outs() << "Error: " << OPT_GRAM_TRAV_PRIO << " option is not compatible with " << OPT_GRAM_TRAV_TYPE << " ordered" << endl;
+    return 1;
+  }
+
+  // Gets ignored if --trav_type ordered
+  if (gram_trav_prio == NULL) gram_trav_prio = "sfs";
+
   GramParams gramparams = make_tuple(
     CFGUtils::strtogenmethod(getStrValue(OPT_GRAM_GEN, "rnd", argc, argv)),
-    getIntValue(OPT_GRAM_MAXREC, 3, argc, argv));
+    getIntValue(OPT_GRAM_MAXREC, 3, argc, argv),
+    CFGUtils::strtotravdir(getStrValue(OPT_GRAM_TRAV_DIR, "ltr", argc, argv)),
+    CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "forward", argc, argv)),
+    CFGUtils::strtotravtype(gram_trav_type),
+    CFGUtils::strtotravprio(gram_trav_prio));
 
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), grammars, max_attempts, to,
