@@ -328,6 +328,8 @@ namespace ufo
             {
               sink(*coros.back().second);
               ++coros.back().second;
+              if (!coros.back().second)
+                coros.pop_back();
             }
           }
 
@@ -359,13 +361,7 @@ namespace ufo
             if (travtype == TravParamType::ORDERED)
             {
               auto itr = coros.begin();
-              while (itr != coros.end() && !itr->second)
-              {
-                itr = coros.erase(itr);
-                lastbest = coros.begin();
-              }
-
-              if (coros.size() != 0)
+              if (coros.size() != 0 && itr != coros.end())
               {
                 while (itr != coros.end() && shoulddefer(itr->first))
                   ++itr;
@@ -375,6 +371,11 @@ namespace ufo
                   sink(*itr->second);
                   candnum[itr->first]++;
                   ++itr->second;
+                  if (!itr->second)
+                  {
+                    itr = coros.erase(itr);
+                    lastbest = coros.begin();
+                  }
                   didsink = true;
                 }
               }
@@ -383,6 +384,16 @@ namespace ufo
             {
               for (auto itr = coros.begin(); itr != coros.end();)
               {
+                if (shoulddefer(itr->first))
+                {
+                  ++itr;
+                  continue;
+                }
+
+                sink(*itr->second);
+                didsink = true;
+                candnum[itr->first]++;
+                ++itr->second;
                 if (!itr->second)
                 {
                   auto olditr = itr;
@@ -391,17 +402,6 @@ namespace ufo
                     lastbest = coros.begin();
                   continue;
                 }
-
-                if (shoulddefer(itr->first))
-                {
-                  ++itr;
-                  continue;
-                }
-
-                sink(*itr->second);
-                candnum[itr->first]++;
-                ++itr->second;
-                didsink = true;
                 ++itr;
               }
             }
@@ -441,6 +441,14 @@ namespace ufo
               sink(*bestcoro->second);
               candnum[bestcoro->first]++;
               ++bestcoro->second;
+              if (!bestcoro->second)
+              {
+                auto oldbestcoro = bestcoro;
+                bestcoro = coros.erase(bestcoro);
+                if (lastbest == oldbestcoro)
+                  lastbest = coros.begin();
+                continue;
+              }
             }
           }
 
