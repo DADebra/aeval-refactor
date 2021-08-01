@@ -57,9 +57,6 @@ namespace ufo
       vector<Expr> outcache;
       ExprCoro coro;
 
-
-      friend class ExprCoroCacheIter;
-
       ExprCoroCache(ExprCoro _coro) : coro(std::move(_coro)) {}
 
       ExprCoroCacheIter begin()
@@ -154,6 +151,15 @@ namespace ufo
       }
     };
 
+    class pairhash
+    {
+      public:
+      size_t operator()(const std::pair<Expr,Expr>& pr) const
+      {
+        return std::hash<Expr>()(pr.first) * std::hash<Expr>()(pr.second);
+      }
+    };
+
     // The main coroutine we use to traverse the grammar.
     std::unique_ptr<ExprCoro> getNextCandTrav;
 
@@ -177,6 +183,9 @@ namespace ufo
 
     // Key: Non-terminal, Value: Productions in b/ieither# format
     ExprUMap defs;
+
+    // Key: <Non-terminal, Production>, Value: Priority
+    unordered_map<std::pair<Expr, Expr>, cpp_rational, pairhash> priomap;
 
     // The root of the tree of the grammar
     Expr inv;
@@ -301,7 +310,8 @@ namespace ufo
             return;
           }
 
-          vector<ExprCoroCacheIter> coros;
+          // First: Production, Second: Coroutine
+          list<std::pair<std::pair<Expr,Expr>,ExprCoroCacheIter>> coros;
           for (int i : order)
           {
             int newdepth;
@@ -310,40 +320,127 @@ namespace ufo
             else
               newdepth = currdepth;
 
-            /*for (Expr exp : getCandCoro(root->arg(i), newdepth, qvars,
-            currnt))
-              sink(exp);*/
-            if (travtype == TravParamType::ORDERED)
-              getNextCandTrav_fn(sink, root->arg(i), newdepth, qvars, currnt);
-            else
+            coros.push_back(std::move(make_pair(make_pair(root->arg(i),
+              currnt), getCandCoro(root->arg(i), newdepth, qvars,currnt))));
+            if (*coros.back().second == NULL)
+              coros.pop_back();
+            else if (travtype == TravParamType::STRIPED)
             {
-              coros.push_back(getCandCoro(root->arg(i), newdepth, qvars,
-                currnt));
-              if (*coros.back() == NULL)
-                coros.pop_back();
-              else
-              {
-                sink(*coros.back());
-                ++coros.back();
-              }
+              sink(*coros.back().second);
+              ++coros.back().second;
             }
           }
 
-          if (coros.size() != 0)
+          auto lastbest = coros.begin();
+
+          // Key: <Production, Non-terminal>,
+          // Value: number of cands generated with Production
+          unordered_map<std::pair<Expr, Expr>, int, pairhash> candnum;
+          int totalcandnum = 0;
+
+
+          // prod has same format as Key of candnum
+          auto shoulddefer = [&] (const std::pair<Expr,Expr>& prod) -> bool
           {
-            bool coroavail = true;
-            while (coroavail)
+            if (candnum[prod] == 0 || priomap[prod] == 1)
+              return false;
+            return candnum[prod] > (int)(priomap[prod]*totalcandnum);
+          };
+
+          for (auto &kv : coros)
+          {
+            candnum[kv.first] = 0;
+          }
+
+          while (coros.size() != 0)
+          {
+            bool didsink = false;
+
+            if (travtype == TravParamType::ORDERED)
             {
-              coroavail = false;
-              for (int i = 0; i < coros.size(); ++i)
+              auto itr = coros.begin();
+              while (itr != coros.end() && !itr->second)
               {
-                if (coros[i])
+                itr = coros.erase(itr);
+                lastbest = coros.begin();
+              }
+
+              if (coros.size() != 0)
+              {
+                while (itr != coros.end() && shoulddefer(itr->first))
+                  ++itr;
+
+                if (itr != coros.end())
                 {
-                  sink(*coros[i]);
-                  ++coros[i];
-                  coroavail = true;
+                  sink(*itr->second);
+                  candnum[itr->first]++;
+                  ++itr->second;
+                  didsink = true;
                 }
               }
+            }
+            else if (travtype == TravParamType::STRIPED)
+            {
+              for (auto itr = coros.begin(); itr != coros.end();)
+              {
+                if (!itr->second)
+                {
+                  auto olditr = itr;
+                  itr = coros.erase(itr);
+                  if (lastbest == olditr)
+                    lastbest = coros.begin();
+                  continue;
+                }
+
+                if (shoulddefer(itr->first))
+                {
+                  ++itr;
+                  continue;
+                }
+
+                sink(*itr->second);
+                candnum[itr->first]++;
+                ++itr->second;
+                didsink = true;
+                ++itr;
+              }
+            }
+
+            if (coros.size() != 0 && !didsink)
+            {
+              // No coroutines available, pick best option.
+              if (!lastbest->second)
+                lastbest = coros.begin();
+              auto bestcoro = lastbest;
+              bool setbestcoro = false;
+              for (auto itr = coros.begin(); itr != lastbest; ++itr)
+              {
+                if (priomap[itr->first] > priomap[bestcoro->first])
+                {
+                  bestcoro = itr;
+                  setbestcoro = true;
+                }
+              }
+
+              if (!setbestcoro)
+              {
+                auto itr = lastbest;
+                if (travtype == TravParamType::STRIPED)
+                  ++itr;
+                for (; itr != coros.end(); ++itr)
+                {
+                  if (priomap[itr->first] >= priomap[bestcoro->first])
+                  {
+                    bestcoro = itr;
+                    setbestcoro = true;
+                    break;
+                  }
+                }
+              }
+
+              sink(*bestcoro->second);
+              candnum[bestcoro->first]++;
+              ++bestcoro->second;
             }
           }
 
@@ -355,10 +452,6 @@ namespace ufo
           // Root is user-defined non-terminal
           if (defs[root] != NULL)
           {
-            /*for (Expr exp : getCandCoro(defs[root], root == currnt ?
-            currdepth : 0, qvars, root))
-              sink(exp);
-            return;*/
             //currnumcandcoros--;
             return getNextCandTrav_fn(sink, defs[root], root == currnt ?
               currdepth : 0, qvars, root);
@@ -434,7 +527,9 @@ namespace ufo
         localqvars, currnt);
 
       for (Expr exp : thistrav)
+      {
         sink(exp);
+      }
 
       // Traversal of root done.
       //currnumcandcoros--;
@@ -453,8 +548,6 @@ namespace ufo
           std::placeholders::_1, root, currdepth, qvars, currnt))))));
         didemplace = true;
       }
-      if (!corocache.at(tup).coro)
-        int bp = 0;
       return corocache.at(tup).begin();
     }
 
@@ -819,6 +912,7 @@ namespace ufo
         // We need the Bool eithers for the inv definition (rel is Bool)
         aug_gram << "(declare-fun BOOL_VARS () Bool)" << endl;
         generate_either_decl("Bool", "Bool");
+        aug_gram << "(declare-fun Bool_prio (Bool Real) Bool)\n";
 
         // Which sorts we've already generated eithers and *_VARS for.
         ExprSet donesorts;
@@ -858,6 +952,8 @@ namespace ufo
               aug_gram << "(declare-fun " << vars_name << " () " << sort_smt << ")\n";
 
               generate_either_decl(sort_name, sort_smt);
+              // Generate *_prio declarations
+              aug_gram << "(declare-fun " << sort_name << "_prio (" << sort_smt << " Real) " << sort_smt << ")\n";
               donesorts.insert(pair.first);
             }
 
@@ -928,7 +1024,35 @@ namespace ufo
               inv = ex->left();
             }
 
-            defs[ex->left()] = ex->right();
+            if (isOpX<FAPP>(ex->right()) &&
+                lexical_cast<string>(bind::fname(ex->right())->left())
+                .find("either") != string::npos)
+            {
+              ExprVector newdefargs;
+              for (auto itr = ++ex->right()->args_begin();
+                   itr != ex->right()->args_end(); ++itr)
+              {
+                if (isOpX<FAPP>(*itr) &&
+                    lexical_cast<string>(bind::fname(*itr)->left())
+                    .find("prio") != string::npos)
+                {
+                  std::pair<Expr,Expr> keypair((*itr)->arg(1), ex->left());
+                  priomap[keypair] =
+                    lexical_cast<cpp_rational>((*itr)->arg(2));
+                  newdefargs.push_back((*itr)->arg(1));
+                }
+                else
+                {
+                  std::pair<Expr, Expr> keypair(*itr, ex->left());
+                  priomap[keypair] = 1;
+                  newdefargs.push_back(*itr);
+                }
+              }
+
+              defs[ex->left()] = bind::fapp(ex->right()->left(), newdefargs);
+            }
+            else
+              defs[ex->left()] = ex->right();
           }
         }
       }

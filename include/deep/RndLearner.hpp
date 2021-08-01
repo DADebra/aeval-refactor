@@ -712,6 +712,8 @@ namespace ufo
         for (auto & sf : sfs) invs.push_back(sf.back().learnedExprs);
         serializeInvariants(invs, outfile);
       }
+
+      exit(success ? 0 : 1);
     }
 
     void checkAllLemmas(vector<ExprSet>& lms, vector<ExprSet>& curMinLms, int& numTries, int invInd)
