@@ -432,6 +432,7 @@ namespace ufo
      */
     Expr getAssignmentForVar(Expr var, Expr exp)
     {
+      exp = simplifyArithmConjunctions(exp);
       if (debug >= 3)
       {
         outs () << "getAssignmentForVar " << *var << " in:\n";
