@@ -585,7 +585,7 @@ def randmethod(candsize):
             yield cand
             numcand += 1
 
-glcoros = [ gennum(), gennum(), gennum() ]
+glcoros = [ gennum() for x in range(candsize) ]
 glcand = [ next(coro) for coro in glcoros ]
 
 correctcands = set()
@@ -619,10 +619,10 @@ for x in range(numiterations):
                     method6_prio = prio
                     if mtype == 'ordered':
                         method6_prio = 'ignored'
-                        glcoros = [ None, None, None ]
-                        glcand = [ None, None, None ]
+                        glcoros = [ None ] * candsize
+                        glcand = [ None ] * candsize
                     else:
-                        glcoros = [ Coro(gennum) for x in range(3) ]
+                        glcoros = [ Coro(gennum) for x in range(candsize) ]
                         glcand = [ next(coro) for coro in glcoros ]
                     newcands = set()
 
