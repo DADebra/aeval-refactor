@@ -638,6 +638,16 @@ namespace ufo
           ExprVector newcand = cand;
           newcand[pos] = coros[pos]->get();
           (*coros[pos])();
+          if (pos == 1 &&
+          (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root)))
+            while (isOpX<MPZ>(newcand[pos]) &&
+            lexical_cast<cpp_int>(newcand[pos]) <= 0)
+            {
+              newcand[pos] = coros[pos]->get();
+              (*coros[pos])();
+              if (!*coros[pos])
+                return false;
+            }
           set<int> newstuck = stuck;
           for (int i = 0; i <= pos; ++i)
             newstuck.insert(i);
@@ -716,6 +726,13 @@ namespace ufo
         for (Expr exp : nextcoro)
         {
           cand[nextstuck] = exp;
+
+          if (nextstuck == 1 &&
+            (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root)) &&
+            isOpX<MPZ>(cand[nextstuck]) &&
+            lexical_cast<cpp_int>(cand[nextstuck]) <= 0)
+              continue;
+
           vector<optional<ExprCoroCacheIter>> newcoros;
           for (int i = 0; i < coros.size(); ++i)
             newcoros.push_back(boost::none);
