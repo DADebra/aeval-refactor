@@ -2,11 +2,13 @@
 #define GRAMFAC__HPP__
 
 #include "ae/ExprSimpl.hpp"
+#include "deep/Distribution.hpp"
 
 #include <fstream>
 #include <cctype>
 #include <regex>
 #include <tuple>
+#include <random>
 
 #include <boost/coroutine2/coroutine.hpp>
 #include <boost/optional.hpp>
@@ -186,6 +188,13 @@ namespace ufo
 
     // Key: <Non-terminal, Production>, Value: Priority
     unordered_map<std::pair<Expr, Expr>, cpp_rational, pairhash> priomap;
+
+    // priomap, but for getRandCand
+    // Key: Non-terminal, Value: Distribution, in order given by CFG
+    unordered_map<Expr, discrete_distribution<int>> distmap;
+
+    // Needed for randomness in getRandCand
+    default_random_engine randgenerator;
 
     // The root of the tree of the grammar
     Expr inv;
@@ -786,7 +795,8 @@ namespace ufo
           {
             // Randomly select from the available productions.
             // Offset by 1 because arg(0) is the fdecl.
-            int randindex = (rand() % (root->arity() - 1)) + 1;
+            //int randindex = (rand() % (root->arity() - 1)) + 1;
+            int randindex = distmap[root](randgenerator) + 1;
 
             cand = getRandCand(root->arg(randindex), qvars);
             return cand;
@@ -1054,6 +1064,7 @@ namespace ufo
                 .find("either") != string::npos)
             {
               ExprVector newdefargs;
+              vector<cpp_rational> rweights;
               for (auto itr = ++ex->right()->args_begin();
                    itr != ex->right()->args_end(); ++itr)
               {
@@ -1062,19 +1073,39 @@ namespace ufo
                     .find("prio") != string::npos)
                 {
                   std::pair<Expr,Expr> keypair((*itr)->arg(1), ex->left());
-                  priomap[keypair] =
-                    lexical_cast<cpp_rational>((*itr)->arg(2));
+                  auto prio = lexical_cast<cpp_rational>((*itr)->arg(2));
+                  priomap[keypair] = prio;
+                  rweights.push_back(prio);
                   newdefargs.push_back((*itr)->arg(1));
                 }
                 else
                 {
                   std::pair<Expr, Expr> keypair(*itr, ex->left());
                   priomap[keypair] = 1;
+                  rweights.push_back(1);
                   newdefargs.push_back(*itr);
                 }
               }
 
-              defs[ex->left()] = bind::fapp(ex->right()->left(), newdefargs);
+              // Simple GCD, to make sure all priorities convert to integers
+              int gcd = 1;
+              for (auto &rw : rweights)
+                gcd *= (int)denominator(rw);
+
+              vector<int> iweights;
+              for (auto &rw : rweights)
+                iweights.push_back((int)(rw * gcd));
+
+              Expr newright = bind::fapp(ex->right()->left(), newdefargs);
+
+              distmap.emplace(newright,
+                std::move(discrete_distribution<int>(iweights.begin(),
+                  iweights.end())));
+
+              outs() << "distmap[" << newright << "] = " <<
+                distmap[newright] << "\n";
+
+              defs[ex->left()] = newright;
             }
             else
               defs[ex->left()] = ex->right();

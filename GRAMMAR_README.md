@@ -60,39 +60,66 @@ in the `(*_either_*)` family of functions above. The function takes two
 parameters: the first is the production to change the priority of
 (of sort SORT), the second is the priority given as a decimal number.
 
-If a priority is not given for a certain production, the default is 1,
-which means that the production will always be used when the traversal
-picks it.
-
 It is a semantic error to specify a number greater than 1 as a priority.
 
-The meaning of the priority number is (roughly) that the production will be
-used with that percentage when expanding the given non-terminal. For instance,
-a line like:
+The way that prioritization works is dependent on the `--gen_method` chosen:
 
-```
-(assert (= iterm (Int_either_2
-  (= INT_VARS INT_CONSTS)
-  (Bool_prio (> INT_VARS INT_CONSTS) 0.1))
-))
-```
+- `--gen_method traverse`
 
-Whenever, in the traversal, a production is chosen for iterm, the production
-chosen will be `(= INT_VARS INT_CONSTS)` about 90% of the time,
-and will be `(> INT_VARS INT_CONSTS)` about 10% of the time.
+    If a priority is not given for a certain production it defaults to 1, which
+    means that the production will always be used when the traversal picks it.
 
-The prioritization is in addition to the traversal documented below, if
-a traversal method is used: a production is first picked using the rules
-for the specific traversal method chosen, then skipped over if necessary
-according to the prioritization. This isn't particularly evident for
-`--trav_type striped`, but extraordinarily visible for `--trav_type ordered`:
-all permutations of `(= INT_VARS INT_CONSTS)` will be chosen first, then
-all permutations of `(> INT_VARS INT_CONSTS)` (assuming `ltr` and `forward`),
-practically ignoring the priority specified.
+    The meaning of the priority number is (roughly) that the production will be
+    used with that percentage when expanding the given non-terminal. For
+    instance, a line like:
 
-Note that, the deeper the non-terminal, the less-accurate the percentage will
-be, due to how the traversal algorithm works; deep non-terminals will tend
-to expand to the same production several times in a row.
+    ```
+    (assert (= bterm (Int_either_2
+      (= INT_VARS INT_CONSTS)
+      (Bool_prio (> INT_VARS INT_CONSTS) 0.1))
+    ))
+    ```
+
+    Whenever, in the traversal, a production is chosen for iterm, the
+    production chosen will be `(= INT_VARS INT_CONSTS)` about 90% of the time,
+    and will be `(> INT_VARS INT_CONSTS)` about 10% of the time.
+
+    The prioritization is in addition to the traversal documented below, if
+    a traversal method is used: a production is first picked using the rules
+    for the specific traversal method chosen, then skipped over if necessary
+    according to the prioritization. This isn't particularly evident for
+    `--trav_type striped`, but extraordinarily visible for
+    `--trav_type ordered`: all permutations of `(= INT_VARS INT_CONSTS)` will
+    be chosen first, then all permutations of `(> INT_VARS INT_CONSTS)`
+    (assuming `ltr` and `forward`), practically ignoring the priority
+    specified.
+
+    Note that, the deeper the non-terminal, the less-accurate the percentage
+    will be, due to how the traversal algorithm works; deep non-terminals will 
+    tend to expand to the same production several times in a row.
+
+- `--gen_method rnd`
+
+    The priorities given for the productions of a non-terminal are interpreted 
+    as a distribution; if not normal, it will be normalized after the CFG is
+    parsed. Unspecified priorities will be 1. Productions are picked randomly
+    using this distribution; given a sufficient number of iterations,
+    the distribution of generated productions should match this normalized
+    distribution. For example, given the below prioritization:
+
+    ```
+    (assert (= bterm (Int_either_4
+      (= INT_VARS INT_CONSTS)
+      (> INT_VARS INT_CONSTS)
+      (Bool_prio (< INT_VARS INT_CONSTS) 0.3)
+      (Bool_prio (~= INT_VARS INT_CONSTS) 0.2)
+    )))
+    ```
+    `bterm` will expand to `(< INT_VARS INT_CONSTS)` about 12% of the time,
+    to `(~= INT_VARS INT_CONSTS)` about 8% of the time,
+    to `(= INT_VARS INT_CONSTS)` about 40% of the time, and
+    to `(> INT_VARS INT_CONSTS)` about 40% of the time.
+
 
 ## Generation
 
@@ -180,7 +207,7 @@ permutations are chosen in.
     then exhausts the first, and so on. Operates somewhat like a clock, or
     positional-dependent (e.g. decimal) numbers.
 
-```
+    ```
     (+ 0 0)
     (+ 1 0)
     (+ 2 0)
@@ -190,13 +217,13 @@ permutations are chosen in.
     (+ 0 2)
     (+ 1 2)
     (+ 2 2)
-```
+    ```
 
 #### `--trav_priority` (Only for `--trav_type striped`)
 
 - `sfs` **(default)**
 
-```
+    ```
     (+ 0 0)
     (+ 1 0)
     (+ 0 1)
@@ -206,11 +233,11 @@ permutations are chosen in.
     (+ 2 1)
     (+ 1 2)
     (+ 2 2)
-```
+    ```
 
 - `bfs`
 
-```
+    ```
     (+ 0 0)
     (+ 1 0)
     (+ 0 1)
@@ -220,11 +247,11 @@ permutations are chosen in.
     (+ 0 2)
     (+ 2 1)
     (+ 2 2)
-```
+    ```
 
 - `dfs`
 
-```
+    ```
     (+ 0 0)
     (+ 1 0)
     (+ 2 0)
@@ -234,7 +261,7 @@ permutations are chosen in.
     (+ 2 1)
     (+ 1 2)
     (+ 2 2)
-```
+    ```
 
 #### `--trav_direction`
 
@@ -242,7 +269,7 @@ Shown with `--trav_type ordered` and `--trav_order forward`.
 
 - `ltr` **(default)**
 
-```
+    ```
     (+ 0 0)
     (+ 1 0)
     (+ 2 0)
@@ -252,11 +279,11 @@ Shown with `--trav_type ordered` and `--trav_order forward`.
     (+ 0 2)
     (+ 1 2)
     (+ 2 2)
-```
+    ```
 
 - `rtl`
 
-```
+    ```
     (+ 0 0)
     (+ 0 1)
     (+ 0 2)
@@ -266,7 +293,7 @@ Shown with `--trav_type ordered` and `--trav_order forward`.
     (+ 2 0)
     (+ 2 1)
     (+ 2 2)
-```
+    ```
 
 #### `--trav_order`
 
@@ -274,7 +301,7 @@ Shown with `--trav_type ordered` and `--trav_direction ltr`.
 
 - `forward` **(default)**
 
-```
+    ```
     (+ 0 0)
     (+ 1 0)
     (+ 2 0)
@@ -284,11 +311,11 @@ Shown with `--trav_type ordered` and `--trav_direction ltr`.
     (+ 0 2)
     (+ 1 2)
     (+ 2 2)
-```
+    ```
 
 - `reverse`
 
-```
+    ```
     (+ 2 2)
     (+ 1 2)
     (+ 0 2)
@@ -298,7 +325,7 @@ Shown with `--trav_type ordered` and `--trav_direction ltr`.
     (+ 2 0)
     (+ 1 0)
     (+ 0 0)
-```
+    ```
 
 ### A Note on Simplification
 
