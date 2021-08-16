@@ -50,32 +50,107 @@ namespace ufo
 
     // A coroutine returning an Expr.
     typedef coroutine<Expr>::pull_type ExprCoro;
+    
+    class ParseTreeNode;
+    class ParseTree;
 
-    class ExprCoroCacheIter;
+    // A coroutine returning a ParseTree.
+    typedef coroutine<ParseTree>::pull_type PTCoro;
 
-    class ExprCoroCache
+    class ParseTreeNode
     {
-      public:
-      vector<Expr> outcache;
-      ExprCoro coro;
+      private:
 
-      ExprCoroCache(ExprCoro _coro) : coro(std::move(_coro)) {}
+      // Will be FAPP or terminal (MPZ, _FH_inv_0, etc.)
+      Expr data;
+      // Shape will match data; if data has 3 args, children will have 3 args,
+      //   even if some of the arguments are e.g. terminals.
+      // children[0] == expansion of data.arg(1), etc.
+      vector<ParseTree> children;
 
-      ExprCoroCacheIter begin()
+      ParseTreeNode(Expr _data, const vector<ParseTree>& _children) :
+        data(_data), children(_children) {}
+
+      ParseTreeNode(Expr _data, vector<ParseTree>&& _children) :
+        data(_data), children(_children) {}
+
+      ParseTreeNode(Expr _data) : data(_data)
       {
-        return ExprCoroCacheIter(0, *this);
+        assert(("Must pass a vector of children for non-FAPP Expr with arity != 0",
+          data->arity() == 0 || isOpX<FAPP>(data)));
       }
 
-      ExprCoroCacheIter end()
+      friend ParseTree;
+    };
+
+    class ParseTree
+    {
+      std::shared_ptr<ParseTreeNode> ptr;
+
+      public:
+      ParseTree(Expr _data, const vector<ParseTree>& _children) :
+        ptr(new ParseTreeNode(_data, _children)) {}
+
+      ParseTree(Expr _data, vector<ParseTree>&& _children) :
+        ptr(new ParseTreeNode(_data, _children)) {}
+      ParseTree(const ParseTree& pt) : ptr(pt.ptr) {}
+      ParseTree(ParseTreeNode* ptptr) : ptr(ptptr) {}
+      ParseTree(Expr _data) : ptr(new ParseTreeNode(_data)) {}
+
+      Expr& data() const
       {
-        return ExprCoroCacheIter(-1, *this);
+        return ptr->data;
+      }
+
+      vector<ParseTree> children() const
+      {
+        return ptr->children;
+      }
+
+      operator bool()
+      {
+        return bool(ptr);
+      }
+
+      /*operator Expr()
+      {
+        return ptr ? ptr->data : NULL;
+      }
+
+      operator cpp_int()
+      {
+        return lexical_cast<cpp_int>(ptr->data);
+      }*/
+    };
+
+    class PTCoroCacheIter;
+
+    class PTCoroCache
+    {
+      protected:
+      vector<ParseTree> outcache;
+      PTCoro coro;
+
+      friend PTCoroCacheIter;
+
+      public:
+      PTCoroCache(PTCoro _coro) : coro(std::move(_coro)) {}
+
+      PTCoroCacheIter begin()
+      {
+        return PTCoroCacheIter(0, *this);
+      }
+
+      PTCoroCacheIter end()
+      {
+        return PTCoroCacheIter(-1, *this);
       }
     };
 
-    class ExprCoroCacheIter
+    class PTCoroCacheIter
     {
       int pos = 0;
-      ExprCoroCache &cache;
+      PTCoroCache &cache;
 
       inline void advancecoro()
       {
@@ -90,7 +165,7 @@ namespace ufo
 
       public:
 
-      ExprCoroCacheIter(int _pos, ExprCoroCache& _cache) : pos(_pos),
+      PTCoroCacheIter(int _pos, PTCoroCache& _cache) : pos(_pos),
         cache(_cache) {}
 
       operator bool()
@@ -98,7 +173,7 @@ namespace ufo
         return pos >= 0;
       }
 
-      Expr get()
+      ParseTree get()
       {
         if (pos < 0)
           return nullptr;
@@ -117,26 +192,26 @@ namespace ufo
         advancecoro();
       }
 
-      ExprCoroCacheIter& operator++()
+      PTCoroCacheIter& operator++()
       {
         ++pos;
         advancecoro();
         return *this;
       }
 
-      Expr operator*()
+      ParseTree operator*()
       {
         return get();
       }
 
-      ExprCoroCacheIter begin()
+      PTCoroCacheIter begin()
       {
-        return std::move(ExprCoroCacheIter(pos, cache));
+        return std::move(PTCoroCacheIter(pos, cache));
       }
 
-      ExprCoroCacheIter end()
+      PTCoroCacheIter end()
       {
-        return std::move(ExprCoroCacheIter(-1, cache));
+        return std::move(PTCoroCacheIter(-1, cache));
       }
     };
 
@@ -163,7 +238,7 @@ namespace ufo
     };
 
     // The main coroutine we use to traverse the grammar.
-    std::unique_ptr<ExprCoro> getNextCandTrav;
+    std::unique_ptr<PTCoro> getNextCandTrav;
 
     // Needed for candidate generation.
     ExprFactory &m_efac;
@@ -181,7 +256,7 @@ namespace ufo
 
     // The sub-candidates previously generated with root == key
     unordered_map<std::tuple<Expr,int,std::shared_ptr<ExprUSet>,Expr>,
-      ExprCoroCache,tuplehash> corocache;
+      PTCoroCache,tuplehash> ptcorocache;
 
     // Key: Non-terminal, Value: Productions in b/ieither# format
     ExprUMap defs;
@@ -248,7 +323,24 @@ namespace ufo
       return false;
     }
 
-    void getNextCandTrav_fn(coroutine<Expr>::push_type &sink,
+    Expr collapsePT(ParseTree pt)
+    {
+      if (pt.children().size() == 1)
+        return collapsePT(pt.children()[0]);
+      else if (pt.children().size() == 0)
+        return pt.data();
+      else
+      {
+        ExprVector eargs;
+        for (ParseTree subpt : pt.children())
+        {
+          eargs.push_back(collapsePT(subpt));
+        }
+        return m_efac.mkNary(pt.data()->op(), eargs);
+      }
+    }
+
+    void getNextCandTrav_fn(coroutine<ParseTree>::push_type &sink,
         Expr root = NULL, int currdepth = 0,
         std::shared_ptr<ExprUSet> qvars = NULL, Expr currnt = NULL)
     {
@@ -270,7 +362,7 @@ namespace ufo
         if (sortvars.find(root) != sortvars.end())
         {
           // Root is a symbolic variable; don't expand.
-          sink(root);
+          sink(ParseTree(root));
           //currnumcandcoros--;
           return;
         }
@@ -320,7 +412,7 @@ namespace ufo
           }
 
           // First: Production, Second: Coroutine
-          list<std::pair<std::pair<Expr,Expr>,ExprCoroCacheIter>> coros;
+          list<std::pair<std::pair<Expr,Expr>,PTCoroCacheIter>> coros;
           for (int i : order)
           {
             int newdepth;
@@ -331,7 +423,7 @@ namespace ufo
 
             coros.push_back(std::move(make_pair(make_pair(root->arg(i),
               currnt), getCandCoro(root->arg(i), newdepth, qvars,currnt))));
-            if (*coros.back().second == NULL)
+            if (!*coros.back().second)
               coros.pop_back();
             else if (travtype == TravParamType::STRIPED)
             {
@@ -470,14 +562,21 @@ namespace ufo
           if (defs[root] != NULL)
           {
             //currnumcandcoros--;
-            return getNextCandTrav_fn(sink, defs[root], root == currnt ?
+            /*return getNextCandTrav_fn(sink, defs[root], root == currnt ?
+              currdepth : 0, qvars, root);*/
+            PTCoroCacheIter newcoro = getCandCoro(defs[root], root == currnt ?
               currdepth : 0, qvars, root);
+            for (ParseTree pt : newcoro)
+            {
+              sink(ParseTree(root, vector<ParseTree>{pt}));
+            }
+            return;
           }
           else if (qvars != NULL &&
           qvars->find(root->first()) != qvars->end())
           {
               // Root is a variable for a surrounding quantifier
-              sink(root);
+              sink(ParseTree(root));
               //currnumcandcoros--;
               return;
           }
@@ -494,7 +593,7 @@ namespace ufo
       else if (root->arity() == 0)
       {
         // Root is a Z3 terminal, e.g. Int constant, e.g. 3
-        sink(root);
+        sink(ParseTree(root));
         //currnumcandcoros--;
         return;
       }
@@ -517,9 +616,9 @@ namespace ufo
       }
 
       // The set of Expr's we'll use to generate this n-ary expression.
-      ExprVector expanded_args;
+      vector<ParseTree> expanded_args;
       // The corresponding coroutines for each entry in expanded_args.
-      vector<optional<ExprCoroCacheIter>> argcoros;
+      vector<optional<PTCoroCacheIter>> argcoros;
 
       // Initialize all arguments to valid Expr's;
       //   otherwise we can't do mkNary below.
@@ -539,33 +638,25 @@ namespace ufo
         }
       }
 
-      ExprCoro thistrav = getTravCoro(std::move(argcoros),
-        std::move(expanded_args), std::move(set<int>()), root, currdepth,
-        localqvars, currnt);
-
-      for (Expr exp : thistrav)
-      {
-        sink(exp);
-      }
-
       // Traversal of root done.
       //currnumcandcoros--;
-      return;
+      return travCand_fn(sink, std::move(argcoros), std::move(expanded_args),
+        std::move(set<int>()), root, currdepth, localqvars, currnt);
     }
-    ExprCoroCacheIter getCandCoro(Expr root = NULL, int currdepth = 0,
+    PTCoroCacheIter getCandCoro(Expr root = NULL, int currdepth = 0,
       std::shared_ptr<ExprUSet> qvars = NULL, Expr currnt = NULL)
     {
       std::tuple<Expr,int,std::shared_ptr<ExprUSet>,Expr> tup =
         make_tuple(root, currdepth, qvars, currnt);
       bool didemplace = false;
-      if (corocache.find(tup) == corocache.end())
+      if (ptcorocache.find(tup) == ptcorocache.end())
       {
-        corocache.emplace(tup, std::move(ExprCoroCache(std::move(
-          ExprCoro(std::bind(&GRAMfactory::getNextCandTrav_fn, this,
+        ptcorocache.emplace(tup, std::move(PTCoroCache(std::move(
+          PTCoro(std::bind(&GRAMfactory::getNextCandTrav_fn, this,
           std::placeholders::_1, root, currdepth, qvars, currnt))))));
         didemplace = true;
       }
-      return corocache.at(tup).begin();
+      return ptcorocache.at(tup).begin();
     }
 
     template<typename T>
@@ -579,8 +670,8 @@ namespace ufo
       os << " ]";
     }
 
-    void travCand_fn(coroutine<Expr>::push_type& sink,
-        vector<optional<ExprCoroCacheIter>> coros, ExprVector cand,
+    void travCand_fn(coroutine<ParseTree>::push_type& sink,
+        vector<optional<PTCoroCacheIter>> coros, vector<ParseTree> cand,
         set<int> stuck, Expr root, int currdepth,
         std::shared_ptr<ExprUSet> qvars, Expr currnt)
     {
@@ -600,12 +691,13 @@ namespace ufo
       outs() << ")" << endl;*/
       if (travtype == TravParamType::STRIPED ||
       stuck.size() == cand.size())
-        sink(m_efac.mkNary(root->op(), cand));
+        //sink(m_efac.mkNary(root->op(), cand));
+        sink(ParseTree(root, cand));
 
       if (stuck.size() == cand.size())
         return;
 
-      vector<ExprCoro> methcoros;
+      vector<PTCoro> methcoros;
       auto emptymethcoros = [&] () {
         bool methcoroavail = true;
         while (methcoroavail)
@@ -644,28 +736,38 @@ namespace ufo
           if (!*coros[pos])
             return false;
 
-          ExprVector newcand = cand;
+          vector<ParseTree> newcand = cand;
           newcand[pos] = coros[pos]->get();
           (*coros[pos])();
-          if (pos == 1 &&
+          /*if (pos == 1 &&
           (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root)))
-            while (isOpX<MPZ>(newcand[pos]) &&
-            lexical_cast<cpp_int>(newcand[pos]) <= 0)
+          {
+            Expr posexpr = collapsePT(newcand[pos]);
+            bool doexit = false;
+            while (isOpX<MPZ>(posexpr) &&
+            isOpX<MOD>(root) ? lexical_cast<cpp_int>(posexpr) <= 0 :
+            lexical_cast<cpp_int>(posexpr) == 0)
             {
-              newcand[pos] = coros[pos]->get();
-              (*coros[pos])();
-              if (!*coros[pos])
+              if (doexit)
                 return false;
+              newcand[pos] = coros[pos]->get();
+              posexpr = collapsePT(newcand[pos]);
+              if (*coros[pos])
+                (*coros[pos])();
+              else
+                doexit = true;
             }
+          }*/
           set<int> newstuck = stuck;
           for (int i = 0; i <= pos; ++i)
             newstuck.insert(i);
 
           if (newstuck.size() == newcand.size())
-            sink(m_efac.mkNary(root->op(), newcand));
+            //sink(m_efac.mkNary(root->op(), newcand));
+            sink(ParseTree(root, newcand));
           else
           {
-            vector<optional<ExprCoroCacheIter>> newcoros;
+            vector<optional<PTCoroCacheIter>> newcoros;
             for (int i = 0; i < coros.size(); ++i)
             {
               if (newstuck.find(i) == newstuck.end())
@@ -726,33 +828,38 @@ namespace ufo
         else if (travdir == TravParamDirection::RND)
           nextstuck = free[rand() % free.size()];
 
-        ExprCoroCacheIter nextcoro = getCandCoro(root->arg(nextstuck),
+        PTCoroCacheIter nextcoro = getCandCoro(root->arg(nextstuck),
           currdepth, qvars, currnt);
 
         set<int> newstuck = stuck;
         newstuck.insert(nextstuck);
 
-        for (Expr exp : nextcoro)
+        for (ParseTree exp : nextcoro)
         {
           cand[nextstuck] = exp;
 
-          if (nextstuck == 1 &&
-            (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root)) &&
-            isOpX<MPZ>(cand[nextstuck]) &&
-            lexical_cast<cpp_int>(cand[nextstuck]) <= 0)
+          /*if (nextstuck == 1 &&
+            (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root)))
+          {
+            Expr posexpr = collapsePT(cand[nextstuck]);
+            if (isOpX<MPZ>(posexpr) &&
+            isOpX<MOD>(root) ? lexical_cast<cpp_int>(posexpr) <= 0 :
+            lexical_cast<cpp_int>(posexpr) == 0)
               continue;
+          }*/
 
-          vector<optional<ExprCoroCacheIter>> newcoros;
+          vector<optional<PTCoroCacheIter>> newcoros;
           for (int i = 0; i < coros.size(); ++i)
             newcoros.push_back(boost::none);
 
           if (newstuck.size() == cand.size())
-            sink(m_efac.mkNary(root->op(), cand));
+            //sink(m_efac.mkNary(root->op(), cand));
+            sink(ParseTree(root, cand));
           else
           {
-            ExprCoro newmeth = getTravCoro(std::move(newcoros), cand,
+            PTCoro newmeth = getTravCoro(std::move(newcoros), cand,
               newstuck, root, currdepth, qvars, currnt);
-            for (Expr exp : newmeth)
+            for (ParseTree exp : newmeth)
               sink(exp);
           }
         }
@@ -762,12 +869,12 @@ namespace ufo
       //currnumtravcoros[root]--;
     }
 
-    ExprCoro getTravCoro(vector<optional<ExprCoroCacheIter>> coros,
-      ExprVector cand, set<int> stuck, Expr root, int currdepth,
+    PTCoro getTravCoro(vector<optional<PTCoroCacheIter>> coros,
+      vector<ParseTree> cand, set<int> stuck, Expr root, int currdepth,
       std::shared_ptr<ExprUSet> qvars, Expr currnt)
     {
       // We can't use std::bind, since that will try to copy coros
-      return std::move(ExprCoro([&] (coroutine<Expr>::push_type &sink) {
+      return std::move(PTCoro([&] (coroutine<ParseTree>::push_type &sink) {
         return travCand_fn(sink, std::move(coros), std::move(cand),
           std::move(stuck), root, currdepth, qvars, currnt); }));
     }
@@ -1102,9 +1209,6 @@ namespace ufo
                 std::move(discrete_distribution<int>(iweights.begin(),
                   iweights.end())));
 
-              outs() << "distmap[" << newright << "] = " <<
-                distmap[newright] << "\n";
-
               defs[ex->left()] = newright;
             }
             else
@@ -1141,10 +1245,18 @@ namespace ufo
         std::shared_ptr<ExprUSet> qvars = NULL;
         int currdepth = 0;
         Expr currnt = NULL;
-        getNextCandTrav = std::unique_ptr<ExprCoro>(new ExprCoro(
+        getNextCandTrav = std::unique_ptr<PTCoro>(new PTCoro(
             std::bind(&GRAMfactory::getNextCandTrav_fn, this,
             std::placeholders::_1, inv, currdepth, qvars, currnt)));
       }
+    }
+
+    static void printPT(ParseTree pt, int depth = 0)
+    {
+      for (int i = 0; i < depth; ++i) outs() << "  ";
+      outs() << pt.data() << "\n";
+      for (auto &p : pt.children())
+        printPT(p, depth + 1);
     }
 
     Expr getFreshCandidate()
@@ -1169,14 +1281,17 @@ namespace ufo
             exit(0);
             return NULL;
           }
-          nextcand = getNextCandTrav->get();
+          ParseTree nextpt = getNextCandTrav->get();
+          //printPT(nextpt);
+          nextcand = collapsePT(nextpt);
           (*getNextCandTrav)();
         }
         else if (genmethod == GramGenMethod::RND)
         {
           nextcand = getRandCand(inv);
         }
-        //outs() << "Before simplification: " << nextcand << endl;
+        //if (printLog)
+        //  outs() << "Before simplification: " << nextcand << endl;
         nextcand = simplifyBool(simplifyArithm(nextcand));
         if (isOpX<TRUE>(nextcand) || isOpX<FALSE>(nextcand))
         {
