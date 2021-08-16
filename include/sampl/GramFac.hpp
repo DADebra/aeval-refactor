@@ -42,7 +42,7 @@ namespace ufo
   //   1st - GramGenMethod
   //   2nd - Maximum recursion depth
   typedef std::tuple<GramGenMethod, int, TravParamDirection, TravParamOrder,
-          TravParamType, TravParamPrio> GramParams;
+          TravParamType, TravParamPrio, bool> GramParams;
 
   class GRAMfactory
   {
@@ -301,6 +301,9 @@ namespace ufo
     TravParamOrder travorder;
     TravParamType travtype;
     TravParamPrio travprio;
+
+    // Whether or not to print candidates before simplification. For debug.
+    bool b4simpl;
 
     public:
 
@@ -992,13 +995,13 @@ namespace ufo
     void setParams(GramParams params)
     {
       std::tie(genmethod, maxrecdepth, travdir, travorder, travtype,
-          travprio) = params;
+          travprio, b4simpl) = params;
     }
 
     GramParams getParams()
     {
       return std::move(std::make_tuple(genmethod, maxrecdepth, travdir,
-            travorder, travtype, travprio));
+            travorder, travtype, travprio, b4simpl));
     }
 
     // Parse the grammar file. Must be called after addVar(s).
@@ -1290,8 +1293,8 @@ namespace ufo
         {
           nextcand = getRandCand(inv);
         }
-        //if (printLog)
-        //  outs() << "Before simplification: " << nextcand << endl;
+        if (b4simpl)
+          outs() << "Before simplification: " << nextcand << endl;
         nextcand = simplifyBool(simplifyArithm(nextcand));
         if (isOpX<TRUE>(nextcand) || isOpX<FALSE>(nextcand))
         {

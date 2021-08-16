@@ -79,6 +79,7 @@ int main (int argc, char ** argv)
   const char *OPT_GRAM_TRAV_ORD = "--trav_order";
   const char *OPT_GRAM_TRAV_TYPE = "--trav_type";
   const char *OPT_GRAM_TRAV_PRIO = "--trav_priority";
+  const char *OPT_GRAM_B4SIMPL = "--b4simpl";
 
   if (getBoolValue(OPT_HELP, false, argc, argv) || argc == 1){
     outs () <<
@@ -117,7 +118,8 @@ int main (int argc, char ** argv)
         " " << OPT_GRAM_TRAV_TYPE << " <ordered, striped>  parameter for " << OPT_GRAM_GEN << " traverse\n" <<
         " " << OPT_GRAM_TRAV_PRIO << " <sfs, bfs, dfs> parameter for " << OPT_GRAM_GEN << " traverse and " << OPT_GRAM_TRAV_TYPE << " striped\n" <<
         " " << OPT_GRAM_TRAV_DIR << " <ltr, rtl>     parameter for " << OPT_GRAM_GEN << " traverse\n" <<
-        " " << OPT_GRAM_TRAV_ORD << " <forward, reverse> parameter for " << OPT_GRAM_GEN << " traverse\n\n" <<
+        " " << OPT_GRAM_TRAV_ORD << " <forward, reverse> parameter for " << OPT_GRAM_GEN << " traverse\n" <<
+        " " << OPT_GRAM_B4SIMPL << "                       print candidates before they're simplified\n\n" <<
         "ImplCheck options only (\"" << OPT_DATA_LEARNING << "\" enabled automatically):\n" <<
         " " << OPT_DISJ << "                          prioritize disjunctive invariants\n" <<
         " " << OPT_D1 << "                       search for phases among all MBPs (needs \"" << OPT_DISJ <<"\")\n" <<
@@ -177,7 +179,8 @@ int main (int argc, char ** argv)
     CFGUtils::strtotravdir(getStrValue(OPT_GRAM_TRAV_DIR, "ltr", argc, argv)),
     CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "forward", argc, argv)),
     CFGUtils::strtotravtype(gram_trav_type),
-    CFGUtils::strtotravprio(gram_trav_prio));
+    CFGUtils::strtotravprio(gram_trav_prio),
+    getBoolValue(OPT_GRAM_B4SIMPL, false, argc, argv));
 
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), grammars, max_attempts, to,
