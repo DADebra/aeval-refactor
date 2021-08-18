@@ -1182,16 +1182,24 @@ namespace ufo
     }
   };
 
-  inline static Expr eliminateQuantifiers(Expr cond, ExprSet& vars)
+  inline static Expr eliminateQuantifiers(Expr fla, ExprSet& vars)
   {
-    ExprFactory &efac = cond->getFactory();
+    ExprFactory &efac = fla->getFactory();
     SMTUtils u(efac);
-    if (vars.size() == 0) return simplifyBool(cond);
+    if (vars.size() == 0) return simplifyBool(fla);
 
-    Expr newCond = simplifyArithm(simpleQE(cond, vars));
+    ExprSet dsjs, newDsjs;
+    getDisj(fla, dsjs);
+    if (dsjs.size() > 1)
+    {
+      for (auto & d : dsjs) newDsjs.insert(eliminateQuantifiers(d, vars));
+      return disjoin(newDsjs, efac);
+    }
+
+    Expr newCond = simplifyArithm(simpleQE(fla, vars));
 
     if (!emptyIntersect(newCond, vars) &&
-        !containsOp<FORALL>(cond) && !containsOp<EXISTS>(cond) && !qeUnsupported(newCond))
+        !containsOp<FORALL>(fla) && !containsOp<EXISTS>(fla) && !qeUnsupported(newCond))
     {
       AeValSolver ae(mk<TRUE>(efac), newCond, vars); // exists quantified . formula
       if (ae.solve()) {
@@ -1224,19 +1232,49 @@ namespace ufo
     return simplifyBool(conjoin(cnj, efac));
   }
 
-  inline static Expr eliminateQuantifiers(Expr cond, ExprVector& vars)
+  inline static Expr eliminateQuantifiers(Expr fla, ExprVector& vars)
   {
     ExprSet varsSet;
     for (auto & v : vars) varsSet.insert(v);
-    return eliminateQuantifiers(cond, varsSet);
+    return eliminateQuantifiers(fla, varsSet);
   }
 
-  inline static Expr keepQuantifiers(Expr cond, ExprVector& vars)
+  template<typename Range> static Expr eliminateQuantifiersRepl(Expr fla, Range& vars)
+  {
+    fla = simplifyArithm(simpleQE(fla, vars));
+    ExprFactory &efac = fla->getFactory();
+    SMTUtils u(efac);
+    ExprSet complex;
+    findComplexNumerics(fla, complex);
+    ExprMap repls;
+    ExprSet varsCond; varsCond.insert(vars.begin(), vars.end());
+    for (auto & a : complex)
+    {
+      Expr repl = bind::intConst(mkTerm<string>
+                                 ("__repl_" + lexical_cast<string>(repls.size()), efac));
+      repls[a] = repl;
+      for (auto & v : vars) if (contains(a, v)) varsCond.erase(v);
+    }
+    Expr condTmp = replaceAll(fla, repls);
+    Expr tmp = eliminateQuantifiers(condTmp, varsCond);
+    tmp = replaceAllRev(tmp, repls);
+    return eliminateQuantifiers(tmp, vars);
+  }
+
+  inline static Expr keepQuantifiers(Expr fla, ExprVector& vars)
   {
     ExprSet varsSet;
-    filter (cond, bind::IsConst (), inserter(varsSet, varsSet.begin()));
+    filter (fla, bind::IsConst (), inserter(varsSet, varsSet.begin()));
     minusSets(varsSet, vars);
-    return eliminateQuantifiers(cond, varsSet);
+    return eliminateQuantifiers(fla, varsSet);
+  }
+
+  inline static Expr keepQuantifiersRepl(Expr fla, ExprVector& vars)
+  {
+    ExprSet varsSet;
+    filter (fla, bind::IsConst (), inserter(varsSet, varsSet.begin()));
+    minusSets(varsSet, vars);
+    return eliminateQuantifiersRepl(fla, varsSet);
   }
 
   inline static Expr abduce (Expr goal, Expr assm)
