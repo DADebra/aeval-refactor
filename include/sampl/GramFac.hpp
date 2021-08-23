@@ -465,74 +465,39 @@ namespace ufo
       return indeterminate;
     }
 
-    void travExpans_fn(coroutine<Expr>::push_type& sink, Expr con,
-      const unordered_map<Expr,ExprUSet>& expmap, vector<Expr> cand,
-      int stuck=0)
-    {
-      if (isOpX<FAPP>(con))
-      {
-        if (expmap.count(con) != 0)
-        {
-          for (auto &expand : expmap.at(con))
-            sink(expand);
-        }
-        else
-          sink(con);
-        return;
-      }
-
-      if (isOpX<FDECL>(con) || con->arity() == 0)
-      {
-        sink(con);
-        return;
-      }
-
-      vector<ExprCoro> coros;
-
-      if (cand.size() == 0)
-      {
-        for (int i = 0; i < con->arity(); ++i)
-        {
-          coros.push_back(getTravExpans(con->arg(i), expmap, vector<Expr>()));
-        }
-      }
-      else
-        for (int i = 0; i < stuck; ++i)
-          coros.push_back(getTravExpans(con->arg(i), expmap, vector<Expr>()));
-
-      for (int i = 0; i < coros.size(); ++i)
-      {
-        if (cand.size() == i)
-          cand.push_back(NULL);
-        cand[i] = coros[i].get();
-        coros[i]();
-      }
-
-      sink(m_efac.mkNary(con->op(), cand));
-
-      for (int i = 0; i < coros.size(); ++i)
-        for (auto &exp : coros[i])
-        {
-          cand[i] = exp;
-          travExpans_fn(sink, con, expmap, cand, i);
-        }
-    }
     ExprCoro getTravExpans(Expr con,
-      const unordered_map<Expr,ExprUSet>& expmap, vector<Expr> cand,
-      int stuck=0)
+      const unordered_map<Expr,ExprUSet>& expmap)
     {
-      return ExprCoro(std::bind(&GRAMfactory::travExpans_fn, this,
-        std::placeholders::_1, con, expmap, std::move(cand), stuck));
+      return ExprCoro([&] (coroutine<Expr>::push_type& sink)
+        {
+          ExprVector fapps(expmap.size());
+          filter(con, [] (Expr e) {
+            return isOpX<FAPP>(e) && e->arity() == 1; }, fapps.begin());
+          // Note that because of the internal ExprSet that dagVisit uses,
+          //   we don't need to purge duplicates from `fapps`.
+          ExprVector from;
+          for (auto &f : fapps)
+            if (f && expmap.count(f) != 0) from.push_back(f);
+          ExprVector to(from.size());
+          function<void(int)> perm = [&] (int pos)
+          {
+            if (pos == from.size())
+              sink(replaceAll(con, from, to));
+            else
+              for (auto &expand : expmap.at(from[pos]))
+              {
+                to[pos] = expand;
+                perm(pos + 1);
+              }
+          };
+          perm(0);
+        });
     }
 
-    bool doesSatExpr(Expr fullcon, const unordered_map<Expr,ExprUSet>& expmap)
+    bool doesSatExpr(Expr con, const unordered_map<Expr,ExprUSet>& expmap,
+      bool doAny, Expr origcon)
     {
-      Expr con = fullcon->right();
-
-      bool doAny = lexical_cast<string>(bind::fname(fullcon)->left()) ==
-        "constraint_any";
-
-      ExprCoro constcoro = getTravExpans(con, expmap, vector<Expr>());
+      ExprCoro constcoro = getTravExpans(con, expmap);
 
       bool needsolver = false;
       ExprVector assertexps;
@@ -592,11 +557,11 @@ namespace ufo
           m_smt_solver.assertExpr(m_efac.mkNary(AND(), assertexps));
 
         static unordered_map<Expr,bool> didcomplain;
-        if (printLog && !didcomplain[con])
+        if (!didcomplain[origcon])
         {
-          outs() << "Invoking SMT solver to evaluate constraint:" <<
-            con << "\n";
-          didcomplain[con] = true;
+          outs() << "NOTE: Invoking SMT solver to evaluate constraint: " <<
+            origcon->right() << "\n Freqhorn will go much slower!\n";
+          didcomplain[origcon] = true;
         }
         tribool res = m_smt_solver.solve();
         if (indeterminate(res))
@@ -626,39 +591,60 @@ namespace ufo
         Expr con = fullcon->right();
         bool doAny = lexical_cast<string>(bind::fname(fullcon)->left()) ==
           "constraint_any";
-        if (isOpX<FAPP>(con))
+        RW<function<Expr(Expr)>> fapprw(new function<Expr(Expr)>(
+          [&notselfeq, &notselfdist, &expmap, &doAny, &pt] (Expr e) -> Expr
         {
-          string conname = lexical_cast<string>(bind::fname(con)->left());
-          if (conname == "equal")
+          auto btoe = [&] (bool b) -> Expr
           {
-            if (notselfeq.count(con->right()) != 0)
-              return false;
-          }
-          else if (conname == "expands")
+            return b ? mk<TRUE>(e->efac()) : mk<FALSE>(e->efac());
+          };
+
+          if (isOpX<FAPP>(e))
           {
-            if (expmap.count(con->arg(1)) == 0)
-              continue;
-            int cnt = expmap.at(con->arg(1)).count(con->arg(2));
-            if (!doAny)
+            string conname = lexical_cast<string>(bind::fname(e)->left());
+            if (conname == "equal")
             {
-              // Make sure the ONLY expansion is the one given
-              if (cnt == 0 || expmap.at(con->arg(1)).size() != 1)
-                return false;
+              return btoe(notselfeq.count(e->right()) == 0);
             }
-            else if (cnt == 0)
-              // Any expansion can be the one given
-              return false;
+            else if (conname == "expands")
+            {
+              if (expmap.count(e->arg(1)) == 0)
+                return mk<TRUE>(e->efac());
+              int cnt = expmap.at(e->arg(1)).count(e->arg(2));
+              if (!doAny)
+              {
+                // Make sure the ONLY expansion is the one given
+                return btoe(cnt != 0 && expmap.at(e->arg(1)).size() == 1);
+              }
+              else if (cnt == 0)
+                // Any expansion can be the one given
+                return btoe(false);
+              return btoe(true);
+            }
+            else if (conname == "present")
+            {
+              function<bool(const ParseTree&)> existhelper =
+                [&] (const ParseTree& root) -> bool
+              {
+                if (root.data() == e->arg(1))
+                  return true;
+                for (auto& child : root.children())
+                  if (existhelper(child))
+                    return true;
+                return false;
+              };
+              return btoe(existhelper(pt));
+            }
+            else
+              return e;
           }
+          else if (e->arity() == 1 && isOpX<NEQ>(e))
+            return btoe(notselfdist.count(e->left()) == 0);
           else
-          {
-            outs() << "ERROR: Invalid constraint \"" << con << "\"" << endl;
-            exit(1);
-          }
-        }
-        else if (con->arity() == 1 && isOpX<NEQ>(con) &&
-        notselfdist.count(con->left()) != 0)
-          return false;
-        else if (!doesSatExpr(fullcon, expmap))
+            return e;
+        }));
+        con = dagVisit(fapprw, con);
+        if (!doesSatExpr(con, expmap, doAny, fullcon))
           return false;
       }
 
@@ -1388,6 +1374,8 @@ namespace ufo
             // Generate binary `expands` constraint declarations
             aug_gram << "(declare-fun expands (" << sort_smt << " " <<
               sort_smt << ") Bool)\n";
+            // Generate unary `present` constraint declarations
+            aug_gram << "(declare-fun present (" << sort_smt << ") Bool)\n";
         };
 
         // We need the Bool eithers for the inv definition (rel is Bool)
