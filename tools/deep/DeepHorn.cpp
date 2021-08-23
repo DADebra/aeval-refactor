@@ -180,7 +180,8 @@ int main (int argc, char ** argv)
     CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "forward", argc, argv)),
     CFGUtils::strtotravtype(gram_trav_type),
     CFGUtils::strtotravprio(gram_trav_prio),
-    getBoolValue(OPT_GRAM_B4SIMPL, false, argc, argv));
+    getBoolValue(OPT_GRAM_B4SIMPL, false, argc, argv),
+    getIntValue(OPT_TO, 1000, argc, argv));
 
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), grammars, max_attempts, to,

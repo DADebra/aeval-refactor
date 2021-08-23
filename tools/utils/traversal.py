@@ -101,6 +101,29 @@ def method2(coros, cand):
             for methcand in method2(newcoros, cand):
                 yield methcand
 
+# Method 2, but doesn't require pre-creating coros
+def method2_1(maxarity, arity=0, cand=None):
+    #print("  "*len(inspect.stack(0)) + f'method2_1({maxarity}, {arity}, {cand})')
+    global numcand
+
+    if cand == None:
+        coros = [Coro(gennum) for i in range(maxarity)]
+        cand = [None]*maxarity
+    else:
+        coros = [Coro(gennum) for i in range(arity)]
+
+    for i in range(len(coros)):
+        cand[i] = next(coros[i])
+
+    yield tuple(cand)
+    numcand += 1
+
+    for x in range(len(coros)):
+        for xi in coros[x]:
+            cand[x] = xi
+            for methcand in method2_1(maxarity, x, cand):
+                yield methcand
+
 def randorder(num):
     order = [ i for i in range(num) ]
     random.shuffle(order)
@@ -592,6 +615,19 @@ correctcands = set()
 
 for cand in method2(glcoros, glcand):
     correctcands.add(cand)
+
+newcands = set()
+for cand in method2_1(3):
+    newcands.add(cand)
+    print(cand)
+
+if correctcands != newcands:
+    print()
+    print("New method didn't produce correct candidates:")
+    for cand in correctcands.difference(newcands):
+        print(f"New is missing: {cand}")
+
+exit(0)
 
 #method2(glcoros, glcand)
 

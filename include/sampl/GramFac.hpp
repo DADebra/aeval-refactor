@@ -42,7 +42,7 @@ namespace ufo
   //   1st - GramGenMethod
   //   2nd - Maximum recursion depth
   typedef std::tuple<GramGenMethod, int, TravParamDirection, TravParamOrder,
-          TravParamType, TravParamPrio, bool> GramParams;
+          TravParamType, TravParamPrio, bool, unsigned> GramParams;
 
   class GRAMfactory
   {
@@ -97,12 +97,12 @@ namespace ufo
       ParseTree(ParseTreeNode* ptptr) : ptr(ptptr) {}
       ParseTree(Expr _data) : ptr(new ParseTreeNode(_data)) {}
 
-      Expr& data() const
+      const Expr& data() const
       {
         return ptr->data;
       }
 
-      vector<ParseTree> children() const
+      const vector<ParseTree>& children() const
       {
         return ptr->children;
       }
@@ -246,6 +246,9 @@ namespace ufo
     // Needed for parsing grammar.
     EZ3 &z3;
 
+    // Needed for evaluating constraints.
+    ZSolver<EZ3> m_smt_solver;
+
     // Previously generated candidates from sample grammar
     ExprUSet gramCands;
     deque<Expr> gramCandsOrder;
@@ -260,6 +263,9 @@ namespace ufo
 
     // Key: Non-terminal, Value: Productions in b/ieither# format
     ExprUMap defs;
+
+    // List of FAPP (or EQ, GT, etc.) constraints specified in the grammar
+    ExprVector constraints;
 
     // Key: <Non-terminal, Production>, Value: Priority
     unordered_map<std::pair<Expr, Expr>, cpp_rational, pairhash> priomap;
@@ -305,6 +311,9 @@ namespace ufo
     // Whether or not to print candidates before simplification. For debug.
     bool b4simpl;
 
+    // The timeout for the SMT solver runs, if any occur.
+    unsigned timeout;
+
     public:
 
     bool initialized = false;
@@ -312,7 +321,7 @@ namespace ufo
     private:
 
     // exp is e.g. (= iterm iterm), nonterm is e.g. iterm
-    bool isRecursive(Expr exp, Expr nonterm)
+    bool isRecursive(const Expr& exp, const Expr& nonterm)
     {
       for (auto itr = exp->args_begin(); itr != exp->args_end(); ++itr)
       {
@@ -326,7 +335,7 @@ namespace ufo
       return false;
     }
 
-    Expr collapsePT(ParseTree pt)
+    Expr collapsePT(const ParseTree& pt)
     {
       if (pt.children().size() == 1)
         return collapsePT(pt.children()[0]);
@@ -341,6 +350,319 @@ namespace ufo
         }
         return m_efac.mkNary(pt.data()->op(), eargs);
       }
+    }
+
+    // Key: Non-terminal   Value: Set of Expr's that First expands to
+    // `notselfdist` is a set of non-terminals which aren't distinct within
+    //   themselves (i.e., there are two expansions of the non-terminal to
+    //   the same value within the expression).
+    // `notselfeq` is inverse of set of non-terminals for which all
+    //   expansions are equivalent (e.g. all INT_CONSTS expand to 2)
+    void findExpansions(const ParseTree& pt,
+        unordered_map<Expr,ExprUSet>& outmap, ExprUSet& notselfdist,
+        ExprUSet& notselfeq)
+    {
+      if (pt.children().size() == 0)
+        return;
+      else if (pt.children().size() == 1)
+      {
+        const ParseTree* realnt = &pt;
+        while (realnt->children().size() == 1 &&
+        isOpX<FAPP>(defs[realnt->data()]) &&
+        lexical_cast<string>(bind::fname(defs[realnt->data()])->left())
+        .find("either") == string::npos)
+          realnt = &pt.children()[0];
+
+        if (!outmap[pt.data()].insert(realnt->children()[0].data()).second)
+          notselfdist.insert(pt.data());
+        else if (outmap[pt.data()].size() != 1)
+          notselfeq.insert(pt.data());
+        return findExpansions(pt.children()[0],outmap,notselfdist,notselfeq);
+      }
+      else
+      {
+        for (auto &subpt : pt.children())
+          findExpansions(subpt, outmap, notselfdist, notselfeq);
+      }
+    }
+
+    inline static tribool evaluateCmpExpr(Expr cmp)
+    {
+      // simplifyArithm is also simplifying comparisons
+      if (isOpX<FALSE>(cmp))
+        return false;
+      if (isOpX<TRUE>(cmp))
+        return true;
+      if (isOpX<NEG>(cmp))
+        return !evaluateCmpExpr(cmp->left());
+      if (isOpX<EQ>(cmp))
+      {
+        if (!isOpX<FAPP>(cmp->arg(0)) && !isOpX<MPZ>(cmp->arg(0)) &&
+        !isOpX<MPQ>(cmp->arg(0)))
+          return indeterminate;
+        for (int i = 1; i < cmp->arity(); ++i)
+        {
+          if (!isOpX<FAPP>(cmp->arg(i)) && !isOpX<MPZ>(cmp->arg(i)) &&
+          !isOpX<MPQ>(cmp->arg(i)))
+            return indeterminate;
+          if (cmp->arg(i) != cmp->arg(0))
+            return false;
+        }
+        return true;
+      }
+      if (isOpX<NEQ>(cmp))
+      {
+        for (int p1 = 0; p1 < cmp->arity(); ++p1)
+          for (int p2 = p1 + 1; p2 < cmp->arity(); ++p2)
+          {
+            if (!isOpX<FAPP>(cmp->arg(p1)) && !isOpX<MPZ>(cmp->arg(p1)) &&
+            !isOpX<MPQ>(cmp->arg(p1)))
+              return indeterminate;
+            if (cmp->arg(p1) == cmp->arg(p2))
+              return false;
+          }
+        return true;
+      }
+      if (isOpX<AND>(cmp) || isOpX<OR>(cmp) || isOpX<XOR>(cmp))
+      {
+        bool doAnd = isOpX<AND>(cmp),
+             doXor = isOpX<XOR>(cmp);
+        tribool ret = evaluateCmpExpr(cmp->arg(0));
+        for (int i = 1; i < cmp->arity(); ++i)
+        {
+          tribool subret = evaluateCmpExpr(cmp->arg(i));
+          if (doXor)
+            ret = (subret || ret) && !(subret && ret);
+          else if (doAnd)
+            ret = subret && ret;
+          else
+            ret = subret || ret;
+        }
+        return ret;
+      }
+      if (isOpX<IMPL>(cmp))
+        return !evaluateCmpExpr(cmp->left()) || evaluateCmpExpr(cmp->right());
+      if (isOpX<ITE>(cmp))
+        return evaluateCmpExpr(cmp->arg(0)) ?
+          evaluateCmpExpr(cmp->arg(1)) : evaluateCmpExpr(cmp->arg(2));
+
+      if (cmp->arity() > 2)
+        return indeterminate;
+      if (!isOpX<MPZ>(cmp->left()) || !isOpX<MPZ>(cmp->right()))
+        return indeterminate;
+
+      cpp_int li = lexical_cast<cpp_int>(cmp->left()),
+              ri = lexical_cast<cpp_int>(cmp->right());
+      if (isOpX<LEQ>(cmp))
+        return li <= ri;
+      if (isOpX<GEQ>(cmp))
+        return li >= ri;
+      if (isOpX<LT>(cmp))
+        return li < ri;
+      if (isOpX<GT>(cmp))
+        return li > ri;
+
+      return indeterminate;
+    }
+
+    void travExpans_fn(coroutine<Expr>::push_type& sink, Expr con,
+      const unordered_map<Expr,ExprUSet>& expmap, vector<Expr> cand,
+      int stuck=0)
+    {
+      if (isOpX<FAPP>(con))
+      {
+        if (expmap.count(con) != 0)
+        {
+          for (auto &expand : expmap.at(con))
+            sink(expand);
+        }
+        else
+          sink(con);
+        return;
+      }
+
+      if (isOpX<FDECL>(con) || con->arity() == 0)
+      {
+        sink(con);
+        return;
+      }
+
+      vector<ExprCoro> coros;
+
+      if (cand.size() == 0)
+      {
+        for (int i = 0; i < con->arity(); ++i)
+        {
+          coros.push_back(getTravExpans(con->arg(i), expmap, vector<Expr>()));
+        }
+      }
+      else
+        for (int i = 0; i < stuck; ++i)
+          coros.push_back(getTravExpans(con->arg(i), expmap, vector<Expr>()));
+
+      for (int i = 0; i < coros.size(); ++i)
+      {
+        if (cand.size() == i)
+          cand.push_back(NULL);
+        cand[i] = coros[i].get();
+        coros[i]();
+      }
+
+      sink(m_efac.mkNary(con->op(), cand));
+
+      for (int i = 0; i < coros.size(); ++i)
+        for (auto &exp : coros[i])
+        {
+          cand[i] = exp;
+          travExpans_fn(sink, con, expmap, cand, i);
+        }
+    }
+    ExprCoro getTravExpans(Expr con,
+      const unordered_map<Expr,ExprUSet>& expmap, vector<Expr> cand,
+      int stuck=0)
+    {
+      return ExprCoro(std::bind(&GRAMfactory::travExpans_fn, this,
+        std::placeholders::_1, con, expmap, std::move(cand), stuck));
+    }
+
+    bool doesSatExpr(Expr fullcon, const unordered_map<Expr,ExprUSet>& expmap)
+    {
+      Expr con = fullcon->right();
+
+      bool doAny = lexical_cast<string>(bind::fname(fullcon)->left()) ==
+        "constraint_any";
+
+      ExprCoro constcoro = getTravExpans(con, expmap, vector<Expr>());
+
+      bool needsolver = false;
+      ExprVector assertexps;
+      if (doAny)
+        assertexps.push_back(mk<FALSE>(m_efac));
+      else
+        assertexps.push_back(mk<TRUE>(m_efac));
+      for (Expr &exp : constcoro)
+      {
+        tribool res = evaluateCmpExpr(exp);
+        if (indeterminate(res))
+        {
+          res = evaluateCmpExpr(simplifyArithm(exp));
+          if (indeterminate(res))
+          {
+            // We (maybe) don't want Z3 to evaluate variables as
+            //   non-determinate integers.
+            RW<function<Expr(Expr)>> rw(new function<Expr(Expr)>(
+              [] (Expr e) -> Expr
+            {
+              if ((isOpX<EQ>(e) || isOpX<NEQ>(e)) &&
+              all_of(e->args_begin(), e->args_end(), isOpX<FAPP,Expr>))
+              {
+                ExprVector args(e->arity());
+                for (int i = 0; i < e->arity(); ++i)
+                  // Using memory location here as an easy way to get
+                  //   different symbolic variables to be
+                  //   a). predictable and b). unique
+                  args[i] = mkMPZ((unsigned long)e->arg(i), e->efac());
+                return e->efac().mkNary(e->op(), args);
+              }
+              return e;
+            }));
+            exp = dagVisit(rw, exp);
+            //m_smt_solver.assertExpr(exp);
+            assertexps.push_back(exp);
+            needsolver = true;
+          }
+          else if (!res)
+            return false;
+          else if (doAny)
+            return true;
+        }
+        else if (!res)
+          return false;
+        else if (doAny)
+          return true;
+      }
+
+      if (needsolver)
+      {
+        m_smt_solver.reset();
+
+        if (doAny)
+          m_smt_solver.assertExpr(m_efac.mkNary(OR(), assertexps));
+        else
+          m_smt_solver.assertExpr(m_efac.mkNary(AND(), assertexps));
+
+        static unordered_map<Expr,bool> didcomplain;
+        if (printLog && !didcomplain[con])
+        {
+          outs() << "Invoking SMT solver to evaluate constraint:" <<
+            con << "\n";
+          didcomplain[con] = true;
+        }
+        tribool res = m_smt_solver.solve();
+        if (indeterminate(res))
+        {
+          outs() << "ERROR: Indeterminate result in evaluating constraints:\n";
+          m_smt_solver.toSmtLib(outs());
+          outs() << endl;
+          exit(1);
+        }
+        if (!res)
+          return false;
+        else if (doAny)
+          return true;
+      }
+
+      return true;
+    }
+
+    bool doesSatConstraints(const ParseTree& pt)
+    {
+      unordered_map<Expr,ExprUSet> expmap;
+      ExprUSet notselfdist, notselfeq;
+      findExpansions(pt, expmap, notselfdist, notselfeq);
+
+      for (auto &fullcon : constraints)
+      {
+        Expr con = fullcon->right();
+        bool doAny = lexical_cast<string>(bind::fname(fullcon)->left()) ==
+          "constraint_any";
+        if (isOpX<FAPP>(con))
+        {
+          string conname = lexical_cast<string>(bind::fname(con)->left());
+          if (conname == "equal")
+          {
+            if (notselfeq.count(con->right()) != 0)
+              return false;
+          }
+          else if (conname == "expands")
+          {
+            if (expmap.count(con->arg(1)) == 0)
+              continue;
+            int cnt = expmap.at(con->arg(1)).count(con->arg(2));
+            if (!doAny)
+            {
+              // Make sure the ONLY expansion is the one given
+              if (cnt == 0 || expmap.at(con->arg(1)).size() != 1)
+                return false;
+            }
+            else if (cnt == 0)
+              // Any expansion can be the one given
+              return false;
+          }
+          else
+          {
+            outs() << "ERROR: Invalid constraint \"" << con << "\"" << endl;
+            exit(1);
+          }
+        }
+        else if (con->arity() == 1 && isOpX<NEQ>(con) &&
+        notselfdist.count(con->left()) != 0)
+          return false;
+        else if (!doesSatExpr(fullcon, expmap))
+          return false;
+      }
+
+      return true;
     }
 
     void getNextCandTrav_fn(coroutine<ParseTree>::push_type &sink,
@@ -565,8 +887,6 @@ namespace ufo
           if (defs[root] != NULL)
           {
             //currnumcandcoros--;
-            /*return getNextCandTrav_fn(sink, defs[root], root == currnt ?
-              currdepth : 0, qvars, root);*/
             PTCoroCacheIter newcoro = getCandCoro(defs[root], root == currnt ?
               currdepth : 0, qvars, root);
             for (ParseTree pt : newcoro)
@@ -974,8 +1294,8 @@ namespace ufo
     public:
 
     GRAMfactory(ExprFactory &_efac, EZ3 &_z3, bool _printLog) :
-      m_efac(_efac), z3(_z3), printLog(_printLog), inv(NULL),
-      getNextCandTrav(nullptr) {}
+      m_efac(_efac), z3(_z3), m_smt_solver(z3),
+      printLog(_printLog), inv(NULL), getNextCandTrav(nullptr) {}
 
     void addVar(Expr var)
     {
@@ -995,13 +1315,16 @@ namespace ufo
     void setParams(GramParams params)
     {
       std::tie(genmethod, maxrecdepth, travdir, travorder, travtype,
-          travprio, b4simpl) = params;
+          travprio, b4simpl, timeout) = params;
+      ZParams<EZ3> zp(z3);
+      zp.set("timeout", timeout);
+      m_smt_solver.set(zp);
     }
 
     GramParams getParams()
     {
       return std::move(std::make_tuple(genmethod, maxrecdepth, travdir,
-            travorder, travtype, travprio, b4simpl));
+            travorder, travtype, travprio, b4simpl, timeout));
     }
 
     // Parse the grammar file. Must be called after addVar(s).
@@ -1040,7 +1363,8 @@ namespace ufo
         //   variables that we define.
         ostringstream aug_gram;
 
-        auto generate_either_decl = [&] (string sort_name, string sort_smt)
+        auto generate_sort_decls = [&] (const string& sort_name,
+        const string& sort_smt, const string& vars_name)
         {
             // Generate either functions for given sort
             for (auto& i : eithers_to_gen)
@@ -1052,12 +1376,22 @@ namespace ufo
               }
               aug_gram << ") " << sort_smt << ")\n";
             }
+
+            // Special *_VARS variable
+            aug_gram << "(declare-fun " << vars_name << " () " <<
+              sort_smt << ")\n";
+            // Generate *_prio declarations
+            aug_gram << "(declare-fun " << sort_name << "_prio (" <<
+              sort_smt << " Real) " << sort_smt << ")\n";
+            // Generate unary `equal` constraint declarations
+            aug_gram << "(declare-fun equal (" << sort_smt << ") Bool)\n";
+            // Generate binary `expands` constraint declarations
+            aug_gram << "(declare-fun expands (" << sort_smt << " " <<
+              sort_smt << ") Bool)\n";
         };
 
         // We need the Bool eithers for the inv definition (rel is Bool)
-        aug_gram << "(declare-fun BOOL_VARS () Bool)" << endl;
-        generate_either_decl("Bool", "Bool");
-        aug_gram << "(declare-fun Bool_prio (Bool Real) Bool)\n";
+        generate_sort_decls("Bool", "Bool", "BOOL_VARS");
 
         // Which sorts we've already generated eithers and *_VARS for.
         ExprSet donesorts;
@@ -1085,7 +1419,6 @@ namespace ufo
               }
             }
 
-            // Generate special variable for this sort
             string vars_name(sort_name);
               vars_name += "_VARS";
             for (auto& c : vars_name)
@@ -1094,11 +1427,7 @@ namespace ufo
             // If we haven't already generated an either
             if (donesorts.find(pair.first) == donesorts.end())
             {
-              aug_gram << "(declare-fun " << vars_name << " () " << sort_smt << ")\n";
-
-              generate_either_decl(sort_name, sort_smt);
-              // Generate *_prio declarations
-              aug_gram << "(declare-fun " << sort_name << "_prio (" << sort_smt << " Real) " << sort_smt << ")\n";
+              generate_sort_decls(sort_name, sort_smt, vars_name);
               donesorts.insert(pair.first);
             }
 
@@ -1127,8 +1456,8 @@ namespace ufo
               }
               else if (pair.second.size() == 1)
               {
-                aug_gram << "(assert (= " << vars_name << " " << *pair.second.begin() <<
-                  "))" << endl;
+                aug_gram << "(assert (= " << vars_name << " " <<
+                  *pair.second.begin() << "))" << endl;
               }
             }
           }
@@ -1138,7 +1467,10 @@ namespace ufo
         generate_all(other_inv_vars, false);
 
         // Generate INT_CONSTS declaration
-        aug_gram << "(declare-fun " << INT_CONSTS << " () Int)" << endl;
+        aug_gram << "(declare-fun " << INT_CONSTS << " () Int)\n";
+
+        aug_gram << "(declare-fun constraint (Bool) Bool)\n";
+        aug_gram << "(declare-fun constraint_any (Bool) Bool)\n";
 
         aug_gram << user_cfg.str();
 
@@ -1170,17 +1502,17 @@ namespace ufo
             }
 
             if (isOpX<FAPP>(ex->right()) &&
-                lexical_cast<string>(bind::fname(ex->right())->left())
-                .find("either") != string::npos)
+            lexical_cast<string>(bind::fname(ex->right())->left())
+            .find("either") != string::npos)
             {
               ExprVector newdefargs;
               vector<cpp_rational> rweights;
               for (auto itr = ++ex->right()->args_begin();
-                   itr != ex->right()->args_end(); ++itr)
+              itr != ex->right()->args_end(); ++itr)
               {
                 if (isOpX<FAPP>(*itr) &&
-                    lexical_cast<string>(bind::fname(*itr)->left())
-                    .find("prio") != string::npos)
+                lexical_cast<string>(bind::fname(*itr)->left())
+                .find("prio") != string::npos)
                 {
                   std::pair<Expr,Expr> keypair((*itr)->arg(1), ex->left());
                   auto prio = lexical_cast<cpp_rational>((*itr)->arg(2));
@@ -1210,12 +1542,20 @@ namespace ufo
 
               distmap.emplace(newright,
                 std::move(discrete_distribution<int>(iweights.begin(),
-                  iweights.end())));
+                iweights.end())));
 
               defs[ex->left()] = newright;
             }
             else
               defs[ex->left()] = ex->right();
+          }
+          else if (isOpX<FAPP>(ex))
+          {
+            string ename = lexical_cast<string>(bind::fname(ex)->left());
+            if (ename == "constraint" || ename == "constraint_any")
+            {
+              constraints.push_back(ex);
+            }
           }
         }
       }
@@ -1268,6 +1608,7 @@ namespace ufo
         return NULL; // Should never happen, but handle just in case
 
       Expr nextcand = NULL;
+      ParseTree nextpt = NULL;
 
       /*for (auto& kv : currnumtravcoros)
         outs() << "currnumtravcoros[" << kv.first << "] = " << kv.second << "\n";
@@ -1284,7 +1625,7 @@ namespace ufo
             exit(0);
             return NULL;
           }
-          ParseTree nextpt = getNextCandTrav->get();
+          nextpt = getNextCandTrav->get();
           //printPT(nextpt);
           nextcand = collapsePT(nextpt);
           (*getNextCandTrav)();
@@ -1299,12 +1640,23 @@ namespace ufo
         if (isOpX<TRUE>(nextcand) || isOpX<FALSE>(nextcand))
         {
           nextcand = NULL;
-          //outs() << "Tautology/Contradiction" << endl;
+          nextpt = NULL;
+          if (b4simpl)
+            outs() << "Tautology/Contradiction" << endl;
+        }
+        else if (constraints.size() != 0 && !doesSatConstraints(nextpt))
+        {
+          nextcand = NULL;
+          nextpt = NULL;
+          if (b4simpl)
+            outs() << "Doesn't satisfy constraints" << endl;
         }
         else if (!gramCands.insert(nextcand).second)
         {
           nextcand = NULL;
-          //outs() << "Old candidate" << endl;
+          nextpt = NULL;
+          if (b4simpl)
+            outs() << "Old candidate" << endl;
         }
         else
         {
