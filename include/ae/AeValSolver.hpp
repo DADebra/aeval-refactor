@@ -1225,7 +1225,6 @@ namespace ufo
 
   template<typename Range> static Expr eliminateQuantifiersRepl(Expr fla, Range& vars)
   {
-    fla = simplifyArithm(simpleQE(fla, vars));
     ExprFactory &efac = fla->getFactory();
     SMTUtils u(efac);
     ExprSet complex;
