@@ -40,16 +40,16 @@
 ; Used to indicate that a non-terminal can expand to any
 ;   of the given arguments. The expansion is picked randomly,
 ;   with a uniform distribution.
-; E.g. (assert (= iconst (Int_either_3 0 -1 1))) means iconst can be
+; E.g. (assert (= iconst (either 0 -1 1))) means iconst can be
 ;   expanded to 0, -1, or 1 randomly.
 ; Defined by Freqhorn (DO NOT DEFINE HERE).
-;(declare-fun Int_either_3 (Int Int Int) Int)
-;(declare-fun $Array_Int_Int$_either_3 (
+;(declare-fun either (Int Int Int) Int)
+;(declare-fun either (
 ;   (Array Int Int) (Array Int Int) (Array Int Int) ) (Array Int Int))
 
 (assert (= ivar INT_VARS))
-(assert (= iconst (Int_either_3 0 -1 1)))
-(assert (= term (Int_either_4 iconst ivar (* iconst ivar) (+ term term))))
-(assert (= inv (Bool_either_4 (= term term) (< term term) (not inv) (or inv inv))))
+(assert (= iconst (either 0 -1 1)))
+(assert (= term (either iconst ivar (* iconst ivar) (+ term term))))
+(assert (= inv (either (= term term) (< term term) (not inv) (or inv inv))))
 
 (check-sat)

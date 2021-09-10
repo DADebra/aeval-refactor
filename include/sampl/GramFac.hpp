@@ -24,6 +24,8 @@ namespace ufo
   const char* INT_CONSTS = "INT_CONSTS";
   // The maximum number of previous candidates we store.
   const int MAXGRAMCANDS = 100;
+  // The maximum arity of 'either' functions we write.
+  const int NUMEITHERS = 100;
 
   typedef unordered_set<Expr> ExprUSet;
   typedef unordered_map<Expr, Expr> ExprUMap;
@@ -369,8 +371,8 @@ namespace ufo
         const ParseTree* realnt = &pt;
         while (realnt->children().size() == 1 &&
         isOpX<FAPP>(defs[realnt->data()]) &&
-        lexical_cast<string>(bind::fname(defs[realnt->data()])->left())
-        .find("either") == string::npos)
+        lexical_cast<string>(bind::fname(defs[realnt->data()])->left()) ==
+        "either")
           realnt = &pt.children()[0];
 
         if (!outmap[pt.data()].insert(realnt->children()[0].data()).second)
@@ -680,7 +682,7 @@ namespace ufo
 
         // Else, root is a user-defined non-terminal or *either*
 
-        if (fname.find("either") != string::npos)
+        if (fname == "either")
         {
           vector<int> order;
 
@@ -1204,7 +1206,7 @@ namespace ufo
 
         // Else, root is a user-defined non-terminal or *either*
 
-        if (fname.find("either") != string::npos)
+        if (fname == "either")
         {
           Expr cand = NULL;
           while (cand == NULL)
@@ -1324,27 +1326,6 @@ namespace ufo
         ifstream infile(gram_file);
         user_cfg << infile.rdbuf();
 
-        // The set of eithers we need to generate.
-        // Not worth making a distinction between sorts.
-        unordered_set<int> eithers_to_gen;
-
-        // Generate enough eithers for *_VARS
-        for (auto& pair : inv_vars)
-        {
-          eithers_to_gen.insert(pair.second.size());
-        }
-
-        // Generate the eithers the user CFG uses.
-        smatch eithermatch;
-        regex eitherregex("either_([0-9]+)");
-        string searchstr = user_cfg.str();
-
-        while (regex_search(searchstr, eithermatch, eitherregex))
-        {
-          eithers_to_gen.insert(stoi(eithermatch[1]));
-          searchstr = eithermatch.suffix().str();
-        }
-
         // The provided grammar, plus variable definitions and special
         //   variables that we define.
         ostringstream aug_gram;
@@ -1353,9 +1334,9 @@ namespace ufo
         const string& sort_smt, const string& vars_name)
         {
             // Generate either functions for given sort
-            for (auto& i : eithers_to_gen)
+            for (int i = 1; i <= NUMEITHERS; ++i)
             {
-              aug_gram << "(declare-fun " << sort_name << "_either_" << i << " (";
+              aug_gram << "(declare-fun either (";
               for (int x = 1; x <= i; ++x)
               {
                 aug_gram << sort_smt << " ";
@@ -1367,7 +1348,7 @@ namespace ufo
             aug_gram << "(declare-fun " << vars_name << " () " <<
               sort_smt << ")\n";
             // Generate *_prio declarations
-            aug_gram << "(declare-fun " << sort_name << "_prio (" <<
+            aug_gram << "(declare-fun prio (" <<
               sort_smt << " Real) " << sort_smt << ")\n";
             // Generate unary `equal` constraint declarations
             aug_gram << "(declare-fun equal (" << sort_smt << ") Bool)\n";
@@ -1433,7 +1414,7 @@ namespace ufo
               if (pair.second.size() >= 1)
               {
                 aug_gram << "(assert (= " << vars_name <<
-                  " (" << sort_name << "_either_" << pair.second.size();
+                  " (either";
 
                 for (auto& var : pair.second)
                 {
@@ -1462,12 +1443,6 @@ namespace ufo
 
         aug_gram << user_cfg.str();
 
-        if (printLog)
-        {
-          outs() << ";Provided user grammar: " << endl;
-          outs() << aug_gram.str() << endl << endl;
-        }
-
         // Parse combined grammar
         Expr gram = z3_from_smtlib<EZ3>(z3, aug_gram.str());
 
@@ -1490,8 +1465,7 @@ namespace ufo
             }
 
             if (isOpX<FAPP>(ex->right()) &&
-            lexical_cast<string>(bind::fname(ex->right())->left())
-            .find("either") != string::npos)
+            lexical_cast<string>(bind::fname(ex->right())->left())=="either")
             {
               ExprVector newdefargs;
               vector<cpp_rational> rweights;
@@ -1499,8 +1473,7 @@ namespace ufo
               itr != ex->right()->args_end(); ++itr)
               {
                 if (isOpX<FAPP>(*itr) &&
-                lexical_cast<string>(bind::fname(*itr)->left())
-                .find("prio") != string::npos)
+                lexical_cast<string>(bind::fname(*itr)->left()) == "prio")
                 {
                   std::pair<Expr,Expr> keypair((*itr)->arg(1), ex->left());
                   auto prio = lexical_cast<cpp_rational>((*itr)->arg(2));
@@ -1564,7 +1537,7 @@ namespace ufo
     {
       if (int_consts.size() != 0)
       {
-        Expr eitherfunc = bind::fdecl(mkTerm(string("Int_either_") + to_string(int_consts.size()), m_efac),
+        Expr eitherfunc = bind::fdecl(mkTerm(string("either"), m_efac),
             ExprVector(int_consts.size(), m_efac.mkTerm(INT_TY())));
 
         Expr int_consts_decl = bind::intConst(mkTerm(string(INT_CONSTS), m_efac));

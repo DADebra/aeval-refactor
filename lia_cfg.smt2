@@ -14,9 +14,9 @@
 (assert (= ivar INT_VARS))
 (assert (= iconst INT_CONSTS))
 
-(assert (= term (Int_either_3 ivar (* iconst ivar) (+ term term))))
-(assert (= mterm (Int_either_5 iconst ivar (* iconst ivar) (+ mterm mterm) (Int_prio (mod term iconst) 0.1))))
-(assert (= fla (Bool_either_4 (= mterm mterm) (< mterm mterm) (not fla) (or fla fla))))
-(assert (= ANY_INV (Bool_either_2 fla (Bool_prio (=> fla fla) 0.2))))
+(assert (= term (either ivar (* iconst ivar) (+ term term))))
+(assert (= mterm (either iconst ivar (* iconst ivar) (+ mterm mterm) (prio (mod term iconst) 0.1))))
+(assert (= fla (either (= mterm mterm) (< mterm mterm) (not fla) (or fla fla))))
+(assert (= ANY_INV (either fla (prio (=> fla fla) 0.2))))
 
 (check-sat)
