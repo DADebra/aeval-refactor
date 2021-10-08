@@ -112,7 +112,7 @@ int main (int argc, char ** argv)
         " " << OPT_DATA_LEARNING << "                          bootstrap candidates from behaviors\n" <<
         " " << OPT_ELIM << "                     do not minimize CHC rules (and do not slice)\n\n" <<
         "Grammar options only:\n" <<
-        " " << OPT_GRAM_GEN << " <rnd, traverse>    use specified method to generate candidates from grammar\n" <<
+        " " << OPT_GRAM_GEN << " <rnd, traverse, newtrav>    use specified method to generate candidates from grammar\n" <<
         "                                 'rnd' is completely random, 'traverse' will traverse the CFG\n" <<
         " " << OPT_GRAM_MAXREC << " <n>               maximum recursion depth\n" <<
         " " << OPT_GRAM_TRAV_TYPE << " <ordered, striped>  parameter for " << OPT_GRAM_GEN << " traverse\n" <<

@@ -489,6 +489,7 @@ method6_prio = 'sfs'
 
 # Combination method for method3, 4_2, 5_1
 def method6(coros, cand, stuck=set()):
+    #print("  "*len(inspect.stack(0)) + f'method6({coros}, {cand}, {stuck})')
     global numcand
 
     if method6_type == 'striped' or len(stuck) == len(coros):
@@ -616,6 +617,7 @@ correctcands = set()
 for cand in method2(glcoros, glcand):
     correctcands.add(cand)
 
+"""
 newcands = set()
 for cand in method2_1(3):
     newcands.add(cand)
@@ -628,6 +630,7 @@ if correctcands != newcands:
         print(f"New is missing: {cand}")
 
 exit(0)
+"""
 
 #method2(glcoros, glcand)
 
