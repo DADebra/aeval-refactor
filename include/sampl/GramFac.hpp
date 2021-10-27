@@ -255,7 +255,7 @@ namespace ufo
       CircularInt(const CircularInt& copy) :
         min(copy.min), val(copy.val), limit(copy.limit) {}
 
-      operator int() const
+      inline operator int() const
       {
         return val;
       }
@@ -320,70 +320,165 @@ namespace ufo
 
     struct TravPos
     {
+      private:
+      // Pair is <we_own, object>; we_own is true if we can modify w/o CoW
+      vector<pair<bool,TravPos*>> children;
+      deque<pair<bool,TravPos*>> queue; // For STRIPED traversal
+      bool _inqueue = false;
+      bool readonly = false;
+
+      void copyother(const TravPos& copy, bool copyqueue)
+      {
+        pos = copy.pos;
+        children.reserve(copy.children.size());
+        for (auto &child : copy.children)
+          children.push_back(std::move(make_pair(false, child.second)));
+        if (copyqueue)
+        {
+          _inqueue = copy._inqueue;
+          for (auto &que : copy.queue)
+            queue.push_back(std::move(make_pair(false, que.second)));
+        }
+      }
+
       public:
       CircularInt pos;
-      vector<TravPos> children;
-      deque<TravPos> queue; // For STRIPED traversal
-      bool _inqueue = false;
 
       TravPos() {}
 
-      // We need at least one child
-      TravPos(int min, int limit) : pos(min, -1, limit), children(limit) {}
+      TravPos(int min, int limit) : pos(min, -1, limit)
+      {
+        children.reserve(limit);
+        for (int i = 0; i < limit; ++i)
+          children.push_back(std::move(make_pair(true, new TravPos())));
+      }
 
-      TravPos(const TravPos& copy) : pos(copy.pos), children(copy.children),
-        queue(copy.queue), _inqueue(copy._inqueue) {}
+      TravPos(const TravPos& copy)
+      {
+        copyother(copy, true);
+      }
+
+      TravPos(TravPos& copy, bool copyqueue = true)
+      {
+        // If child is read-only, we can do a const-copy.
+        if (copy.readonly)
+          copyother((const TravPos&)copy, copyqueue);
+        else
+        {
+          // Can't just set realpos to &copy; if copy changes any of its
+          //   values, ours will change too (NOT what we want).
+          //   Thus, we create a new (read-only) common ancestor with copy's
+          //   data, and make a CoW clone of that. This necessitates changing
+          //   copy, of course.
+
+          const TravPos *ropos = new TravPos(std::move(copy));
+          for (auto &child : ropos->children)
+            if (child.first)
+              child.second->readonly = true;
+          for (auto &que : ropos->queue)
+            if (que.first)
+              que.second->readonly = true;
+          copy.~TravPos();
+          new (&copy) TravPos(*ropos);
+          copyother(*ropos, copyqueue);
+        }
+      }
+
       TravPos(TravPos&& move) : pos(move.pos),
         children(std::move(move.children)), queue(std::move(move.queue)),
         _inqueue(move._inqueue) {}
 
+      ~TravPos()
+      {
+        // Only deallocate any memory we own.
+        for (auto &child : children)
+          if (child.first)
+            delete child.second;
+        for (auto &que : queue)
+          if (que.first)
+            delete que.second;
+      }
+
       TravPos& operator=(const TravPos& copy)
       {
-        pos = copy.pos;
-        children = copy.children;
-        queue = copy.queue;
-        _inqueue = copy._inqueue;
-        assert(_inqueue ? queue.size() == pos.limit : children.size() == pos.limit);
+        this->~TravPos();
+        new (this) TravPos(copy);
+        return *this;
+      }
+      TravPos& operator=(TravPos& copy)
+      {
+        this->~TravPos();
+        new (this) TravPos(copy);
         return *this;
       }
       TravPos& operator=(TravPos&& move)
       {
-        pos = move.pos;
-        children = std::move(move.children);
-        queue = std::move(move.queue);
-        _inqueue = move._inqueue;
-        assert(_inqueue ? queue.size() == pos.limit : children.size() == pos.limit);
+        this->~TravPos();
+        // Necessary std::move; calls copy c-tor without
+        new (this) TravPos(std::move(move));
         return *this;
       }
 
-      TravPos readonlycopy() const
+      inline const TravPos& childat(int pos) const
       {
-        /*TravPos newpos(0, 0);
-        newpos.pos = pos;
-        newpos.children.reserve(pos.limit);
-        for (auto &subt : children)
-          newpos.children.push_back(subt.readonlycopy());
-        return std::move(newpos);*/
-        return *this;
+        return *children[pos].second;
       }
 
-      bool isdone() const
+      inline TravPos& childat(int pos)
+      {
+        if (!children[pos].first)
+          children[pos] = std::move(
+            make_pair(true, new TravPos(*children[pos].second)));
+        return *children[pos].second;
+      }
+
+      inline int childrensize() const
+      {
+        return children.size();
+      }
+
+      inline const TravPos& queueat(int pos) const
+      {
+        return *queue[pos].second;
+      }
+
+      inline TravPos& queueat(int pos)
+      {
+        if (!queue[pos].first)
+          queue[pos] = std::move(
+            make_pair(true, new TravPos(*queue[pos].second)));
+        return *queue[pos].second;
+      }
+
+      inline int queuesize() const
+      {
+        return queue.size();
+      }
+
+      inline void queuepush_back(TravPos* newpos)
+      {
+        // Takes ownership of newpos
+        return queue.push_back(std::move(make_pair(true, newpos)));
+      }
+
+      inline bool isdone() const
       {
         return pos.min == -1;
       }
 
-      void makedone()
+      inline void makedone()
       {
         pos.min = -1;
       }
 
-      bool inqueue() const
+      inline bool inqueue() const
       {
         return _inqueue;
       }
 
-      void makeinqueue()
+      inline void makeinqueue()
       {
+        pos.limit = -1;
         _inqueue = true;
       }
     };
@@ -829,14 +924,9 @@ namespace ufo
       return candnum[prod] > (int)(priomap[prod]*totalcandnum);
     }
 
-    ParseTree gettrav(const Expr& root, TravPos& travpos,
+    ParseTree gettrav(const Expr& root, const TravPos& travpos,
       std::shared_ptr<ExprUSet> qvars, Expr currnt, bool& needdefer)
     {
-      assert(("Cannot get Expr for TravPos which is past end!",
-            travpos.pos < travpos.pos.limit));
-      assert(("Cannot get Expr for TravPos which is before begin!",
-            travpos.pos >= travpos.pos.min));
-
       if (isOpX<FAPP>(root))
       {
         string fname = lexical_cast<string>(bind::fname(root)->left());
@@ -850,12 +940,13 @@ namespace ufo
         {
           needdefer= needdefer || shoulddefer(currnt, root->arg(travpos.pos));
           return gettrav(root->arg(travpos.pos),
-            travpos.children[travpos.pos], qvars, currnt, needdefer);
+            travpos.childat(travpos.pos), qvars, currnt, needdefer);
         }
         else if (defs.count(root) != 0)
         {
           // Root is non-terminal; expand
-          return ParseTree(root, vector<ParseTree>{gettrav(defs.at(root), travpos, qvars, root, needdefer)});
+          return ParseTree(root, vector<ParseTree>{gettrav(defs.at(root),
+            travpos, qvars, root, needdefer)});
         }
         else if (qvars != NULL && qvars->find(root->left()) != qvars->end())
         {
@@ -896,10 +987,16 @@ namespace ufo
           }
         }
 
-        vector<ParseTree> cand;
-        for (int i = 0; i < travpos.children.size(); ++i)
+        if (travpos.inqueue() && travpos.pos.limit != -1)
         {
-          cand.push_back(gettrav(root->arg(i), travpos.children[i],
+          return gettrav(root, travpos.queueat(travpos.pos),
+            localqvars, currnt, needdefer);
+        }
+
+        vector<ParseTree> cand;
+        for (int i = 0; i < travpos.childrensize(); ++i)
+        {
+          cand.push_back(gettrav(root->arg(i), travpos.childat(i),
             localqvars, currnt, needdefer));
         }
 
@@ -912,6 +1009,9 @@ namespace ufo
       Expr currnt = NULL)
     {
       assert(("Cannot increment TravPos which is done!", !travpos.isdone()));
+
+      // Some operations should not cause copy-up; use constpos for these.
+      const TravPos &constpos = travpos;
 
       if (isOpX<FAPP>(root))
       {
@@ -937,33 +1037,36 @@ namespace ufo
               --travpos.pos;
           }
 
-          int startpos = travpos.pos;
-          while (travpos.children[travpos.pos].isdone() ||
-          (isRecursive(root->arg(travpos.pos), currnt) &&
+          // We're just checking, use const version of queueat()
+          CircularInt checkpos = constpos.pos;
+
+          int startpos = checkpos;
+          while (constpos.childat(checkpos).isdone() ||
+          (isRecursive(root->arg(checkpos), currnt) &&
            currdepth == maxrecdepth))
           {
             if (travorder == TravParamOrder::FORWARD)
-              ++travpos.pos;
+              ++checkpos;
             else if (travorder == TravParamOrder::REVERSE)
-              --travpos.pos;
+              --checkpos;
 
-            assert(travpos.pos != startpos);
+            assert(checkpos != startpos);
           }
 
-          startpos = travpos.pos;
-          while (travpos.children[travpos.pos].isdone() ||
-           shoulddefer(currnt, root->arg(travpos.pos)) ||
-           (isRecursive(root->arg(travpos.pos), currnt) &&
+          startpos = checkpos;
+          while (constpos.childat(checkpos).isdone() ||
+           shoulddefer(currnt, root->arg(checkpos)) ||
+           (isRecursive(root->arg(checkpos), currnt) &&
            currdepth == maxrecdepth))
           {
             if (travorder == TravParamOrder::FORWARD)
-              ++travpos.pos;
+              ++checkpos;
             else if (travorder == TravParamOrder::REVERSE)
-              --travpos.pos;
+              --checkpos;
 
-            if (travpos.pos == startpos)
+            if (checkpos == startpos)
             {
-              if (isRecursive(root->arg(travpos.pos), currnt) &&
+              if (isRecursive(root->arg(checkpos), currnt) &&
                 currdepth == maxrecdepth)
               {
                 travpos.makedone();
@@ -972,10 +1075,12 @@ namespace ufo
                 return NULL;
               }
               // All productions must be deferred; pick first one
-              travpos.pos = startpos;
+              checkpos = startpos;
               break;
             }
           }
+
+          travpos.pos = checkpos;
 
           ParseTree ret(NULL);
           int newdepth;
@@ -987,21 +1092,20 @@ namespace ufo
           assert(newdepth <= maxrecdepth);
 
           ret = newtrav(root->arg(travpos.pos),
-            travpos.children[travpos.pos], newdepth, qvars, currnt);
+            travpos.childat(travpos.pos), newdepth, qvars, currnt);
 
           // Check to see if we're done.
-          TravPos checkpos;
-          checkpos.pos = travpos.pos;
-          while (travpos.children[checkpos.pos].isdone() ||
-          (isRecursive(root->arg(checkpos.pos), currnt) &&
+          checkpos = travpos.pos;
+          while (travpos.childat(checkpos).isdone() ||
+          (isRecursive(root->arg(checkpos), currnt) &&
            currdepth == maxrecdepth))
           {
             if (travorder == TravParamOrder::FORWARD)
-              ++checkpos.pos;
+              ++checkpos;
             else if (travorder == TravParamOrder::REVERSE)
-              --checkpos.pos;
+              --checkpos;
 
-            if (checkpos.pos == travpos.pos)
+            if (checkpos == travpos.pos)
             {
               // We're done with this either; move 'pos' past end.
               travpos.makedone();
@@ -1089,11 +1193,11 @@ namespace ufo
               --travpos.pos;
 
             bool done = true;
-            for (int i = 0; i < travpos.children.size(); ++i)
+            for (int i = 0; i < travpos.childrensize(); ++i)
             {
-              newexpr[i] = newtrav(root->arg(i), travpos.children[i],
+              newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
                 currdepth, qvars, currnt);
-              done &= travpos.children[i].isdone();
+              done &= travpos.childat(i).isdone();
             }
             if (done)
               travpos.makedone();
@@ -1126,24 +1230,27 @@ namespace ufo
         {
           if (travpos.inqueue())
           {
+            if (travpos.pos.limit == -1)
+              travpos.pos = CircularInt(0, -1, travpos.queuesize());
             assert(travpos.pos.min == 0);
-            if (travpos.pos.limit != travpos.queue.size())
-              travpos.pos = CircularInt(0, -1, travpos.queue.size());
             ParseTree ret(NULL);
             ++travpos.pos;
             int startpos = travpos.pos;
-            while (travpos.queue[travpos.pos].isdone())
+            CircularInt checkpos = travpos.pos;
+            while (constpos.queueat(checkpos).isdone())
             {
-              ++travpos.pos;
-              assert(travpos.pos != startpos);
+              ++checkpos;
+              assert(checkpos != startpos);
             }
+            travpos.pos = checkpos;
 
-            ret = newtrav(root, travpos.queue[travpos.pos],
+            ret = newtrav(root, travpos.queueat(travpos.pos),
               currdepth, qvars, currnt);
 
             bool done = true;
-            for (auto &qele : travpos.queue)
-              done &= qele.isdone();
+            checkpos = travpos.pos;
+            for (int i = 0; i < constpos.queuesize(); ++i)
+              done &= constpos.queueat(i).isdone();
             if (done)
               travpos.makedone();
 
@@ -1156,40 +1263,40 @@ namespace ufo
           {
             if (i != travpos.pos)
             {
-              assert(travpos.children[i].pos >= 0);
+              assert(constpos.childat(i).pos >= 0);
               bool needdefer = false;
-              newexpr[i] = gettrav(root->arg(i), travpos.children[i], qvars,
+              newexpr[i] = gettrav(root->arg(i), constpos.childat(i), qvars,
                 currnt, needdefer);
               if (needdefer)
               {
-                if (travpos.children[i].isdone())
-                  travpos.children[i] = TravPos();
-                newexpr[i] = newtrav(root->arg(i), travpos.children[i],
+                if (constpos.childat(i).isdone())
+                  travpos.childat(i) = TravPos();
+                newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
                   currdepth, qvars, currnt);
               }
             }
             else
             {
-              assert(!travpos.children[i].isdone());
+              assert(!constpos.childat(i).isdone());
 
-              newexpr[i] = newtrav(root->arg(i), travpos.children[i],
+              newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
                 currdepth, qvars, currnt);
               if (travpos.pos < end)
               {
-                TravPos childpos;
-                childpos.children = travpos.children;
-                childpos.queue = deque<TravPos>();
+                TravPos *childpos = new TravPos(travpos, false);
+
                 if (travdir == TravParamDirection::LTR)
                 {
-                  childpos.pos = CircularInt(travpos.pos + 1,
+                  childpos->pos = CircularInt(travpos.pos + 1,
                     travpos.pos + 1, root->arity());
                 }
                 else if (travdir == TravParamDirection::RTL)
                 {
-                  childpos.pos = CircularInt(travpos.pos - 1,
+                  childpos->pos = CircularInt(travpos.pos - 1,
                     travpos.pos - 1, root->arity());
                 }
-                travpos.queue.push_back(std::move(childpos));
+
+                travpos.queuepush_back(childpos);
               }
             }
           }
@@ -1223,12 +1330,12 @@ namespace ufo
             else
             {
               int startpos = travpos.pos;
-              while (travpos.children[travpos.pos].isdone())
+              while (constpos.childat(travpos.pos).isdone())
               {
                 ++travpos.pos;
                 if (travpos.pos == startpos)
                 {
-                  if (travpos.queue.size() != 0)
+                  if (constpos.queuesize() != 0)
                     travpos.makeinqueue();
                   else
                     travpos.makedone();
@@ -1236,12 +1343,12 @@ namespace ufo
               }
             }
           }
-          else if (travpos.children[travpos.pos].isdone())
+          else if (constpos.childat(travpos.pos).isdone())
           {
             ++travpos.pos;
             if (travpos.pos == travpos.pos.min)
             {
-              if (travpos.queue.size() != 0)
+              if (constpos.queuesize() != 0)
                 travpos.makeinqueue();
               else
                 travpos.makedone();
@@ -1251,15 +1358,14 @@ namespace ufo
               --travpos.pos;
               bool done = true;
               for (int i = travpos.pos.min; i < travpos.pos.limit; ++i)
-                done &= travpos.children[i].isdone();
+                done &= constpos.childat(i).isdone();
               if (done)
                 travpos.makedone();
               else
               {
-                travpos.children[travpos.pos] = TravPos();
+                travpos.childat(travpos.pos) = TravPos();
                 newtrav(root->arg(travpos.pos),
-                  travpos.children[travpos.pos], currdepth, qvars, currnt);
-                //++travpos.children[travpos.pos].pos;
+                  travpos.childat(travpos.pos), currdepth, qvars, currnt);
                 ++travpos.pos;
               }
             }
@@ -1269,11 +1375,11 @@ namespace ufo
         {
           int di = start;
           bool startreset = false;
-          while (travpos.children[di].isdone())
+          while (constpos.childat(di).isdone())
           {
             // Reset our position
-            travpos.children[di] = TravPos();
-            newexpr[di] = newtrav(root->arg(di), travpos.children[di],
+            travpos.childat(di) = TravPos();
+            newexpr[di] = newtrav(root->arg(di), travpos.childat(di),
               currdepth, qvars, currnt);
             if (di == start)
               startreset = true;
@@ -1282,10 +1388,10 @@ namespace ufo
 
             // Increment next position
             int nexti = nextpos(di);
-            if (!travpos.children[nexti].isdone())
+            if (!constpos.childat(nexti).isdone())
             {
               newexpr[nexti] = newtrav(root->arg(nexti),
-                travpos.children[nexti], currdepth, qvars, currnt);
+                travpos.childat(nexti), currdepth, qvars, currnt);
               break;
             }
             else
@@ -1296,35 +1402,32 @@ namespace ufo
           {
             if (i != start)
             {
-              if (travpos.children[i].pos < 0)
-                newtrav(root->arg(i), travpos.children[i], currdepth, qvars,
+              if (constpos.childat(i).pos < 0)
+                newtrav(root->arg(i), travpos.childat(i), currdepth, qvars,
                   currnt);
               bool needdefer = false;
-              newexpr[i] = gettrav(root->arg(i), travpos.children[i], qvars,
+              newexpr[i] = gettrav(root->arg(i), constpos.childat(i), qvars,
                 currnt, needdefer);
               if (needdefer)
               {
-                if (travpos.children[i].isdone())
-                  travpos.children[i] = TravPos();
-                newexpr[i] = newtrav(root->arg(i), travpos.children[i],
+                if (constpos.childat(i).isdone())
+                  travpos.childat(i) = TravPos();
+                newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
                   currdepth, qvars, currnt);
               }
             }
           }
 
-          if (!startreset && !travpos.children[start].isdone())
-            newexpr[start]= newtrav(root->arg(start), travpos.children[start],
+          if (!startreset && !constpos.childat(start).isdone())
+            newexpr[start] = newtrav(root->arg(start), travpos.childat(start),
               currdepth, qvars, currnt);
 
           bool done = true;
           for (int i = 0; i < root->arity(); ++i)
-            done &= travpos.children[i].isdone();
+            done &= constpos.childat(i).isdone();
           if (done)
             travpos.makedone();
         }
-
-        for (int i = 0; i < newexpr.size(); ++i)
-          assert(newexpr[i]);
 
         return ParseTree(root, newexpr);
       }
@@ -2285,7 +2388,7 @@ namespace ufo
             exit(0);
             return NULL;
           }
-          nextpt = newtrav(inv, rootpos, true);
+          nextpt = newtrav(inv, rootpos);
           //printPT(nextpt);
           nextcand = collapsePT(nextpt);
 
