@@ -548,17 +548,28 @@ namespace ufo
     // The root of the tree of the grammar
     Expr inv;
 
+    struct varless
+    {
+      bool operator()(const Expr& l, const Expr& r) const
+      {
+        string lstr = lexical_cast<string>(fname(l)->left());
+        string rstr = lexical_cast<string>(fname(r)->left());
+        return lstr < rstr;
+      }
+    };
+    typedef set<Expr,varless> varset;
+
     // All variables mentioned in the file, regardless of type.
     // Variables are for the invariant stored in 'inv'
     // Key: Sort, Value: List of variables of that sort.
-    unordered_map<Expr, ExprUSet> inv_vars;
+    unordered_map<Expr, varset> inv_vars;
 
     // Variables for the other invariants in the input file.
     // Key: Sort, Value: List of variables of that sort.
-    unordered_map<Expr, ExprUSet> other_inv_vars;
+    unordered_map<Expr, varset> other_inv_vars;
 
     // Set of integer constants that appear in the program.
-    ExprUSet int_consts;
+    set<cpp_int> int_consts;
 
     // Whether to print debugging information or not.
     bool printLog;
@@ -952,7 +963,7 @@ namespace ufo
       if (isOpX<FAPP>(root))
       {
         string fname = lexical_cast<string>(bind::fname(root)->left());
-        const ExprUSet& sortvars = inv_vars[bind::typeOf(root)];
+        const varset& sortvars = inv_vars[bind::typeOf(root)];
         if (sortvars.find(root) != sortvars.end())
         {
           // Root is a symbolic variable
@@ -1038,7 +1049,7 @@ namespace ufo
       if (isOpX<FAPP>(root))
       {
         string fname = lexical_cast<string>(bind::fname(root)->left());
-        const ExprUSet& sortvars = inv_vars[bind::typeOf(root)];
+        const varset& sortvars = inv_vars[bind::typeOf(root)];
         if (sortvars.find(root) != sortvars.end())
         {
           // Root is a symbolic variable
@@ -1539,7 +1550,7 @@ namespace ufo
       if (isOpX<FAPP>(root))
       {
         string fname = lexical_cast<string>(bind::fname(root)->left());
-        const ExprUSet &sortvars = inv_vars[bind::typeOf(root)];
+        const varset &sortvars = inv_vars[bind::typeOf(root)];
         if (sortvars.find(root) != sortvars.end())
         {
           // Root is a symbolic variable; don't expand.
@@ -2065,7 +2076,7 @@ namespace ufo
       if (isOpX<FAPP>(root))
       {
         string fname = lexical_cast<string>(bind::fname(root)->left());
-        const ExprUSet &sortvars = inv_vars[bind::typeOf(root)];
+        const varset &sortvars = inv_vars[bind::typeOf(root)];
         if (sortvars.find(root) != sortvars.end())
         {
           // Root is a symbolic variable; don't expand.
@@ -2165,7 +2176,7 @@ namespace ufo
 
     void addIntConst(cpp_int iconst)
     {
-      int_consts.insert(mkMPZ(iconst, m_efac));
+      int_consts.insert(iconst);
     }
 
     void setParams(GramParams params)
@@ -2235,7 +2246,7 @@ namespace ufo
         donesorts.insert(mk<BOOL_TY>(m_efac));
 
         // Easiest way to handle all_inv_vars and inv_vars
-        auto generate_all = [&] (unordered_map<Expr, ExprUSet> vars,
+        auto generate_all = [&] (unordered_map<Expr, varset> vars,
             bool thisinv)
         {
           for (auto& pair : vars)
@@ -2418,7 +2429,10 @@ namespace ufo
             ExprVector(int_consts.size(), m_efac.mkTerm(INT_TY())));
 
         Expr int_consts_decl = bind::intConst(mkTerm(string(INT_CONSTS), m_efac));
-        defs[int_consts_decl] = bind::fapp(eitherfunc, int_consts);
+        ExprVector exprconsts;
+        for (const auto &iconst : int_consts)
+          exprconsts.push_back(mkMPZ(iconst, m_efac));
+        defs[int_consts_decl] = bind::fapp(eitherfunc, exprconsts);
       }
 
       if (initialized && genmethod == GramGenMethod::TRAV)
