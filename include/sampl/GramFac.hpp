@@ -743,7 +743,7 @@ namespace ufo
         return true;
       });
       if (!indeterminate(ret))
-        return ret;
+        return bool(ret);
 
       if (needsolver)
       {
