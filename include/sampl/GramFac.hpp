@@ -378,41 +378,41 @@ namespace ufo
     }
 
     typedef unordered_map<Expr,ParseTree> PtExpMap;
-    typedef coroutine<PtExpMap>::pull_type ExpansCoro;
-    ExpansCoro getTravExpans(Expr con, const ExpansionsMap& expmap)
+    void foreachExpans(Expr con, const ExpansionsMap& expmap,
+      function<bool(const PtExpMap&)> func)
     {
-      return ExpansCoro([&] (coroutine<PtExpMap>::push_type& sink)
-        {
-          ExprVector fapps(expmap.size());
-          filter(con, [] (Expr e) {
-            return isOpX<FAPP>(e) && e->arity() == 1; }, fapps.begin());
-          // Note that because of the internal ExprSet that dagVisit uses,
-          //   we don't need to purge duplicates from `fapps`.
-          ExprVector from;
-          for (auto &f : fapps)
-            if (f && expmap.count(f) != 0) from.push_back(f);
-          vector<ParseTree> to(from.size());
-          auto makemap = [&] () -> PtExpMap
+      ExprVector fapps(expmap.size());
+      filter(con, [] (Expr e) {
+        return isOpX<FAPP>(e) && e->arity() == 1; }, fapps.begin());
+      // Note that because of the internal ExprSet that dagVisit uses,
+      //   we don't need to purge duplicates from `fapps`.
+      ExprVector from;
+      for (auto &f : fapps)
+        if (f && expmap.count(f) != 0) from.push_back(f);
+      vector<ParseTree> to(from.size());
+      auto makemap = [&] () -> PtExpMap
+      {
+        PtExpMap ret;
+        for (int i = 0; i < from.size(); ++i)
+          assert(ret.emplace(from[i], to[i]).second);
+        return std::move(ret);
+      };
+
+      function<bool(int)> perm = [&] (int pos)
+      {
+        if (pos == from.size())
+          if (!func(makemap()))
+            return false;
+        else
+          for (auto &expand : expmap.at(from[pos]))
           {
-            PtExpMap ret;
-            for (int i = 0; i < from.size(); ++i)
-              assert(ret.emplace(from[i], to[i]).second);
-            return std::move(ret);
-          };
-          
-          function<void(int)> perm = [&] (int pos)
-          {
-            if (pos == from.size())
-              sink(std::move(makemap()));
-            else
-              for (auto &expand : expmap.at(from[pos]))
-              {
-                to[pos] = expand;
-                perm(pos + 1);
-              }
-          };
-          perm(0);
-        });
+            to[pos] = expand;
+            if (!perm(pos + 1))
+              return false;
+          }
+        return true;
+      };
+      perm(0);
     }
 
     typedef unordered_map<pair<Expr,ParseTree>,ExprUSet> seen_type;
@@ -690,8 +690,6 @@ namespace ufo
     bool doesSatExpr(Expr con, const ExpansionsMap& expmap,
       bool doAny, Expr origcon)
     {
-      ExpansCoro constcoro = getTravExpans(con, expmap);
-
       bool needsolver = false;
       ExprVector assertexps;
       if (doAny)
@@ -701,7 +699,8 @@ namespace ufo
 
       //evalCmpExpr needs some shared state
       seen_type seenexpans;
-      for (auto &exp : constcoro)
+      tribool ret = indeterminate;
+      foreachExpans(con, expmap, [&] (const PtExpMap& exp)
       {
         tribool res = evaluateCmpExpr(con, exp, seenexpans);
         if (indeterminate(res))
@@ -732,10 +731,19 @@ namespace ufo
           needsolver = true;
         }
         else if (!res && !doAny)
+        {
+          ret = false;
           return false;
+        }
         else if (res && doAny)
-          return true;
-      }
+        {
+          ret = true;
+          return false;
+        }
+        return true;
+      });
+      if (!indeterminate(ret))
+        return ret;
 
       if (needsolver)
       {
