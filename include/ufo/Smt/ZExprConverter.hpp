@@ -568,6 +568,12 @@ namespace ufo
                            efac, cache, seen);
               return sort::arrayTy (domain, range);
 	    default:
+              Z3_symbol sortsym = Z3_get_sort_name (ctx, sort);
+              assert(Z3_get_symbol_kind (ctx, sortsym) == Z3_STRING_SYMBOL);
+              std::string symname = Z3_get_symbol_string (ctx, sortsym);
+              if (symname == "String")
+                return sort::stringTy (efac);
+
 	      assert (0 && "Unsupported sort");
 	    }
 	}
@@ -647,6 +653,11 @@ namespace ufo
       Z3_app app = Z3_to_app (ctx, z);
       Z3_func_decl fdecl = Z3_get_app_decl (ctx, app);
       Z3_decl_kind dkind = Z3_get_decl_kind (ctx, fdecl);
+
+      if (Z3_is_string(ctx, z))
+      {
+        return mkTerm<std::string> (Z3_get_string (ctx, z), efac);
+      }
 
       if (dkind == Z3_OP_NOT)
 	{

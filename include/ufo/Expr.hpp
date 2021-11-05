@@ -2100,6 +2100,7 @@ namespace expr
 
     NOP(INT_TY,"INT",PREFIX,SimpleTypeOp)
     NOP(CHAR_TY,"CHAR",PREFIX,SimpleTypeOp)
+    NOP(STRING_TY,"STRING",PREFIX,SimpleTypeOp)
     NOP(REAL_TY,"REAL",PREFIX,SimpleTypeOp)
     NOP(VOID_TY,"VOID",PREFIX,SimpleTypeOp)
     NOP(BOOL_TY,"BOOL",PREFIX,SimpleTypeOp)
@@ -2121,6 +2122,7 @@ namespace expr
       inline Expr adTy (Expr name) {return mk<AD_TY> (name);}
       inline Expr arrayTy (Expr indexTy, Expr valTy) 
       {return mk<ARRAY_TY> (indexTy, valTy);}
+      inline Expr stringTy (ExprFactory &efac) {return mk<STRING_TY>(efac);}
       
       inline Expr arrayIndexTy (Expr a) {return a->left ();} 
       inline Expr arrayValTy (Expr a) {return a->right ();}
@@ -2200,6 +2202,8 @@ namespace expr
       { return var (name, mk<BOOL_TY>(name->efac ())); }
       inline Expr charVar (Expr name) 
       { return var (name, mk<CHAR_TY>(name->efac ())); }
+      inline Expr stringVar (Expr name)
+      { return var (name, mk<STRING_TY>(name->efac ())); }
       inline Expr unintVar (Expr name)
       { return var (name, mk<UNINT_TY> (name->efac ())); }
       
@@ -2210,6 +2214,7 @@ namespace expr
       inline bool isBoolVar (Expr v) { return isVar<BOOL_TY> (v); }
       inline bool isIntVar (Expr v) { return isVar<INT_TY> (v); }
       inline bool isRealVar (Expr v) { return isVar<REAL_TY> (v); }
+      inline bool isStringVar (Expr v) { return isVar<STRING_TY> (v); }
       
       inline Expr constDecl (Expr name, Expr type) 
       { return mk<FDECL> (name, type); }
@@ -2221,6 +2226,8 @@ namespace expr
       { return constDecl (name, mk<REAL_TY> (name->efac ())); }
       inline Expr adtConstDecl (Expr name)
       { return constDecl (name, mk<AD_TY> (name->efac ())); }
+      inline Expr stringConstDecl (Expr name)
+      { return constDecl (name, mk<STRING_TY> (name->efac ())); }
       
       template <typename Range>
       Expr fdecl (Expr fname, const Range &args)
@@ -2305,6 +2312,7 @@ namespace expr
       inline bool isIntConst (Expr v) { return isConst<INT_TY> (v); }
       inline bool isRealConst (Expr v) { return isConst<REAL_TY> (v); }      
       inline bool isAdtConst (Expr v) { return isConst<AD_TY> (v); }
+      inline bool isStringConst (Expr v) { return isConst<STRING_TY> (v); }
       
       inline Expr typeOf (Expr v)
       {
@@ -2320,6 +2328,7 @@ namespace expr
         if (isOpX<ITE>(v)) return typeOf(v->last());
         if (isOp<BoolOp>(v) || isOp<ComparissonOp> (v)) return mk<BOOL_TY> (v->efac ());
         if (isOpX<MPZ> (v)) return mk<INT_TY> (v->efac ());
+        if (isOpX<STRING> (v)) return mk<STRING_TY> (v->efac ());
         if (isOpX<MPQ> (v)) return mk<REAL_TY> (v->efac ());
 
         if (isOpX<BIND> (v)) return bind::type (v);
