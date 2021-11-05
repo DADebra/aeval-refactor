@@ -1145,6 +1145,9 @@ namespace ufo
         if (isOpX<UN_MINUS>(exp->right())) return mk<PLUS>(exp->left(), exp->right()->left());
       }
 
+      if (isOpX<NEQ>(exp) && exp->arity() == 1)
+        return exp;
+
       if (isOp<ComparissonOp>(exp) && isNumeric(exp->right()))
       {
         return simplifyCmp(exp);

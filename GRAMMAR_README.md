@@ -161,15 +161,41 @@ the function `(declare-fun constraint_any (Bool) Bool)`.
 Freqhorn provides a few custom functions to deal explicitly with the parse tree
 of a candidate:
 
-- `(distinct var1)` (a special case of built-in distinct function)
-  is equal to `true` when all expansions of non-terminal `var1` are unique.
-- `(equal var1)` is the opposite of above `distinct`; it is equal
+- `(distinct var1)` is equal to `true` when all expansions of non-terminal
+  `var1` are unique.
+
+- `(equal var1)` is the opposite of above `all_distinct`; it is equal
   to `true` when all expansions of non-terminal `var1` are the same.
-- `(expands var1 var2)` is `true` when non-terminal `var1` expands to
-  terminal or non-terminal `var2` in the parse tree of the candidate.
+
+- `(equal var1 var2 ...)` is equivalent to `(= var1 var2 ...)` and just
+  provided for convenience.
+
+- `(distinct_under "nt" var1 [var2 ...])` is equal to `true` when all
+  expansions of non-terminal `var1` are unique under the *same* node `"nt"`,
+  i.e. if there are multiple instances of `"nt"` in the candidate,
+  this will ensure that `var1` is distinct under each instance. Note that,
+  for recursive non-terminals, the highest non-terminal is picked, e.g. if
+  `"nt"` expands to `(or nt nt)`, `var1` will be distinct across the `or`.
+  If more than one non-terminal (e.g. `var2`) is specified, then statement
+  is `true` if `var1` and `var2` are always distinct under the same `"nt"`,
+  which *does not* ensure that `var1` is distinct with itself.
+
+- `(equal_under "nt" var1 [var2 ...])` is the opposite of above
+  `distinct_under`; it is equal to `true` when all expansions are the same,
+  instead of distinct.
+
+- `(expands var1 "var2")` is `true` when non-terminal `var1` expands to
+  expression `var2` (enclosed in quotes) in the parse tree of the candidate.
   If `var1` isn't present in the candidate, then the expression is `true`.
-- `(present var1)` is `true` when non-terminal or terminal `var1` is
+
+- `(present "var1")` is `true` when non-terminal or terminal `var1` is
   present in the parse tree of the candidate.
+
+- `(under "var1" var2)` is `true` when the given expansion of `var2`
+  is a child of `"var1"` (must be in quotes).
+
+- `(not_under "var1" var2)` is `true` when `var2` doesn't have `"var1"`
+  as a parent.
 
 Constraints are evaluated in most cases by an internal function within
 freqhorn; if a constraint cannot be evaluated by this function, it will be
@@ -211,11 +237,11 @@ otherwise noted.
   - `(= (mod INT_CONSTS 2) 0)` - only allows even integer constants.
   - `(or (= INT_VARS _FH_inv_0) (= INT_VARS _FH_inv_1))` - limits integer
     variables allowed to be used to `_FH_inv_0` and `_FH_inv_1`.
-  - `(expands bterm (= ivar1 INT_CONSTS))` - only allow the first production
+  - `(expands bterm "(= ivar1 INT_CONSTS)")` - only allow the first production
     of `bterm` to be used.
   - `(constraint_any (= INT_VARS _FH_inv_0))` - ensure that `_FH_inv_0` is
     present in the candidate.
-  - `(=> (present _FH_inv_0) (= (mod INT_CONSTS 2) 0))` - only allow for
+  - `(=> (present "_FH_inv_0") (= (mod INT_CONSTS 2) 0))` - only allow for
     even integer constants when `_FH_inv_0` is present in the candidate.
   - `(exists ((i Int)) (and (= i INT_CONSTS) (>= i 0)))` - equivalent to
     `(>= INT_CONSTS 0)`, but showing off the use of quantifiers. Note that

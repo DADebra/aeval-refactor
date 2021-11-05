@@ -14,6 +14,10 @@
 #include <boost/optional.hpp>
 #include <boost/optional/optional_io.hpp>
 
+#include "ParseTree.hpp"
+#include "TravPos.hpp"
+#include "PairHash.hpp"
+
 using namespace std;
 using namespace boost;
 using namespace boost::coroutines2;
@@ -53,79 +57,9 @@ namespace ufo
 
     // A coroutine returning an Expr.
     typedef coroutine<Expr>::pull_type ExprCoro;
-    
-    class ParseTreeNode;
-    class ParseTree;
 
     // A coroutine returning a ParseTree.
     typedef coroutine<ParseTree>::pull_type PTCoro;
-
-    class ParseTreeNode
-    {
-      private:
-
-      // Will be FAPP or terminal (MPZ, _FH_inv_0, etc.)
-      Expr data;
-      // Shape will match data; if data has 3 args, children will have 3 args,
-      //   even if some of the arguments are e.g. terminals.
-      // children[0] == expansion of data.arg(1), etc.
-      vector<ParseTree> children;
-
-      ParseTreeNode(Expr _data, const vector<ParseTree>& _children) :
-        data(_data), children(_children) {}
-
-      ParseTreeNode(Expr _data, vector<ParseTree>&& _children) :
-        data(_data), children(_children) {}
-
-      ParseTreeNode(Expr _data) : data(_data)
-      {
-        assert(("Must pass a vector of children for non-FAPP Expr with arity != 0",
-          data->arity() == 0 || isOpX<FAPP>(data)));
-      }
-
-      friend ParseTree;
-    };
-
-    class ParseTree
-    {
-      std::shared_ptr<ParseTreeNode> ptr;
-
-      public:
-      ParseTree(Expr _data, const vector<ParseTree>& _children) :
-        ptr(new ParseTreeNode(_data, _children)) {}
-
-      ParseTree(Expr _data, vector<ParseTree>&& _children) :
-        ptr(new ParseTreeNode(_data, _children)) {}
-      ParseTree(const ParseTree& pt) : ptr(pt.ptr) {}
-      ParseTree(ParseTreeNode* ptptr) : ptr(ptptr) {}
-      ParseTree(Expr _data) : ptr(new ParseTreeNode(_data)) {}
-      ParseTree() : ptr(NULL) {}
-
-      const Expr& data() const
-      {
-        return ptr->data;
-      }
-
-      const vector<ParseTree>& children() const
-      {
-        return ptr->children;
-      }
-
-      operator bool()
-      {
-        return bool(ptr);
-      }
-
-      /*operator Expr()
-      {
-        return ptr ? ptr->data : NULL;
-      }
-
-      operator cpp_int()
-      {
-        return lexical_cast<cpp_int>(ptr->data);
-      }*/
-    };
 
     class PTCoroCacheIter;
 
@@ -232,269 +166,6 @@ namespace ufo
       }
     };
 
-    class pairhash
-    {
-      public:
-      size_t operator()(const std::pair<Expr,Expr>& pr) const
-      {
-        return std::hash<Expr>()(pr.first) * std::hash<Expr>()(pr.second);
-      }
-    };
-
-    struct TravPos;
-
-    struct CircularInt
-    {
-      public:
-      // min <= val < limit
-      int min, val, limit;
-      
-      CircularInt() : min(0), val(-1), limit(0) {}
-      CircularInt(int _min, int _val, int _limit) :
-        min(_min), val(_val), limit(_limit) {}
-      CircularInt(const CircularInt& copy) :
-        min(copy.min), val(copy.val), limit(copy.limit) {}
-
-      inline operator int() const
-      {
-        return val;
-      }
-
-      CircularInt& operator=(const CircularInt& copy)
-      {
-        min = copy.min;
-        val = copy.val;
-        limit = copy.limit;
-        return *this;
-      }
-
-      CircularInt& operator=(int other)
-      {
-        // Purposefully ignore limits.
-        val = other;
-        return *this;
-      }
-
-      CircularInt& operator++()
-      {
-        if (val < min || val >= limit)
-          val = min;
-        else
-        {
-          val++;
-          if (val >= limit)
-            val = min;
-        }
-        return *this;
-      }
-
-      CircularInt operator++(int)
-      {
-        CircularInt old = *this;
-        ++(*this);
-        return old;
-      }
-
-      CircularInt& operator--()
-      {
-        if (val >= limit || val < min)
-          val = limit - 1;
-        else
-        {
-          val--;
-          if (val < min)
-            val = limit - 1;
-        }
-        return *this;
-      }
-
-      CircularInt operator--(int)
-      {
-        CircularInt old = *this;
-        --(*this);
-        return old;
-      }
-
-      friend TravPos;
-    };
-
-    struct TravPos
-    {
-      private:
-      // Pair is <we_own, object>; we_own is true if we can modify w/o CoW
-      vector<pair<bool,TravPos*>> children;
-      deque<pair<bool,TravPos*>> queue; // For STRIPED traversal
-      bool readonly = false;
-
-      void copyother(const TravPos& copy, bool copyqueue)
-      {
-        pos = copy.pos;
-        children.reserve(copy.children.size());
-        for (auto &child : copy.children)
-          children.push_back(std::move(make_pair(false, child.second)));
-        if (copyqueue)
-        {
-          oldmin = copy.oldmin;
-          for (auto &que : copy.queue)
-            queue.push_back(std::move(make_pair(false, que.second)));
-        }
-      }
-
-      public:
-      CircularInt pos;
-      int oldmin = -1;
-
-      TravPos() {}
-
-      TravPos(int min, int limit) : pos(min, -1, limit)
-      {
-        children.reserve(limit);
-        for (int i = 0; i < limit; ++i)
-          children.push_back(std::move(make_pair(true, new TravPos())));
-      }
-
-      TravPos(const TravPos& copy)
-      {
-        copyother(copy, true);
-      }
-
-      TravPos(TravPos& copy, bool copyqueue = true)
-      {
-        // If child is read-only, we can do a const-copy.
-        if (copy.readonly)
-          copyother((const TravPos&)copy, copyqueue);
-        else
-        {
-          // Can't just set realpos to &copy; if copy changes any of its
-          //   values, ours will change too (NOT what we want).
-          //   Thus, we create a new (read-only) common ancestor with copy's
-          //   data, and make a CoW clone of that. This necessitates changing
-          //   copy, of course.
-
-          const TravPos *ropos = new TravPos(std::move(copy));
-          for (auto &child : ropos->children)
-            if (child.first)
-              child.second->readonly = true;
-          for (auto &que : ropos->queue)
-            if (que.first)
-              que.second->readonly = true;
-          copy.~TravPos();
-          new (&copy) TravPos(*ropos);
-          copyother(*ropos, copyqueue);
-        }
-      }
-
-      TravPos(TravPos&& move) : pos(move.pos),
-        children(std::move(move.children)), queue(std::move(move.queue)),
-        oldmin(move.oldmin) {}
-
-      ~TravPos()
-      {
-        // Only deallocate any memory we own.
-        for (auto &child : children)
-          if (child.first)
-            delete child.second;
-        for (auto &que : queue)
-          if (que.first)
-            delete que.second;
-      }
-
-      TravPos& operator=(const TravPos& copy)
-      {
-        this->~TravPos();
-        new (this) TravPos(copy);
-        return *this;
-      }
-      TravPos& operator=(TravPos& copy)
-      {
-        this->~TravPos();
-        new (this) TravPos(copy);
-        return *this;
-      }
-      TravPos& operator=(TravPos&& move)
-      {
-        this->~TravPos();
-        // Necessary std::move; calls copy c-tor without
-        new (this) TravPos(std::move(move));
-        return *this;
-      }
-
-      inline const TravPos& childat(int pos) const
-      {
-        return *children[pos].second;
-      }
-
-      inline TravPos& childat(int pos)
-      {
-        if (!children[pos].first)
-          children[pos] = std::move(
-            make_pair(true, new TravPos(*children[pos].second)));
-        return *children[pos].second;
-      }
-
-      inline int childrensize() const
-      {
-        return children.size();
-      }
-
-      inline const TravPos& queueat(int pos) const
-      {
-        return *queue[pos].second;
-      }
-
-      inline TravPos& queueat(int pos)
-      {
-        if (!queue[pos].first)
-          queue[pos] = std::move(
-            make_pair(true, new TravPos(*queue[pos].second)));
-        return *queue[pos].second;
-      }
-
-      inline int queuesize() const
-      {
-        return queue.size();
-      }
-
-      inline void queuepush_back(TravPos* newpos)
-      {
-        // Takes ownership of newpos
-        return queue.push_back(std::move(make_pair(true, newpos)));
-      }
-
-      inline void emptyqueue()
-      {
-        queue.clear();
-      }
-
-      inline bool isdone() const
-      {
-        return pos.min == -1;
-      }
-
-      inline void makedone()
-      {
-        pos.min = -1;
-      }
-
-      inline bool inqueue() const
-      {
-        return oldmin != -1;
-      }
-
-      inline void makeinqueue()
-      {
-        pos.limit = -1;
-        oldmin = pos.min;
-      }
-
-      inline void makenotinqueue()
-      {
-        pos.min = oldmin;
-        pos.limit = -1;
-        oldmin = -1;
-      }
-    };
-
     // The main coroutine we use to traverse the grammar.
     std::unique_ptr<PTCoro> getNextCandTrav;
 
@@ -529,7 +200,7 @@ namespace ufo
     ExprVector constraints;
 
     // Key: <Non-terminal, Production>, Value: Priority
-    unordered_map<std::pair<Expr, Expr>, cpp_rational, pairhash> priomap;
+    unordered_map<std::pair<Expr, Expr>, cpp_rational> priomap;
 
     // priomap, but for getRandCand
     // Key: Non-terminal, Value: Distribution, in order given by CFG
@@ -540,7 +211,7 @@ namespace ufo
 
     // Key: <Non-terminal, Production>
     // Value: number of candidates generated with NT->Prod expansion
-    unordered_map<std::pair<Expr,Expr>,int,pairhash> candnum;
+    unordered_map<std::pair<Expr,Expr>,int> candnum;
 
     // Total number of candidates we've generated (not necessarily returned)
     int totalcandnum = 0;
@@ -570,6 +241,9 @@ namespace ufo
 
     // Set of integer constants that appear in the program.
     set<cpp_int> int_consts;
+
+    // Map of <STRING,Expr> for e.g. `under` constraint.
+    unordered_map<Expr,Expr> strcache;
 
     // Whether to print debugging information or not.
     bool printLog;
@@ -631,8 +305,8 @@ namespace ufo
       }
     }
 
-    inline void foreachExp(const ParseTree& pt,
-      const function<void(const Expr&, const Expr&)>& func)
+    inline void foreachPt(const ParseTree& pt,
+      const function<void(const Expr&, const ParseTree&)>& func)
     {
       if (pt.children().size() == 0)
         return;
@@ -642,81 +316,253 @@ namespace ufo
         while (defs.count(realnt->children()[0].data()) != 0)
           realnt = &realnt->children()[0];
 
-        func(pt.data(), realnt->children()[0].data());
+        func(pt.data(), realnt->children()[0]);
 
-        return foreachExp(pt.children()[0], func);
+        return foreachPt(pt.children()[0], func);
       }
       else
       {
         for (auto &subpt : pt.children())
-          foreachExp(subpt, func);
+          foreachPt(subpt, func);
       }
     }
 
-    // Key: Non-terminal   Value: Set of Expr's that First expands to
-    // `notselfdist` is a set of non-terminals which aren't distinct within
-    //   themselves (i.e., there are two expansions of the non-terminal to
-    //   the same value within the expression).
-    // `notselfeq` is inverse of set of non-terminals for which all
-    //   expansions are equivalent (e.g. all INT_CONSTS expand to 2)
-    void findExpansions(const ParseTree& pt,
-        unordered_map<Expr,ExprUSet>& outmap, ExprUSet& notselfdist,
-        ExprUSet& notselfeq)
+    inline void foreachExp(const ParseTree& pt,
+      const function<void(const Expr&, const Expr&)>& func)
     {
-      return foreachExp(pt, [&] (const Expr& nt, const Expr& prod)
+      return foreachPt(pt, [&] (const Expr& nt, const ParseTree& prod)
+      {
+        func(nt, prod.data());
+      });
+    }
+
+    // A map of <Non-terminal, Set of Expansions> (see findExpansions)
+    typedef unordered_map<Expr,unordered_set<ParseTree>> ExpansionsMap;
+
+    // Key: Non-terminal   Value: Set of Expr's that First expands to
+    void findExpansions(const ParseTree& pt, ExpansionsMap& outmap)
+    {
+      return foreachPt(pt, [&] (const Expr& nt, const ParseTree& prod)
+      {
+        outmap[nt].insert(prod);
+      });
+    }
+
+    // Returns the ParseTree (node) whose `data` field matches the given `data`
+    //   argument and is a parent of `child`.
+    // When two parents have the same `data` argument, picks the one
+    //   closest to the root.
+    // Returns NULL when no parent found.
+    ParseTree findHighestParent(Expr data, const ParseTree& child)
+    {
+      if (!child)
+        return NULL;
+      if (child.data() == data)
+      {
+        ParseTree nextparent = std::move(
+          findHighestParent(data, child.parent()));
+        if (nextparent)
+          return nextparent; // We found a higher parent
+        return child;
+      }
+      if (!child.parent())
+        return NULL; // Couldn't find parent with given data
+      return std::move(findHighestParent(data, child.parent()));
+    }
+
+    inline Expr stoe(Expr e)
+    {
+      assert(isOpX<STRING>(e));
+      assert(strcache.count(e) != 0);
+      return strcache.at(e);
+    }
+
+    typedef unordered_map<Expr,ParseTree> PtExpMap;
+    typedef coroutine<PtExpMap>::pull_type ExpansCoro;
+    ExpansCoro getTravExpans(Expr con, const ExpansionsMap& expmap)
+    {
+      return ExpansCoro([&] (coroutine<PtExpMap>::push_type& sink)
         {
-          if (!outmap[nt].insert(prod).second)
-            notselfdist.insert(nt);
-          else if (outmap[nt].size() != 1)
-            notselfeq.insert(nt);
+          ExprVector fapps(expmap.size());
+          filter(con, [] (Expr e) {
+            return isOpX<FAPP>(e) && e->arity() == 1; }, fapps.begin());
+          // Note that because of the internal ExprSet that dagVisit uses,
+          //   we don't need to purge duplicates from `fapps`.
+          ExprVector from;
+          for (auto &f : fapps)
+            if (f && expmap.count(f) != 0) from.push_back(f);
+          vector<ParseTree> to(from.size());
+          auto makemap = [&] () -> PtExpMap
+          {
+            PtExpMap ret;
+            for (int i = 0; i < from.size(); ++i)
+              assert(ret.emplace(from[i], to[i]).second);
+            return std::move(ret);
+          };
+          
+          function<void(int)> perm = [&] (int pos)
+          {
+            if (pos == from.size())
+              sink(std::move(makemap()));
+            else
+              for (auto &expand : expmap.at(from[pos]))
+              {
+                to[pos] = expand;
+                perm(pos + 1);
+              }
+          };
+          perm(0);
         });
     }
 
-    inline static tribool evaluateCmpExpr(Expr cmp)
+    typedef unordered_map<pair<Expr,ParseTree>,ExprUSet> seen_type;
+    optional<cpp_int> evaluateArithExpr(Expr arith, const PtExpMap& expmap,
+      seen_type& se)
     {
+      auto aritharg = [&] (int i) -> Expr
+      {
+        if (expmap.count(arith->arg(i)) != 0)
+          return expmap.at(arith->arg(i)).data();
+        else
+          return arith->arg(i);
+      };
+      if (isOpX<FAPP>(arith))
+      {
+        if (expmap.count(arith) != 0)
+          return evaluateArithExpr(expmap.at(arith).data(), expmap, se);
+        else
+          return none;
+      }
+
+      if (isOpX<ITE>(arith))
+      {
+        tribool res = evaluateCmpExpr(aritharg(0), expmap, se);
+        if (indeterminate(res))
+          return none;
+        if (res)
+          return evaluateArithExpr(aritharg(1), expmap, se);
+        else
+          return evaluateArithExpr(aritharg(2), expmap, se);
+      }
+
+      if (isOpX<MPZ>(arith))   return lexical_cast<cpp_int>(arith);
+      if (arith->arity() != 2) return none;
+
+      optional<cpp_int> lhs = evaluateArithExpr(aritharg(0), expmap, se);
+      if (!lhs) return none;
+      cpp_int ilhs = *lhs;
+
+      if (isOpX<UN_MINUS>(arith)) return optional<cpp_int>(-ilhs);
+      if (isOpX<ABS>(arith))   return ilhs > 0 ? ilhs : -ilhs;
+
+      optional<cpp_int> rhs = evaluateArithExpr(aritharg(1), expmap, se);
+      if (!rhs) return none;
+      cpp_int irhs = *rhs;
+
+      if (isOpX<PLUS>(arith))  return optional<cpp_int>(ilhs + irhs);
+      if (isOpX<MINUS>(arith)) return optional<cpp_int>(ilhs - irhs);
+      if (isOpX<MULT>(arith))  return optional<cpp_int>(ilhs * irhs);
+      if (isOpX<DIV>(arith) || isOpX<IDIV>(arith))
+        return optional<cpp_int>(ilhs / irhs);
+      if (isOpX<MOD>(arith))
+      {
+        // Copied from include/ae/ExprSimpl.hpp
+        if (irhs < 0)
+          irhs = -irhs;
+        if (ilhs < 0)
+          ilhs += ((-ilhs / irhs) + 1) * irhs;
+        ilhs = ilhs % irhs;
+        return ilhs;
+      }
+      return none;
+    }
+
+    tribool evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
+      seen_type& seenexpans)
+    {
+      auto cmparg = [&] (int i) -> Expr
+      {
+        if (expmap.count(cmp->arg(i)) != 0)
+          return expmap.at(cmp->arg(i)).data();
+        else
+          return cmp->arg(i);
+      };
+
+      string conn;
+      if (isOpX<FAPP>(cmp))
+        conn = lexical_cast<string>(bind::fname(cmp)->left());
+
       // simplifyArithm is also simplifying comparisons
       if (isOpX<FALSE>(cmp))
         return false;
       if (isOpX<TRUE>(cmp))
         return true;
       if (isOpX<NEG>(cmp))
-        return !evaluateCmpExpr(cmp->left());
-      if (isOpX<EQ>(cmp))
+        return !evaluateCmpExpr(cmp->left(), expmap, seenexpans);
+      if (isOpX<EQ>(cmp) || (conn == "equal" && cmp->arity() > 2))
       {
-        if (!isOpX<FAPP>(cmp->arg(0)) && !isOpX<MPZ>(cmp->arg(0)) &&
-        !isOpX<MPQ>(cmp->arg(0)))
+        int si = conn == "equal" ? 1 : 0;
+        optional<cpp_int> first = evaluateArithExpr(cmparg(si),
+          expmap, seenexpans);
+        if (!first && !isOpX<FAPP>(cmparg(si)) && !isOpX<MPZ>(cmparg(si)) &&
+        !isOpX<MPQ>(cmparg(si)))
           return indeterminate;
-        for (int i = 1; i < cmp->arity(); ++i)
+        for (int i = si + 1; i < cmp->arity(); ++i)
         {
-          if (!isOpX<FAPP>(cmp->arg(i)) && !isOpX<MPZ>(cmp->arg(i)) &&
-          !isOpX<MPQ>(cmp->arg(i)))
-            return indeterminate;
-          if (cmp->arg(i) != cmp->arg(0))
-            return false;
+          if (first)
+          {
+            optional<cpp_int> inti = evaluateArithExpr(cmparg(i),
+              expmap, seenexpans);
+            if (!inti)
+              return indeterminate;
+            if (inti != first)
+              return false;
+          }
+          else
+          {
+            if (!isOpX<FAPP>(cmparg(i)) && !isOpX<MPZ>(cmparg(i)) &&
+            !isOpX<MPQ>(cmparg(i)))
+              return indeterminate;
+            if (cmparg(i) != cmparg(si))
+              return false;
+          }
         }
         return true;
       }
-      if (isOpX<NEQ>(cmp))
+      if (isOpX<NEQ>(cmp) && cmp->arity() > 1)
       {
         for (int p1 = 0; p1 < cmp->arity(); ++p1)
+        {
+          optional<cpp_int> first = evaluateArithExpr(cmparg(p1),
+            expmap, seenexpans);
           for (int p2 = p1 + 1; p2 < cmp->arity(); ++p2)
           {
-            if (!isOpX<FAPP>(cmp->arg(p1)) && !isOpX<MPZ>(cmp->arg(p1)) &&
-            !isOpX<MPQ>(cmp->arg(p1)))
+            if (first)
+            {
+              optional<cpp_int> second = evaluateArithExpr(cmparg(0),
+                expmap, seenexpans);
+              if (!second)
+                return indeterminate;
+              if (*first == *second)
+                return false;
+            }
+            if (!isOpX<FAPP>(cmparg(p1)) && !isOpX<MPZ>(cmparg(p1)) &&
+            !isOpX<MPQ>(cmparg(p1)))
               return indeterminate;
-            if (cmp->arg(p1) == cmp->arg(p2))
+            if (cmparg(p1) == cmparg(p2))
               return false;
           }
+        }
         return true;
       }
       if (isOpX<AND>(cmp) || isOpX<OR>(cmp) || isOpX<XOR>(cmp))
       {
         bool doAnd = isOpX<AND>(cmp),
              doXor = isOpX<XOR>(cmp);
-        tribool ret = evaluateCmpExpr(cmp->arg(0));
+        tribool ret = evaluateCmpExpr(cmparg(0), expmap, seenexpans);
         for (int i = 1; i < cmp->arity(); ++i)
         {
-          tribool subret = evaluateCmpExpr(cmp->arg(i));
+          tribool subret = evaluateCmpExpr(cmparg(i), expmap, seenexpans);
           if (doXor)
             ret = (subret || ret) && !(subret && ret);
           else if (doAnd)
@@ -727,18 +573,108 @@ namespace ufo
         return ret;
       }
       if (isOpX<IMPL>(cmp))
-        return !evaluateCmpExpr(cmp->left()) || evaluateCmpExpr(cmp->right());
+        return !evaluateCmpExpr(cmparg(0),expmap,seenexpans) ||
+          evaluateCmpExpr(cmparg(1),expmap,seenexpans);
       if (isOpX<ITE>(cmp))
-        return evaluateCmpExpr(cmp->arg(0)) ?
-          evaluateCmpExpr(cmp->arg(1)) : evaluateCmpExpr(cmp->arg(2));
+        return evaluateCmpExpr(cmparg(0),expmap,seenexpans) ?
+          evaluateCmpExpr(cmparg(1),expmap,seenexpans) :
+          evaluateCmpExpr(cmparg(2),expmap,seenexpans);
+      if (isOpX<FAPP>(cmp) || isOpX<NEQ>(cmp))
+      {
+        Expr lhs = cmp->arg(1);
+        if (conn == "equal" || isOpX<NEQ>(cmp))
+        {
+          if (isOpX<NEQ>(cmp))
+            lhs = cmp->arg(0);
+          pair<Expr,ParseTree> key = make_pair(lhs, ParseTree(NULL));
+          if (expmap.count(lhs) == 0)
+            return true;
 
+          bool firstinsert = seenexpans.count(key) == 0;
+          bool res = seenexpans[key].insert(expmap.at(lhs).data()).second;
+          return conn == "equal" ? firstinsert || !res : res;
+        }
+        else if (conn == "equal_under" || conn == "distinct_under")
+        {
+          lhs = stoe(lhs);
+          if (cmp->arity() == 2)
+          {
+            // Self-equal/distinct
+            if (expmap.count(cmp->arg(1)) == 0)
+              return true;
+            ParseTree parent = findHighestParent(lhs,expmap.at(cmp->arg(1)));
+            if (!parent)
+              return true;
+            pair<Expr,ParseTree> key = make_pair(lhs, parent);
+            bool firstinsert = seenexpans.count(key) == 0;
+            bool res = seenexpans[key].insert(cmparg(1)).second;
+            return conn == "equal_under" ? firstinsert || !res : res;
+          }
+          assert(cmp->arity() > 2);
+          // Else, pairwise equal/distinct
+          for (int p1 = 2; p1 < cmp->arity(); ++p1)
+          {
+            if (expmap.count(cmp->arg(p1)) == 0)
+              continue;
+            for (int p2 = p1 + 1; p2 < cmp->arity(); ++p2)
+            {
+              if (expmap.count(cmp->arg(p2)) == 0)
+                continue;
+              ParseTree exp1 = expmap.at(cmp->arg(p1));
+              ParseTree par1 = findHighestParent(lhs, exp1);
+              if (!par1)
+                continue;
+              ParseTree exp2 = expmap.at(cmp->arg(p2));
+              ParseTree par2 = findHighestParent(lhs, exp2);
+              if (!par2 || par1 != par2)
+                continue;
+              bool res;
+              if (conn == "equal_under")
+                res = exp1.data() == exp2.data();
+              else
+                res = exp1.data() != exp2.data();
+              if (!res)
+                return false;
+            }
+          }
+          return true;
+        }
+        else if (conn == "expands")
+        {
+          Expr rhs = stoe(cmp->arg(2));
+          if (expmap.count(lhs) == 0)
+            return true;
+          return expmap.at(lhs).data() == rhs;
+        }
+        else if (conn == "under" || conn == "not_under")
+        {
+          lhs = stoe(lhs);
+          Expr rhs = cmp->arg(2);
+          if (expmap.count(rhs) == 0)
+            return true;
+          ParseTree parent = findHighestParent(lhs, expmap.at(rhs));
+
+          if (conn == "not_under")
+            return !parent;
+
+          // Else, conn == "under"
+          return bool(parent);
+        }
+        else
+          return indeterminate;
+      }
+
+      if (!isOp<ComparissonOp>(cmp))
+        return indeterminate;
       if (cmp->arity() > 2)
         return indeterminate;
-      if (!isOpX<MPZ>(cmp->left()) || !isOpX<MPZ>(cmp->right()))
-        return indeterminate;
 
-      cpp_int li = lexical_cast<cpp_int>(cmp->left()),
-              ri = lexical_cast<cpp_int>(cmp->right());
+      optional<cpp_int> lo= evaluateArithExpr(cmp->arg(0),expmap,seenexpans),
+                        ro= evaluateArithExpr(cmp->arg(1),expmap,seenexpans);
+      if (!lo || !ro)
+        return indeterminate;
+      cpp_int li = *lo, ri = *ro;
+
       if (isOpX<LEQ>(cmp))
         return li <= ri;
       if (isOpX<GEQ>(cmp))
@@ -751,39 +687,10 @@ namespace ufo
       return indeterminate;
     }
 
-    ExprCoro getTravExpans(Expr con,
-      const unordered_map<Expr,ExprUSet>& expmap)
-    {
-      return ExprCoro([&] (coroutine<Expr>::push_type& sink)
-        {
-          ExprVector fapps(expmap.size());
-          filter(con, [] (Expr e) {
-            return isOpX<FAPP>(e) && e->arity() == 1; }, fapps.begin());
-          // Note that because of the internal ExprSet that dagVisit uses,
-          //   we don't need to purge duplicates from `fapps`.
-          ExprVector from;
-          for (auto &f : fapps)
-            if (f && expmap.count(f) != 0) from.push_back(f);
-          ExprVector to(from.size());
-          function<void(int)> perm = [&] (int pos)
-          {
-            if (pos == from.size())
-              sink(replaceAll(con, from, to));
-            else
-              for (auto &expand : expmap.at(from[pos]))
-              {
-                to[pos] = expand;
-                perm(pos + 1);
-              }
-          };
-          perm(0);
-        });
-    }
-
-    bool doesSatExpr(Expr con, const unordered_map<Expr,ExprUSet>& expmap,
+    bool doesSatExpr(Expr con, const ExpansionsMap& expmap,
       bool doAny, Expr origcon)
     {
-      ExprCoro constcoro = getTravExpans(con, expmap);
+      ExpansCoro constcoro = getTravExpans(con, expmap);
 
       bool needsolver = false;
       ExprVector assertexps;
@@ -791,45 +698,42 @@ namespace ufo
         assertexps.push_back(mk<FALSE>(m_efac));
       else
         assertexps.push_back(mk<TRUE>(m_efac));
-      for (Expr &exp : constcoro)
+
+      //evalCmpExpr needs some shared state
+      seen_type seenexpans;
+      for (auto &exp : constcoro)
       {
-        tribool res = evaluateCmpExpr(exp);
+        tribool res = evaluateCmpExpr(con, exp, seenexpans);
         if (indeterminate(res))
         {
-          res = evaluateCmpExpr(simplifyArithm(exp));
-          if (indeterminate(res))
+          // We (maybe) don't want Z3 to evaluate variables as
+          //   non-determinate integers.
+          RW<function<Expr(Expr)>> rw(new function<Expr(Expr)>(
+            [&exp] (Expr e) -> Expr
           {
-            // We (maybe) don't want Z3 to evaluate variables as
-            //   non-determinate integers.
-            RW<function<Expr(Expr)>> rw(new function<Expr(Expr)>(
-              [] (Expr e) -> Expr
+            if (isOpX<FAPP>(e) && exp.count(e) != 0)
+              e = exp.at(e).data();
+            if ((isOpX<EQ>(e) || isOpX<NEQ>(e)) &&
+            all_of(e->args_begin(), e->args_end(), isOpX<FAPP,Expr>))
             {
-              if ((isOpX<EQ>(e) || isOpX<NEQ>(e)) &&
-              all_of(e->args_begin(), e->args_end(), isOpX<FAPP,Expr>))
-              {
-                ExprVector args(e->arity());
-                for (int i = 0; i < e->arity(); ++i)
-                  // Using memory location here as an easy way to get
-                  //   different symbolic variables to be
-                  //   a). predictable and b). unique
-                  args[i] = mkMPZ((unsigned long)e->arg(i), e->efac());
-                return e->efac().mkNary(e->op(), args);
-              }
-              return e;
-            }));
-            exp = dagVisit(rw, exp);
-            //m_smt_solver.assertExpr(exp);
-            assertexps.push_back(exp);
-            needsolver = true;
-          }
-          else if (!res)
-            return false;
-          else if (doAny)
-            return true;
+              ExprVector args(e->arity());
+              for (int i = 0; i < e->arity(); ++i)
+                // Using memory location here as an easy way to get
+                //   different symbolic variables to be
+                //   a). predictable and b). unique
+                args[i] = mkMPZ((unsigned long)e->arg(i), e->efac());
+              return e->efac().mkNary(e->op(), args);
+            }
+            return e;
+          }));
+          Expr z3exp = dagVisit(rw, con);
+          //m_smt_solver.assertExpr(exp);
+          assertexps.push_back(z3exp);
+          needsolver = true;
         }
-        else if (!res)
+        else if (!res && !doAny)
           return false;
-        else if (doAny)
+        else if (res && doAny)
           return true;
       }
 
@@ -857,20 +761,22 @@ namespace ufo
           outs() << endl;
           exit(1);
         }
-        if (!res)
+        if (!res && !doAny)
           return false;
-        else if (doAny)
+        else if (res && doAny)
           return true;
       }
 
-      return true;
+      if (doAny)
+        return false;
+      else
+        return true;
     }
 
     bool doesSatConstraints(const ParseTree& pt)
     {
-      unordered_map<Expr,ExprUSet> expmap;
-      ExprUSet notselfdist, notselfeq;
-      findExpansions(pt, expmap, notselfdist, notselfeq);
+      ExpansionsMap expmap;
+      findExpansions(pt, expmap);
 
       for (auto &fullcon : constraints)
       {
@@ -878,7 +784,7 @@ namespace ufo
         bool doAny = lexical_cast<string>(bind::fname(fullcon)->left()) ==
           "constraint_any";
         RW<function<Expr(Expr)>> fapprw(new function<Expr(Expr)>(
-          [&notselfeq, &notselfdist, &expmap, &doAny, &pt] (Expr e) -> Expr
+          [&expmap, &doAny, &pt, this] (Expr e) -> Expr
         {
           auto btoe = [&] (bool b) -> Expr
           {
@@ -888,31 +794,15 @@ namespace ufo
           if (isOpX<FAPP>(e))
           {
             string conname = lexical_cast<string>(bind::fname(e)->left());
-            if (conname == "equal")
+            if (conname == "present")
             {
-              return btoe(notselfeq.count(e->right()) == 0);
-            }
-            else if (conname == "expands")
-            {
-              if (expmap.count(e->arg(1)) == 0)
-                return mk<TRUE>(e->efac());
-              int cnt = expmap.at(e->arg(1)).count(e->arg(2));
-              if (!doAny)
-              {
-                // Make sure the ONLY expansion is the one given
-                return btoe(cnt != 0 && expmap.at(e->arg(1)).size() == 1);
-              }
-              else if (cnt == 0)
-                // Any expansion can be the one given
-                return btoe(false);
-              return btoe(true);
-            }
-            else if (conname == "present")
-            {
+              Expr lhs = stoe(e->arg(1));
+              // Could be evaluated in evaluateCmpExpr, but I want to keep
+              //   the framework of global expression evaluation here.
               function<bool(const ParseTree&)> existhelper =
                 [&] (const ParseTree& root) -> bool
               {
-                if (root.data() == e->arg(1))
+                if (root.data() == lhs)
                   return true;
                 for (auto& child : root.children())
                   if (existhelper(child))
@@ -924,8 +814,47 @@ namespace ufo
             else
               return e;
           }
-          else if (e->arity() == 1 && isOpX<NEQ>(e))
-            return btoe(notselfdist.count(e->left()) == 0);
+          /*else if (isOpX<NEG>(e) && isOpX<NEQ>(e->left()) &&
+            e->left()->arity() == 1)
+          {
+            // Shared between all objects; OK
+            static unordered_map<Expr,Expr> eqapp;
+            // Doesn't matter if index by e or e->left()
+            if (eqapp.count(e->left()) != 0)
+              return eqapp.at(e->left());
+            Expr eqdecl = bind::fdecl(
+              mkTerm(string("equal"), m_efac),
+              ExprVector{ bind::typeOf(e->left()->left()) });
+            eqapp.emplace(e->left(),
+              bind::fapp(eqdecl, e->left()->left(), Expr()));
+            return eqapp.at(e->left());
+          }
+          else if (isOpX<NEG>(e) && isOpX<FAPP>(e->left()))
+          {
+            Expr nfdecl = e->left()->left();
+            string nfname = lexical_cast<string>(nfdecl->left());
+            if (nfname == "under" || nfname == "not_under")
+            {
+              string opposite = nfname == "not_under" ? "under" : "not_under";
+              // Shared between all objects; OK
+              static unordered_map<Expr,Expr> notuapp;
+              // Doesn't matter if index by e or e->left()
+              if (notuapp.count(e->left()) != 0)
+                return notuapp.at(e->left());
+              Expr notudecl = bind::fdecl(
+                mkTerm(string(opposite), m_efac),
+                ExprVector{ nfdecl->arg(1), nfdecl->arg(2) });
+              assert(e->left()->arity() == 3);
+              notuapp.emplace(e->left(), bind::reapp(e->left(), notudecl));
+              return notuapp.at(e->left());
+            }
+            else if (nfname == "equal")
+            {
+              return mk<NEQ>(e->left()->right());
+            }
+            else
+              return e;
+          }*/
           else
             return e;
         }));
@@ -1630,7 +1559,7 @@ namespace ufo
 
           // Key: <Production, Non-terminal>,
           // Value: number of cands generated with Production
-          unordered_map<std::pair<Expr, Expr>, int, pairhash> candnum;
+          unordered_map<std::pair<Expr, Expr>, int> candnum;
           int totalcandnum = 0;
 
 
@@ -2215,12 +2144,31 @@ namespace ufo
             // Generate either functions for given sort
             for (int i = 1; i <= NUMEITHERS; ++i)
             {
-              aug_gram << "(declare-fun either (";
-              for (int x = 1; x <= i; ++x)
+              auto gensorts = [&] ()
               {
-                aug_gram << sort_smt << " ";
-              }
+                for (int x = 1; x <= i; ++x)
+                {
+                  aug_gram << sort_smt << " ";
+                }
+              };
+              aug_gram << "(declare-fun either ( ";
+              gensorts();
               aug_gram << ") " << sort_smt << ")\n";
+
+              // Generate n-ary `equal` constraint declarations
+              aug_gram << "(declare-fun equal (";
+              gensorts();
+              aug_gram << ") Bool)\n";
+
+              // Generate n-ary `equal_under` constraint declarations
+              aug_gram << "(declare-fun equal_under ( String ";
+              gensorts();
+              aug_gram << ") Bool)\n";
+
+              // Generate n-ary `distinct_under` constraint declarations
+              aug_gram << "(declare-fun distinct_under ( String ";
+              gensorts();
+              aug_gram << ") Bool)\n";
             }
 
             // Special *_VARS variable
@@ -2229,13 +2177,15 @@ namespace ufo
             // Generate *_prio declarations
             aug_gram << "(declare-fun prio (" <<
               sort_smt << " Real) " << sort_smt << ")\n";
-            // Generate unary `equal` constraint declarations
-            aug_gram << "(declare-fun equal (" << sort_smt << ") Bool)\n";
+
             // Generate binary `expands` constraint declarations
-            aug_gram << "(declare-fun expands (" << sort_smt << " " <<
-              sort_smt << ") Bool)\n";
-            // Generate unary `present` constraint declarations
-            aug_gram << "(declare-fun present (" << sort_smt << ") Bool)\n";
+            aug_gram << "(declare-fun expands ("<<sort_smt<<" String) Bool)\n";
+
+            // Generate binary `under` constraint declarations
+            aug_gram << "(declare-fun under (String "<<sort_smt<<") Bool)\n";
+
+            // Generate binary `not_under` constraint declarations
+            aug_gram << "(declare-fun not_under (String "<<sort_smt<<") Bool)\n";
         };
 
         // We need the Bool eithers for the inv definition (rel is Bool)
@@ -2320,6 +2270,9 @@ namespace ufo
         aug_gram << "(declare-fun constraint (Bool) Bool)\n";
         aug_gram << "(declare-fun constraint_any (Bool) Bool)\n";
 
+        // Generate unary `present` constraint declarations
+        aug_gram << "(declare-fun present (String) Bool)\n";
+
         aug_gram << user_cfg.str();
 
         // Parse combined grammar
@@ -2395,6 +2348,26 @@ namespace ufo
             if (ename == "constraint" || ename == "constraint_any")
             {
               constraints.push_back(ex);
+
+              // Parse strings in Z3 now
+              function<void(Expr)> visitExpr = [&] (Expr e)
+              {
+                if (isOpX<STRING>(e) && strcache.count(e) == 0)
+                {
+                  string estr = lexical_cast<string>(e);
+                  estr = aug_gram.str() + "\n(assert (= "+estr+" "+estr+"))\n";
+                  Expr ret = z3_from_smtlib<EZ3>(z3, estr);
+                  strcache.emplace(e, ret->arg(ret->arity() - 1)->arg(0));
+                }
+                else
+                  for (int i = 0; i < e->arity(); ++i)
+                  {
+                    if (isOpX<FDECL>(e->arg(i)))
+                      continue;
+                    visitExpr(e->arg(i));
+                  }
+              };
+              visitExpr(ex);
             }
           }
         }
@@ -2505,6 +2478,9 @@ namespace ufo
         {
           nextcand = getRandCand(inv);
         }
+
+        nextpt.fixchildren();
+
         if (b4simpl)
           outs() << "Before simplification: " << nextcand << endl;
         nextcand = simplifyBool(simplifyArithm(nextcand));
