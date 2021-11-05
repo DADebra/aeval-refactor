@@ -398,11 +398,16 @@ namespace ufo
         return std::move(ret);
       };
 
+      if (from.size() == 0)
+        return;
+
       function<bool(int)> perm = [&] (int pos)
       {
         if (pos == from.size())
+        {
           if (!func(makemap()))
             return false;
+        }
         else
           for (auto &expand : expmap.at(from[pos]))
           {
