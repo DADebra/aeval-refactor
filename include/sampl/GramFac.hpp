@@ -611,9 +611,9 @@ namespace ufo
             ParseTree parent = findHighestParent(lhs,expmap.at(rhs));
             if (!parent)
               return true;
-            pair<Expr,ParseTree> key = make_pair(lhs, parent);
+            pair<Expr,ParseTree> key = make_pair(rhs, parent);
             bool firstinsert = seenexpans.count(key) == 0;
-            bool res = seenexpans[key].insert(rhs).second;
+            bool res = seenexpans[key].insert(expmap.at(rhs).data()).second;
             return conn == "equal_under" ? firstinsert || !res : res;
           }
           assert(cmp->arity() > 3);
