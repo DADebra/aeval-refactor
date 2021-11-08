@@ -586,11 +586,19 @@ namespace ufo
           evaluateCmpExpr(cmparg(2),expmap,seenexpans);
       if (isOpX<FAPP>(cmp) || isOpX<NEQ>(cmp))
       {
-        Expr lhs = cmp->arg(1);
         if (conn == "equal" || isOpX<NEQ>(cmp))
         {
+          Expr lhs;
           if (isOpX<NEQ>(cmp))
+          {
+            assert(cmp->arity() == 1);
             lhs = cmp->arg(0);
+          }
+          else
+          {
+            assert(cmp->arity() == 2);
+            lhs = cmp->arg(1);
+          }
           pair<Expr,ParseTree> key = make_pair(lhs, ParseTree(NULL));
           if (expmap.count(lhs) == 0)
             return true;
@@ -601,23 +609,32 @@ namespace ufo
         }
         else if (conn == "equal_under" || conn == "distinct_under")
         {
-          lhs = stoe(lhs);
           if (cmp->arity() == 3)
           {
+            assert(isOpX<FAPP>(cmp));
+            Expr lhs = stoe(cmp->arg(1));
             Expr rhs = cmp->arg(2);
+
             // Self-equal/distinct
             if (expmap.count(rhs) == 0)
               return true;
-            ParseTree parent = findHighestParent(lhs,expmap.at(rhs));
+
+            ParseTree rhsexp = expmap.at(rhs); // The Expr that RHS expands to
+
+            ParseTree parent = findHighestParent(lhs, rhsexp);
             if (!parent)
               return true;
             pair<Expr,ParseTree> key = make_pair(rhs, parent);
             bool firstinsert = seenexpans.count(key) == 0;
-            bool res = seenexpans[key].insert(expmap.at(rhs).data()).second;
+            bool res = seenexpans[key].insert(rhsexp.data()).second;
             return conn == "equal_under" ? firstinsert || !res : res;
           }
-          assert(cmp->arity() > 3);
+
           // Else, pairwise equal/distinct
+          assert(cmp->arity() > 3);
+
+          Expr lhs = stoe(cmp->arg(1));
+
           for (int p1 = 2; p1 < cmp->arity(); ++p1)
           {
             if (expmap.count(cmp->arg(p1)) == 0)
@@ -647,6 +664,7 @@ namespace ufo
         }
         else if (conn == "expands")
         {
+          Expr lhs = cmp->arg(1);
           Expr rhs = stoe(cmp->arg(2));
           if (expmap.count(lhs) == 0)
             return true;
@@ -654,7 +672,7 @@ namespace ufo
         }
         else if (conn == "under" || conn == "not_under")
         {
-          lhs = stoe(lhs);
+          Expr lhs = stoe(cmp->arg(1));
           Expr rhs = cmp->arg(2);
           if (expmap.count(rhs) == 0)
             return true;
