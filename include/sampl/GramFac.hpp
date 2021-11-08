@@ -602,20 +602,21 @@ namespace ufo
         else if (conn == "equal_under" || conn == "distinct_under")
         {
           lhs = stoe(lhs);
-          if (cmp->arity() == 2)
+          if (cmp->arity() == 3)
           {
+            Expr rhs = cmp->arg(2);
             // Self-equal/distinct
-            if (expmap.count(cmp->arg(1)) == 0)
+            if (expmap.count(rhs) == 0)
               return true;
-            ParseTree parent = findHighestParent(lhs,expmap.at(cmp->arg(1)));
+            ParseTree parent = findHighestParent(lhs,expmap.at(rhs));
             if (!parent)
               return true;
             pair<Expr,ParseTree> key = make_pair(lhs, parent);
             bool firstinsert = seenexpans.count(key) == 0;
-            bool res = seenexpans[key].insert(cmparg(1)).second;
+            bool res = seenexpans[key].insert(rhs).second;
             return conn == "equal_under" ? firstinsert || !res : res;
           }
-          assert(cmp->arity() > 2);
+          assert(cmp->arity() > 3);
           // Else, pairwise equal/distinct
           for (int p1 = 2; p1 < cmp->arity(); ++p1)
           {
