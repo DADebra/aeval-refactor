@@ -670,7 +670,7 @@ namespace ufo
             return true;
           return expmap.at(lhs).data() == rhs;
         }
-        else if (conn == "under" || conn == "not_under")
+        else if (conn == "under")
         {
           Expr lhs = stoe(cmp->arg(1));
           Expr rhs = cmp->arg(2);
@@ -678,10 +678,6 @@ namespace ufo
             return true;
           ParseTree parent = findHighestParent(lhs, expmap.at(rhs));
 
-          if (conn == "not_under")
-            return !parent;
-
-          // Else, conn == "under"
           return bool(parent);
         }
         else
@@ -2218,9 +2214,6 @@ namespace ufo
 
             // Generate binary `under` constraint declarations
             aug_gram << "(declare-fun under (String "<<sort_smt<<") Bool)\n";
-
-            // Generate binary `not_under` constraint declarations
-            aug_gram << "(declare-fun not_under (String "<<sort_smt<<") Bool)\n";
         };
 
         // We need the Bool eithers for the inv definition (rel is Bool)

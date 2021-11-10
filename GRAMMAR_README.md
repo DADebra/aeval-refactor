@@ -194,9 +194,6 @@ of a candidate:
 - `(under "var1" var2)` is `true` when the given expansion of `var2`
   is a child of `"var1"` (must be in quotes).
 
-- `(not_under "var1" var2)` is `true` when `var2` doesn't have `"var1"`
-  as a parent.
-
 Constraints are evaluated in most cases by an internal function within
 freqhorn; if a constraint cannot be evaluated by this function, it will be
 passed on to the Z3 solver, which should allow for the use of more advanced
