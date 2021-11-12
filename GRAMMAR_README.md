@@ -194,6 +194,9 @@ of a candidate:
 - `(under "var1" var2)` is `true` when the given expansion of `var2`
   is a child of `"var1"` (must be in quotes).
 
+- `(recdepth "var1")` returns the deepest recursive depth that `"var1"` goes
+  in the parse tree of the candidate.
+
 Constraints are evaluated in most cases by an internal function within
 freqhorn; if a constraint cannot be evaluated by this function, it will be
 passed on to the Z3 solver, which should allow for the use of more advanced

@@ -290,10 +290,14 @@ namespace ufo
 
     Expr collapsePT(const ParseTree& pt)
     {
-      if (pt.children().size() == 1)
-        return collapsePT(pt.children()[0]);
-      else if (pt.children().size() == 0)
+      if (pt.children().size() == 0)
         return pt.data();
+      else if (pt.children().size() == 1)
+      {
+        if (!isOpX<FAPP>(pt.data()))
+          return m_efac.mkUnary(pt.data()->op(), collapsePT(pt.children()[0]));
+        return collapsePT(pt.children()[0]);
+      }
       else
       {
         ExprVector eargs;
@@ -399,7 +403,11 @@ namespace ufo
       };
 
       if (from.size() == 0)
+      {
+        // If there are no expansions, we still need to evaluate the constraint
+        func(makemap());
         return;
+      }
 
       function<bool(int)> perm = [&] (int pos)
       {
@@ -801,6 +809,17 @@ namespace ufo
         return true;
     }
 
+    int calculateRecDepth(const ExpansionsMap& expmap, Expr nt)
+    {
+      if (expmap.count(nt) == 0)
+        return 0;
+      int depth = 0;
+      for (const auto &pt : expmap.at(nt))
+        if (isRecursive(pt.data(), nt))
+          ++depth;
+      return depth;
+    }
+
     bool doesSatConstraints(const ParseTree& pt)
     {
       ExpansionsMap expmap;
@@ -838,6 +857,20 @@ namespace ufo
                 return false;
               };
               return btoe(existhelper(pt));
+            }
+            else if (conname == "recdepth")
+            {
+              Expr lhs = stoe(e->arg(1));
+              if (expmap.count(lhs) == 0)
+                return mkMPZ(cpp_int(0), e->efac());
+              int deepest = 0;
+              for (const auto &pt : expmap.at(lhs))
+              {
+                int depth = calculateRecDepth(expmap, lhs);
+                if (depth > deepest)
+                  deepest = std::move(depth);
+              }
+              return mkMPZ(cpp_int(deepest), e->efac());
             }
             else
               return e;
@@ -2300,6 +2333,9 @@ namespace ufo
 
         // Generate unary `present` constraint declarations
         aug_gram << "(declare-fun present (String) Bool)\n";
+
+        // Generate unary `recdepth` function declaration
+        aug_gram << "(declare-fun recdepth (String) Int)\n";
 
         aug_gram << user_cfg.str();
 
