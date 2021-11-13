@@ -858,7 +858,7 @@ namespace ufo
               };
               return btoe(existhelper(pt));
             }
-            else if (conname == "recdepth")
+            else if (conname == "maxrecdepth")
             {
               Expr lhs = stoe(e->arg(1));
               if (expmap.count(lhs) == 0)
@@ -2334,8 +2334,8 @@ namespace ufo
         // Generate unary `present` constraint declarations
         aug_gram << "(declare-fun present (String) Bool)\n";
 
-        // Generate unary `recdepth` function declaration
-        aug_gram << "(declare-fun recdepth (String) Int)\n";
+        // Generate unary `maxrecdepth` function declaration
+        aug_gram << "(declare-fun maxrecdepth (String) Int)\n";
 
         aug_gram << user_cfg.str();
 
