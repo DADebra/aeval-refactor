@@ -31,3 +31,4 @@ tools/deep_bench/windows/clusterjobs.log
 tools/deep_bench/windows/out-*.tar.gz
 
 *.swp
+test/context/files/commitsha
