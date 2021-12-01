@@ -1,0 +1,119 @@
+*** git-fs-orig.c	2021-11-30 17:27:49.609546914 -0500
+--- ./git-fs.c	2021-11-30 17:31:20.221548392 -0500
+***************
+*** 14,20 ****
+--- 14,22 ----
+  #include <unistd.h>
+  #include <stdbool.h>
+  #include <signal.h>
++ #ifdef __GLIBC__
+  #include <execinfo.h>
++ #endif //#ifdef __GLIBC__
+  
+  /* http://pubs.opengroup.org/onlinepubs/009695399/basedefs/limits.h.html
+   */
+***************
+*** 31,36 ****
+--- 33,39 ----
+  #define error(...) dprintf(error_fd, __VA_ARGS__)
+  
+  // Dump a stacktrace to stderr
++ #ifdef __GLIBC__
+  static void dump_trace(int signum) {
+  	error("Segmentation fault\n");
+  	void * buffer[255];
+***************
+*** 43,48 ****
+--- 46,52 ----
+  	}
+  	exit(1);
+  }
++ #endif //#ifdef __GLIBC__
+  
+  /* Macro to hide the ugly casts needed to access fi->fh (which is a
+   * uint64_t, which can store pointers, but is too big on 32-bit systems,
+***************
+*** 476,481 ****
+--- 480,486 ----
+  	struct gitfs_data *d = (struct gitfs_data *)(fuse_get_context()->private_data);
+  	debug("chrooting to %s\n", d->repo_path);
+  
++         /*
+  	if (chroot(d->repo_path) < 0) {
+  		error("Failed to chroot to %s: %s\n", d->repo_path, strerror(errno));
+  		goto err;
+***************
+*** 484,492 ****
+  		error("Failed to chdir to /: %s\n", strerror(errno));
+  		goto err;
+  	}
+  
+  	debug("opening repo after fuse_main\n");
+! 	if (git_repository_open(&d->repo, "/") < 0) {
+  		error("Cannot open git repository: %s\n", giterr_last()->message);
+  		goto err;
+  	}
+--- 489,498 ----
+  		error("Failed to chdir to /: %s\n", strerror(errno));
+  		goto err;
+  	}
++         */
+  
+  	debug("opening repo after fuse_main\n");
+! 	if (git_repository_open(&d->repo, d->repo_path) < 0) {
+  		error("Cannot open git repository: %s\n", giterr_last()->message);
+  		goto err;
+  	}
+***************
+*** 642,656 ****
+  	// Do a dummy backtrace call. This loads some files (ld.so.cache) and
+  	// ldopens libgcc_s.so, which are not available anymore later due to
+  	// the chroot (and might not be ideal to do in a signal handler anyway).
+  	void *dummy[1];
+  	backtrace(dummy, 1);
+  
+  	// Dump a stack trace on a segfault
+  	signal(SIGSEGV, dump_trace);
+  	signal(SIGABRT, dump_trace);
+  
+  	/* Initalize thread storage in libgit2 */
+! 	git_threads_init();
+  
+  	struct gitfs_data *d = calloc(1, sizeof(struct gitfs_data));
+  	if (!d) {
+--- 648,665 ----
+  	// Do a dummy backtrace call. This loads some files (ld.so.cache) and
+  	// ldopens libgcc_s.so, which are not available anymore later due to
+  	// the chroot (and might not be ideal to do in a signal handler anyway).
++ 
++ #ifdef __GLIBC__
+  	void *dummy[1];
+  	backtrace(dummy, 1);
+  
+  	// Dump a stack trace on a segfault
+  	signal(SIGSEGV, dump_trace);
+  	signal(SIGABRT, dump_trace);
++ #endif //#ifdef __GLIBC__
+  
+  	/* Initalize thread storage in libgit2 */
+! 	git_libgit2_init();
+  
+  	struct gitfs_data *d = calloc(1, sizeof(struct gitfs_data));
+  	if (!d) {
+***************
+*** 806,812 ****
+  	free(d);
+  
+  	/* Clean up thread storage in libgit2 */
+! 	git_threads_shutdown();
+  
+  	/* Allow git_init to change our exit code */
+  	return d->retval;
+--- 815,821 ----
+  	free(d);
+  
+  	/* Clean up thread storage in libgit2 */
+! 	git_libgit2_shutdown();
+  
+  	/* Allow git_init to change our exit code */
+  	return d->retval;
