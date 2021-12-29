@@ -1304,6 +1304,7 @@ namespace ufo
     if (containsOp<ARRAY_TY>(e)) return true;
     if (containsOp<MOD>(e)) return true;
     if (containsOp<DIV>(e)) return true;
+    if (containsOp<BVSORT>(e)) return true;
     return isNonlinear(e);
   }
 
