@@ -5,23 +5,35 @@
 # Set --runtime to 'buildah', 'docker', or 'host' (no container) to configure
 #   how to run the tests.
 
-cd "$(realpath $(dirname $0))"
+thisdir="$(realpath $(dirname $0))"
 
-. ./context/tests/getoptpp.sh
-getoptpp -i h,help, ,runtime,: -- "$@"
+bindir="$(realpath "$thisdir/../build/tools/deep")"
 
-if [ -n "$opt_help" ]
+. "$thisdir/context/tests/common.sh"
+
+if findopt "--help" "$@" >/dev/null
 then
     echo "Usage: $(basename $0) options..."
     echo
-    echo "Options for run.sh:"
-    printf " --runtime <docker,buildah,host> \tThe runtime used to run tests\n"
-    echo
+    echo "Options:"
+    printhelp "--verbose" "Be verbose with output"
+    printhelp "--runtime <docker,buildah,host>" "The runtime used to run tests"
+    printhelp "--out-dir <directory>" "The directory where test output will be stored"
+    ./context/tests/run_tests.sh --help
     exit 1
 fi
 
 buildah="$(which buildah)"
 docker="$(which docker)"
+
+testoutdir="$(findopt "--out-dir" "$@")"
+[ -n "$testoutdir" ] && testoutdir="$(realpath "$testoutdir")"
+export testoutdir
+
+cd "$thisdir"
+
+opt_runtime="$(findopt "--runtime" "$@")"
+findopt "--verbose" "$@" >/dev/null && opt_verbose=Y
 
 if [ -z "$opt_runtime" ]
 then
@@ -50,16 +62,32 @@ fi
 
 if [ "$opt_runtime" = "buildah" ]
 then
-    ./build_buildah.sh
-    exec ./run_buildah.sh "$@"
+    echo "Building..."
+    if [ -n "$opt_verbose" ]
+    then
+        sh ./build_buildah.sh
+    else
+        sh ./build_buildah.sh >/dev/null 2>&1
+    fi
+    echo "Running..."
+    exec sh ./run_buildah.sh "$@"
 elif [ "$opt_runtime" = "docker" ]
 then
-    ./build_docker.sh
-    exec ./run_docker.sh "$@"
+    echo "Building..."
+    if [ -n "$opt_verbose" ]
+    then
+        sh ./build_docker.sh
+    else
+        sh ./build_docker.sh >/dev/null 2>&1
+    fi
+    echo "Running..."
+    exec sh ./run_docker.sh "$@"
 elif [ "$opt_runtime" = "host" ]
 then
     cd ./context/tests
-    exec ./run_tests.sh "$@"
+    export PATH="$PATH:$bindir"
+    echo "Running..."
+    exec sh ./run_tests.sh "$@"
 else
     echo "Unrecognized runtime \"$opt_runtime\". Exiting." 1>&2
     exit 1

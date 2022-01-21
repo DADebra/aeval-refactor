@@ -22,6 +22,7 @@ FROM shared AS run
 # build_docker.sh as well!
 
 COPY --from=freqhorn-build /freqhorn-build/tools/deep/freqhorn /usr/bin/freqhorn
+COPY --from=freqhorn-build /freqhorn-build/bench_horn /bench_horn
 COPY files/commitsha /
 COPY tests /freqhorn-test
 

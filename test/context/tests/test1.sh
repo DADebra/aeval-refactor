@@ -1,0 +1,2 @@
+
+exec freqhorn --help
