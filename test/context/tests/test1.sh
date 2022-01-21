@@ -1,2 +1,2 @@
 
-exec freqhorn --help
+addtest "$(trcmd freqhorn --help)" "freqhorn --help" 0
