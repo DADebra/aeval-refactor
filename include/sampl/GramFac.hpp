@@ -1231,8 +1231,8 @@ namespace ufo
             {
               newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
                 currdepth, qvars, currnt);
-              bool idone = travpos.childat(i).isdone();
-              if (idone)
+              bool idone = constpos.childat(i).isdone();
+              if (idone && i == travpos.pos)
                 ++travpos.pos;
               done &= idone;
             }
