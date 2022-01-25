@@ -20,7 +20,6 @@ namespace ufo
     map<int, ExprVector> candidates;
     map<int, deque<Expr>> deferredCandidates;
     int updCount = 1;
-    bool boot = true;
 
     // extra options for disjunctive invariants
     unsigned dCandNum = 0;
@@ -40,6 +39,7 @@ namespace ufo
     map<int, bool> iterGrows;
 
     public:
+    bool boot = true;
 
     RndLearnerV3 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp,
                   bool _dAllMbp, bool _dAddProp, bool _dAddDat, bool _dStrenMbp, bool debug) :
@@ -1539,7 +1539,8 @@ namespace ufo
   inline void learnInvariants3(string smt, vector<string> grammars,
       unsigned maxAttempts, unsigned to, bool freqs, bool aggp,
       bool enableDataLearning, bool doElim, bool doDisj, bool dAllMbp,
-      bool dAddProp, bool dAddDat, bool dStrenMbp, bool debug, GramParams gramps)
+      bool dAddProp, bool dAddDat, bool dStrenMbp, bool debug, bool do_boot,
+      GramParams gramps)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -1561,25 +1562,29 @@ namespace ufo
     map<Expr, ExprSet> cands;
     for (auto& dcl: ruleManager.decls) ds.initializeDecl(dcl, gramps);
 
-    for (int i = 0; i < ruleManager.cycles.size(); i++)
-    {
-      Expr pref = bnd.compactPrefix(i);
-      Expr rel = ruleManager.chcs[ruleManager.cycles[i][0]].srcRelation;
-      ExprSet tmp;
-      getConj(pref, tmp);
-      for (auto & t : tmp)
-        if(hasOnlyVars(t, ruleManager.invVars[rel]))
-          cands[rel].insert(t);
-      ds.mutateHeuristicEq(cands[rel], cands[rel], rel, true);
-      ds.initializeAux(bnd, i, pref);
-    }
+    ds.boot = do_boot;
+
+    if (do_boot)
+      for (int i = 0; i < ruleManager.cycles.size(); i++)
+      {
+        Expr pref = bnd.compactPrefix(i);
+        Expr rel = ruleManager.chcs[ruleManager.cycles[i][0]].srcRelation;
+        ExprSet tmp;
+        getConj(pref, tmp);
+        for (auto & t : tmp)
+          if(hasOnlyVars(t, ruleManager.invVars[rel]))
+            cands[rel].insert(t);
+        ds.mutateHeuristicEq(cands[rel], cands[rel], rel, true);
+        ds.initializeAux(bnd, i, pref);
+      }
     if (enableDataLearning) ds.getDataCandidates(cands);
     for (auto& dcl: ruleManager.wtoDecls) ds.addCandidates(dcl, cands[dcl]);
     for (auto& dcl: ruleManager.wtoDecls) ds.getSeeds(dcl, cands);
     ds.refreshCands(cands);
     for (auto& dcl: ruleManager.decls) ds.doSeedMining(dcl->arg(0), cands[dcl->arg(0)], false);
     ds.calculateStatistics();
-    if (ds.bootstrap(doDisj)) return;
+    if (do_boot)
+      if (ds.bootstrap(doDisj)) return;
     std::srand(std::time(0));
     ds.synthesize(maxAttempts, doDisj);
   }

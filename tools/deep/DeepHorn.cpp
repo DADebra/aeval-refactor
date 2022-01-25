@@ -71,6 +71,7 @@ int main (int argc, char ** argv)
   const char *OPT_D2 = "--phase-prop";
   const char *OPT_D3 = "--phase-data";
   const char *OPT_D4 = "--stren-mbp";
+  const char *OPT_NO_BOOT = "--no-boot";
   const char *OPT_DEBUG = "--debug";
   const char *OPT_GRAMMAR = "--grammar";
   const char *OPT_GRAM_GEN = "--gen_method";
@@ -104,6 +105,8 @@ int main (int argc, char ** argv)
         " " << OPT_ADD_EPSILON << "                           add small probabilities to features that never happen in the code\n" <<
         " " << OPT_K_IND << "                          run k-induction after each learned lemma\n" <<
         " " << OPT_OUT_FILE << " <file.smt2>               serialize invariants to `file.smt2`\n\n" <<
+        "V2 and V3 options only:\n" <<
+        " " << OPT_NO_BOOT << "                  disable bootstrapping\n\n" <<
         "V2 options only:\n" <<
         " " << OPT_ITP << "                           bound for itp-based proofs\n" <<
         " " << OPT_BATCH << "                         threshold for how many candidates to check at once\n" <<
@@ -159,6 +162,7 @@ int main (int argc, char ** argv)
   bool d_p = getBoolValue(OPT_D2, false, argc, argv);
   bool d_d = getBoolValue(OPT_D3, false, argc, argv);
   bool d_s = getBoolValue(OPT_D4, false, argc, argv);
+  bool do_boot = !getBoolValue(OPT_NO_BOOT, false, argc, argv);
   vector<string> grammars;
   getStrValues(OPT_GRAMMAR, grammars, argc, argv);
   const char* gram_trav_type = getStrValue(OPT_GRAM_TRAV_TYPE, "striped", argc, argv);
@@ -186,11 +190,11 @@ int main (int argc, char ** argv)
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), grammars, max_attempts, to,
       densecode, aggressivepruning, do_dl, do_elim, do_disj, d_m, d_p, d_d, d_s,
-      debug, gramparams);
+      debug, do_boot, gramparams);
   else if (vers2) // run the TACAS'18 algorithm
     learnInvariants2(string(argv[argc-1]), grammars, to, outfile,
       max_attempts, itp, batch, retry, densecode, aggressivepruning, debug,
-      gramparams);
+      do_boot, gramparams);
   else            // run the FMCAD'17 algorithm
     learnInvariants(string(argv[argc-1]), grammars, to, outfile,
       max_attempts, debug, gramparams, kinduction, itp, densecode,

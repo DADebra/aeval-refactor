@@ -337,7 +337,8 @@ namespace ufo
   
   inline void learnInvariants2(string smt, vector<string> grammars,
       unsigned to, const char * outfile, int maxAttempts, int itp,
-      int batch, int retry, bool freqs, bool aggp, bool debug, GramParams gramps)
+      int batch, int retry, bool freqs, bool aggp, bool debug, bool do_boot,
+      GramParams gramps)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -373,13 +374,18 @@ namespace ufo
 
     for (auto& dcl: ruleManager.decls) ds.doSeedMining (dcl->arg(0), cands);
 
-    bool success = ds.houdini(cands, true, false);
-    outs () << "Number of bootstrapped lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
-    if (success)
+    bool success = false;
+    if (do_boot)
     {
-      outs () << "Success after the bootstrapping\n";
+      success = ds.houdini(cands, true, false);
+      outs () << "Number of bootstrapped lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
+      if (success)
+      {
+        outs () << "Success after the bootstrapping\n";
+      }
     }
-    else
+
+    if (!success)
     {
       ds.calculateStatistics();
       ds.prioritiesDeferred();
