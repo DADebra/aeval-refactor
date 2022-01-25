@@ -270,6 +270,7 @@ namespace ufo
     public:
 
     bool initialized = false;
+    bool done = false;
 
     private:
 
@@ -795,7 +796,7 @@ namespace ufo
           outs() << "ERROR: Indeterminate result in evaluating constraints:\n";
           m_smt_solver.toSmtLib(outs());
           outs() << endl;
-          exit(1);
+          assert(0);
         }
         if (!res && !doAny)
           return false;
@@ -983,7 +984,7 @@ namespace ufo
           outs() << "ERROR: There is no definition for user-defined " <<
             "non-terminal " << root << " in the CFG for " << inv <<
             ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
-          exit(1);
+          assert(0);
           return NULL;
         }
       }
@@ -1171,7 +1172,7 @@ namespace ufo
           outs() << "ERROR: There is no definition for user-defined " <<
             "non-terminal " << root << " in the CFG for " << inv <<
             ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
-          exit(1);
+          assert(0);
           return NULL;
         }
       }
@@ -1769,7 +1770,7 @@ namespace ufo
             outs() << "ERROR: There is no definition for user-defined " <<
               "non-terminal " << root << " in the CFG for " << inv <<
               ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
-            exit(1);
+            assert(0);
           }
         }
       }
@@ -2107,7 +2108,7 @@ namespace ufo
             outs() << "ERROR: There is no definition for user-defined " <<
               "non-terminal " << root << " in the CFG for " << inv <<
               ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
-            exit(1);
+            assert(0);
             // We never get here
             return NULL;
           }
@@ -2511,7 +2512,8 @@ namespace ufo
           if (!*getNextCandTrav)
           {
             outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
-            exit(0);
+            done = true;
+            //exit(0);
             return NULL;
           }
 
@@ -2524,7 +2526,8 @@ namespace ufo
           if (rootpos.isdone())
           {
             outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
-            exit(0);
+            done = true;
+            //exit(0);
             return NULL;
           }
           nextpt = newtrav(inv, rootpos);

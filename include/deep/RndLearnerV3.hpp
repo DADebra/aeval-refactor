@@ -729,6 +729,14 @@ namespace ufo
         {
           if (!u.isSat(cand->last()->left())) cand = NULL;
         }
+        bool alldone = true;
+        for (int j = 0; j < ruleManager.cycles.size(); ++j)
+          if (!sfs[j].back().isdone())
+          {
+            alldone = false;
+            break;
+          }
+        if (alldone) break;
         if (cand == NULL) continue;
         if (printLog) outs () << " - - - sampled cand (#" << i << ") for " << *decls[invNum] << ": " << *cand << "\n";
         if (!addCandidate(invNum, cand)) continue;

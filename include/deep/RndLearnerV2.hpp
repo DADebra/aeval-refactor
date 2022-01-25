@@ -238,7 +238,7 @@ namespace ufo
       }
     }
 
-    bool synthesize(int maxAttempts, int batchSz, int scndChSz)
+    bool synthesize(int maxAttempts, int batchSz, int scndChSz, int &outIters)
     {
       assert(sfs.size() == 1); // current limitation
 
@@ -260,6 +260,7 @@ namespace ufo
         while (candsBatch.size() < batchSz)
         {
           Expr cand = sf.getFreshCandidate();
+          if (sf.isdone()) break;
           if (cand == NULL) continue;
 
           if (isTautology(cand))  // keep searching
@@ -293,6 +294,7 @@ namespace ufo
 
           candsBatch.push_back(cand);
         }
+        if (sf.isdone()) break;
 
         for (auto a : tr) getIS(a, candsBatch, false);      // houdini
 
@@ -328,6 +330,7 @@ namespace ufo
         if (success) break;
       }
 
+      outIters = iter - 1;
       return success;
     }
   };
@@ -381,11 +384,12 @@ namespace ufo
       ds.calculateStatistics();
       ds.prioritiesDeferred();
 
-      success = ds.synthesize(maxAttempts, batch, retry);
+      int iter = -1;
+      success = ds.synthesize(maxAttempts, batch, retry, iter);
       if (success) outs () << "Total number of learned lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
 
       if (success) outs () << "\nSuccess after the sampling\n";
-      else         outs () << "\nNo success after " << maxAttempts << " iterations\n";
+      else         outs () << "\nNo success after " << iter << " iterations\n";
     }
 
     if (success && outfile != NULL)

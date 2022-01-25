@@ -636,10 +636,14 @@ namespace ufo
         // first, guess candidates for each inv.declaration
 
         bool skip = false;
+        bool alldone = true;
         for (int j = 0; j < invNumber; j++)
         {
           if (curCandidates[j] != NULL) continue;   // if the current candidate is good enough
           SamplFactory& sf = sfs[j].back();
+          if (sf.isdone())
+            continue;
+          alldone = false;
           Expr cand = sf.getFreshCandidate();
           if (cand == NULL)
           {
@@ -663,6 +667,8 @@ namespace ufo
 
           curCandidates[j] = cand;
         }
+
+        if (alldone) break;
 
         if (skip) continue;
 
@@ -698,7 +704,7 @@ namespace ufo
       }
 
       if (success) outs () << "\n -----> Success after " << --iter      << " iterations\n";
-      else         outs () <<      "\nNo success after " << maxAttempts << " iterations\n";
+      else         outs () <<      "\nNo success after " << --iter << " iterations\n";
 
       for (int j = 0; j < invNumber; j++)
         outs () << "        number of sampled lemmas for " << *decls[j] << ": "

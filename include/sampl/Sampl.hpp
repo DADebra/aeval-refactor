@@ -56,6 +56,7 @@ namespace ufo
     ExprSet learnedExprs;
 
     bool initilized = true;
+    bool done = false;
 
     SamplFactory(ExprFactory &_efac, EZ3 &_z3, bool aggp, bool _printLog) :
       m_efac(_efac), lf(_efac, aggp), bf(_efac), af(_efac, aggp),
@@ -339,6 +340,13 @@ namespace ufo
 
         for (auto &ar : orAritiesDensity) lf.printCodeStatistics(ar.first);
       }
+    }
+
+    bool isdone()
+    {
+      if (gf.initialized)
+        return gf.done;
+      return false;
     }
   };
 }
