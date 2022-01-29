@@ -33,7 +33,7 @@
 
 ;(assert (constraint false))
 ;(assert (constraint (expands fla "(< (* iconst ivar1) (* iconst ivar2))")))
-(assert (constraint (distinct_under "fla" ivar1 ivar2)))
+;(assert (constraint (distinct_under "fla" ivar1 ivar2)))
 ;(assert (constraint (equal_under "fla" ivar1 ivar2)))
 ;(assert (constraint (not_under "fla" ivar1)))
 ;(assert (constraint (and (= ivar1 ivar2) (equal ivar1) (equal ivar2))))
