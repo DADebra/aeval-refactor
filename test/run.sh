@@ -19,7 +19,7 @@ then
     printhelp "--verbose" "Be verbose with output"
     printhelp "--runtime <docker,buildah,host>" "The runtime used to run tests"
     printhelp "--out-dir <directory>" "The directory where test output will be stored"
-    ./context/tests/run_tests.sh --help
+    "$thisdir/context/tests/run_tests.sh" --help
     exit 1
 fi
 
@@ -84,9 +84,11 @@ then
     exec sh ./run_docker.sh "$@"
 elif [ "$opt_runtime" = "host" ]
 then
-    cd ./context/tests
     export PATH="$PATH:$bindir"
+    export BENCHDIR="$(realpath ../bench_horn)"
+    export GRAMDIR="$(realpath ../grammars)"
     echo "Running..."
+    cd ./context/tests
     exec sh ./run_tests.sh "$@"
 else
     echo "Unrecognized runtime \"$opt_runtime\". Exiting." 1>&2

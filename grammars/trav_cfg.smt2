@@ -9,6 +9,6 @@
 
 ;(assert (= ANY_INV (= iterm iterm)))
 
-(assert (= iterm (either 0 1 (prio 2 0.3) 3)))
+(assert (= iterm (either 0 1 2 3)))
 
 (assert (= ANY_INV (= (+ iterm iterm iterm) 0)))

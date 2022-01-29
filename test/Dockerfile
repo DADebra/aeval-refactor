@@ -23,9 +23,12 @@ FROM shared AS run
 
 COPY --from=freqhorn-build /freqhorn-build/tools/deep/freqhorn /usr/bin/freqhorn
 COPY --from=freqhorn-build /freqhorn-build/bench_horn /bench_horn
+COPY --from=freqhorn-build /freqhorn-build/grammars /grammars
 COPY files/commitsha /
 COPY tests /freqhorn-test
 
 WORKDIR /freqhorn-test
 ENV PATH="$PATH:/freqhorn-test"
+ENV BENCHDIR="/bench_horn"
+ENV GRAMDIR="/grammars"
 CMD run_tests.sh

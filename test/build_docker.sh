@@ -3,6 +3,9 @@
 # Set FORCEBUILD to cause a build to unconditionally occur (even if it looks
 #   like we don't need to).
 
+# Make sure we can actually connect to the docker daemon
+docker version >/dev/null || exit $?
+
 cd "$(realpath $(dirname $0))"
 
 . ./build_common.sh
@@ -77,10 +80,20 @@ then
 
     docker cp $freqhornbuild_con:/freqhorn-build/bench_horn - |
         docker cp - $run_con:/
+
+    docker cp $freqhornbuild_con:/freqhorn-build/grammars - |
+        docker cp - $run_con:/
+
     docker rm $freqhornbuild_con > /dev/null
 
     docker cp ./context/tests $run_con:/freqhorn-test
     docker cp ./context/files/commitsha $run_con:/commitsha
-    docker commit -c "WORKDIR /freqhorn-test" -c "CMD run_tests.sh" -c 'ENV PATH="$PATH:/freqhorn-test"' -c "LABEL commitsha=$(cat ./context/files/commitsha)" $run_con freqhorn-test:latest
+    docker commit \
+      -c "WORKDIR /freqhorn-test" \
+      -c "CMD run_tests.sh" \
+      -c 'ENV PATH="$PATH:/freqhorn-test"' \
+      -c 'ENV BENCHDIR="/bench_horn"' \
+      -c 'ENV GRAMDIR="/grammars"' \
+      -c "LABEL commitsha=$(cat ./context/files/commitsha)" $run_con freqhorn-test:latest
     docker rm $run_con > /dev/null
 fi

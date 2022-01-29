@@ -6,6 +6,9 @@ cd "$(realpath $(dirname $0))"
 
 . ./common.sh
 
+# Handle unexpected termination
+trap "kill -KILL 0" EXIT INT TERM QUIT
+
 if findopt "--help" "$@" >/dev/null
 then
     printhelp "--num-cpus <integer>" "The number of CPU cores to use for running tests"
@@ -26,7 +29,7 @@ numcpus="$(findopt "--num-cpus" "$@")"
 #opt_dump="N"
 #findopt "--dump-output" "$@" >/dev/null && opt_dump="Y"
 
-nowdate="$(date "+%H:%M_%m-%d-%Y")"
+nowdate="$(date "+%m-%d-%Y_%H:%M")"
 # Define/create/initialize output files
 comboout="$testoutdir/test_${nowdate}_output.txt"
 timeout="$testoutdir/test_${nowdate}_timing.csv"
@@ -38,6 +41,17 @@ printf "\n\n" >> "$comboout"
 
 echo "TestName,TimeTakenSecs" > "$timeout"
 
+# Set up terminal colors (if stdout is terminal)
+red=""; green=""; yellow=""; blue=""; magenta=""; cyan=""; nocolor="";
+if [ -t 1 ]
+then
+    start="["; nocolor="${start}0m";
+    red="${start}31m"; green="${start}32m"; yellow="${start}33m";
+    blue="${start}34m"; magenta="${start}35m"; cyan="${start}36m";
+fi
+
+# For start-to-end timing
+starttime="$(date +%s.%N)"
 echo "~~~Running tests~~~"
 echo
 
@@ -50,10 +64,39 @@ successfultestcount=0
 numjobs=0
 runningpids=""
 
+# Time the execution of the command specified by "$@", outputting results to
+# $1 (i.e. "$@" starts at arg 2)
+timecmd() {
+    outfile="$1"
+    shift 1
+    start="$(date +%s.%N)"
+    ("$@")
+    ret=$?
+    end="$(date +%s.%N)"
+    diff="$(echo "$end - $start" | bc)"
+    if [ "${diff#.}" != "$diff" ]
+    then
+        # bc outputs e.g. '.8' instead of '0.8'
+        diff="0$diff"
+    fi
+    if [ "${diff%.}" != "$diff" ]
+    then
+        # Busybox 'date' doesn't support %N
+        diff="${diff}0"
+    fi
+    echo "$diff" > "$outfile"
+    return $ret
+}
+
 # Check all running test PIDs, to see if they're done, and handle their
 #   completion if so.
 # Returns 0 (true) if at least one test finished.
 checktestsdone() {
+    if [ -z "$runningpids" ]
+    then
+        return 0
+    fi
+    local pid name outfile timefile expectedret parallel oldifs testsdone
     testsdone=0
     newpids=""
     oldifs="$IFS"
@@ -64,36 +107,37 @@ checktestsdone() {
         set -- $entry
         IFS="$oldifs"
         pid="$1"; name="$2"; outfile="$3"; timefile="$4"; expectedret="$5";
+        parallel="$6";
         if [ ! -d "/proc/$pid" ]
         then
             wait "$pid" >/dev/null 2>&1
             ret=$?
-            timetaken="$(awk '-F ' '$1 ~ /real/ {printf "%s", $2;}' "$timefile")"
-
-            echo "Test \"$name\" completed, in ${timetaken}s"
+            timetaken="$(cat "$timefile")"
 
             if [ $ret -ne $expectedret ]
             then
-                echo "Test \"$name\" failed, exit code $ret"
-                echo "Test \"$name\" failed, exit code $ret" >> "$comboout"
+                success="${red}FAILED$nocolor"
+                successplain="FAILED"
                 failedtestcount=$(( $failedtestcount + 1 ))
                 failedtests="$failedtests - $name\n"
             else
-                echo "Test \"$name\" succeeded, exit code $ret"
-                echo "Test \"$name\" succeeded, exit code $ret" >> "$comboout"
+                success="${green}SUCCESS$nocolor"
+                successplain="SUCCESS"
                 successfultestcount=$(( $successfultestcount + 1 ))
             fi
+            echo "$success \"$name\": exit code $ret, in ${timetaken}s"
             echo
+            echo "$successplain \"$name\": exit code $ret, in ${timetaken}s" >> "$comboout"
 
-            echo "Output for Test \"$name\":" >> "$comboout"
+            echo "Output for \"$name\":" >> "$comboout"
             cat "$outfile" >> "$comboout"
             printf "\"$name\",$timetaken\n" >> "$timeout"
 
             rm "$timefile" "$outfile"
 
-            testsdone=$(( $testsdone + 1 ))
+            testsdone=$(( $testsdone + $parallel ))
         else
-            newpids="$newpids$entry"
+            newpids="$newpids$entry"
         fi
         IFS=""
     done
@@ -104,6 +148,11 @@ checktestsdone() {
     if [ $testsdone -ne 0 ]
     then
         numjobs=$(( $numjobs - $testsdone ))
+        if [ $numjobs -lt 0 ]
+        then
+            echo "ERROR: numjobs is less than 0 ($numjobs)"
+            numjobs=0
+        fi
         return 0
     else
         return 1
@@ -123,12 +172,19 @@ trcmd() {
 # List of all registered test cases
 testcases=""
 
-# Usage: $1 = Command (delimited by US (^_)), $2 = Name, $3 = ExpectedRet
+# Usage: $1 = Command (delimited by US (^_)), $2 = Name, $3 = ExpectedRet,
+#        $4 = Parallel
 # 'Command' is not run in a shell for inconvenience.
 # 'Name' must be globally-unique.
 # 'ExpectedRet' is the expected numeric return code.
+# 'Parallel' is the number of CPU cores the test will take up.
 addtest() {
-    cmd="$1"; name="$2"; expectedret="$3";
+    if [ $# -lt 4 -o -z "$1" -o -z "$2" -o -z "$3" -o -z "$4" ]
+    then
+        echo "ERROR: addtest expects 4 parameters!"
+        exit 4
+    fi
+    cmd="$1"; name="$2"; expectedret="$3"; parallel="$4";
     oldifs="$IFS"
     IFS=""
 
@@ -139,7 +195,7 @@ addtest() {
     do
         IFS=""
         set -- $testcase
-        tcmd="$1"; tname="$2"; texpectedret="$3";
+        tcmd="$1"; tname="$2";
         if [ "$tname" = "$name" ]
         then
             echo "ERROR: Test name \"$name\" already exists." 1>&2
@@ -148,7 +204,7 @@ addtest() {
         IFS=""
     done
     IFS="$oldifs"
-    testcases="${testcases}$cmd$name$expectedret"
+    testcases="${testcases}$cmd$name$expectedret$parallel"
 }
 
 if [ -z "$(ls test*.sh)" ]
@@ -168,12 +224,12 @@ do
     IFS=""
     set -- $testcase
     IFS="$oldifs"
-    cmd="$1"; name="$2"; expectedret="$3";
-    if [ $numjobs -eq $numcpus ]
+    cmd="$1"; name="$2"; expectedret="$3"; parallel="$4";
+    if [ $(( $numjobs + $parallel )) -gt $numcpus ]
     then
         while :
         do
-            sleep 0.1s
+            sleep 0.1
             if checktestsdone
             then
                 break
@@ -182,26 +238,14 @@ do
     fi
     outfile="$(mktemp)"
     timefile="$(mktemp)"
-    echo "Starting test \"$name\"."
+    echo "${cyan}START${nocolor} \"$name\"."; echo
     IFS=""
     set -- $cmd
     IFS="$oldifs"
-    if [ -n "$(which time 2>/dev/null)" ]
-    then
-        # We have executable 'time'
-        time -p -o "$timefile" "$@" > "$outfile" 2>&1 &
-        pid=$!
-    elif { time :; } >/dev/null 1>&2
-    then
-        # We have built-in 'time'
-        { time "$@" > "$outfile" 2>&1; } 2>"$timefile" &
-        pid=$!
-    else
-        echo "ERROR: No 'time' executable or built-in found."
-        exit 10
-    fi
-    runningpids="$runningpids$pid$name$outfile$timefile$expectedret"
-    numjobs=$(( $numjobs + 1 ))
+    timecmd "$timefile" "$@" > "$outfile" 2>&1 &
+    pid=$!
+    runningpids="$runningpids$pid$name$outfile$timefile$expectedret$parallel"
+    numjobs=$(( $numjobs + $parallel ))
 
     IFS=""
 done
@@ -210,7 +254,7 @@ IFS="$oldifs"
 # Wait for all tests to finish running.
 while :
 do
-    sleep 0.1s
+    sleep 0.1
     checktestsdone
     if [ $numjobs -eq 0 ]
     then
@@ -218,6 +262,7 @@ do
     fi
 done
 
+endtime="$(date +%s.%N)"
 echo
 echo "~~~Done running tests: $successfultestcount tests passed, $failedtestcount tests failed~~~"
 echo
@@ -226,4 +271,17 @@ if [ $failedtestcount -ne 0 ]
 then
     echo "~~~Failed tests~~~"
     printf "$failedtests"
+    echo
 fi
+
+timetaken="$(echo "$endtime - $starttime" | bc)"
+[ "${timetaken#.}" != "$timetaken" ] && timetaken="0$timetaken"
+[ "${timetaken%.}" != "$timetaken" ] && timetaken="${timetaken}0"
+echo "Total time taken: $timetaken seconds"
+
+# Cleanup our children
+trap '' TERM INT QUIT EXIT
+#kill -INT 0
+kill -TERM 0
+sleep 0.1
+kill -QUIT 0
