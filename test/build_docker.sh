@@ -94,6 +94,7 @@ then
       -c 'ENV PATH="$PATH:/freqhorn-test"' \
       -c 'ENV BENCHDIR="/bench_horn"' \
       -c 'ENV GRAMDIR="/grammars"' \
+      -c 'ENV TESTOUTDIR="/test_output"' \
       -c "LABEL commitsha=$(cat ./context/files/commitsha)" $run_con freqhorn-test:latest
     docker rm $run_con > /dev/null
 fi

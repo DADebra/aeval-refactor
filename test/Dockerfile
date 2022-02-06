@@ -31,4 +31,6 @@ WORKDIR /freqhorn-test
 ENV PATH="$PATH:/freqhorn-test"
 ENV BENCHDIR="/bench_horn"
 ENV GRAMDIR="/grammars"
+# NOTE: If you change this, you must change all of the run*.sh scripts too!
+ENV TESTOUTDIR="/test_output"
 CMD run_tests.sh

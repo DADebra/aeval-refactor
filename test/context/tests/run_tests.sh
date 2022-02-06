@@ -24,8 +24,13 @@ then
     normexit 1
 fi
 
-[ -z "$testoutdir" ] && testoutdir="./test_output"
-mkdir -p "$testoutdir" || normexit $?
+if [ -z "$TESTOUTDIR" ]
+then
+    echo "Programmer error: \$TESTOUTDIR must be set!"
+    echo "(Maybe you're invoking this script directly? Run test/run.sh instead)"
+    normexit 3
+fi
+mkdir -p "$TESTOUTDIR" || normexit $?
 
 numcpus="$(findopt "--num-cpus" "$@")"
 [ -z "$numcpus" ] && numcpus="$(nproc)"
@@ -41,8 +46,8 @@ nowdate="$(date "+%m-%d-%Y_%H:%M")"
 # Define/create/initialize output files
 if [ -z "$runtest" ]
 then
-    comboout="$testoutdir/test_${nowdate}_output.txt"
-    timeout="$testoutdir/test_${nowdate}_timing.csv"
+    comboout="$TESTOUTDIR/test_${nowdate}_output.txt"
+    timeout="$TESTOUTDIR/test_${nowdate}_timing.csv"
 else
     comboout="/dev/null"; timeout="/dev/null";
 fi

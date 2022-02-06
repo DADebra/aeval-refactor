@@ -5,11 +5,12 @@
 # Set --runtime to 'buildah', 'docker', or 'host' (no container) to configure
 #   how to run the tests.
 
-thisdir="$(realpath $(dirname $0))"
+testdir="$(realpath "$(dirname "$0")")"
+projectroot="$(realpath "$testdir/..")"
 
-bindir="$(realpath "$thisdir/../build/tools/deep")"
+bindir="$(realpath "$projectroot/build/tools/deep")"
 
-. "$thisdir/context/tests/common.sh"
+. "$testdir/context/tests/common.sh"
 
 if findopt "--help" "$@" >/dev/null
 then
@@ -19,7 +20,7 @@ then
     printhelp "--verbose" "Be verbose with output"
     printhelp "--runtime <docker,buildah,host>" "The runtime used to run tests"
     printhelp "--out-dir <directory>" "The directory where test output will be stored"
-    "$thisdir/context/tests/run_tests.sh" --help
+    "$testdir/context/tests/run_tests.sh" --help
     exit 1
 fi
 
@@ -28,9 +29,11 @@ docker="$(which docker)"
 
 testoutdir="$(findopt "--out-dir" "$@")"
 [ -n "$testoutdir" ] && testoutdir="$(realpath "$testoutdir")"
-export testoutdir
+[ -z "$testoutdir" ] && testoutdir="$projectroot/test_output"
+mkdir -p "$testoutdir"
+export TESTOUTDIR="$testoutdir"
 
-cd "$thisdir"
+cd "$testdir"
 
 opt_runtime="$(findopt "--runtime" "$@")"
 findopt "--verbose" "$@" >/dev/null && opt_verbose=Y
