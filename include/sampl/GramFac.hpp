@@ -1011,20 +1011,37 @@ namespace ufo
           }
         }
 
+        assert(travpos.childrensize() == root->arity());
+        vector<ParseTree> newexpr(root->arity());
+
+        // To reverse ('rtl'), we just invert newexpr and root->arg(i)
+        function<ParseTree&(int)> newexprat;
+        function<Expr(int)> rootarg;
+        if (travdir == TravParamDirection::LTR)
+        {
+          newexprat = [&] (int i) -> ParseTree& { return newexpr[i]; };
+          rootarg = [&] (int i) { return root->arg(i); };
+        }
+        else if (travdir == TravParamDirection::RTL)
+        {
+          newexprat = [&] (int i) -> ParseTree&
+            { return newexpr[root->arity()-1-i]; };
+          rootarg = [&] (int i) { return root->arg(root->arity()-1-i); };
+        }
+
         if (travpos.inqueue() && travpos.pos.limit != -1)
         {
           return gettrav(root, travpos.queueat(travpos.pos),
             localqvars, currnt, needdefer);
         }
 
-        vector<ParseTree> cand;
         for (int i = 0; i < travpos.childrensize(); ++i)
         {
-          cand.push_back(gettrav(root->arg(i), travpos.childat(i),
-            localqvars, currnt, needdefer));
+          newexprat(i) = gettrav(rootarg(i), travpos.childat(i),
+            localqvars, currnt, needdefer);
         }
 
-        return ParseTree(root, cand);
+        return ParseTree(root, std::move(newexpr));
       }
     }
 
@@ -1188,6 +1205,7 @@ namespace ufo
       {
         // Root is a Z3 function (e.g. (and ...))
         std::shared_ptr<ExprUSet> localqvars(new ExprUSet());
+        vector<ParseTree> newexpr(root->arity());
 
         if (qvars != NULL)
           for (auto& var : *qvars)
@@ -1202,35 +1220,33 @@ namespace ufo
           }
         }
 
-        vector<ParseTree> newexpr(root->arity());
+        // To reverse ('rtl'), we just invert newexpr and root->arg(i)
+        function<ParseTree&(int)> newexprat;
+        function<Expr(int)> rootarg;
+        if (travdir == TravParamDirection::LTR)
+        {
+          newexprat = [&] (int i) -> ParseTree& { return newexpr[i]; };
+          rootarg = [&] (int i) { return root->arg(i); };
+        }
+        else if (travdir == TravParamDirection::RTL)
+        {
+          newexprat = [&] (int i) -> ParseTree&
+            { return newexpr[root->arity()-1-i]; };
+          rootarg = [&] (int i) { return root->arg(root->arity()-1-i); };
+        }
 
         if (travpos.pos < 0 && !travpos.inqueue())
         {
           // First-time initialize
-          if (travtype == TravParamType::ORDERED)
-          {
-            travpos = TravPos(0, root->arity());
-            if (travdir == TravParamDirection::LTR)
-              ++travpos.pos;
-            else if (travdir == TravParamDirection::RTL)
-              --travpos.pos;
-          }
-          else if (travtype == TravParamType::STRIPED)
-          {
-            if (travdir == TravParamDirection::LTR)
-              travpos = TravPos(0, root->arity());
-            else if (travdir == TravParamDirection::RTL)
-              travpos = TravPos(0, root->arity());
+          travpos = TravPos(0, root->arity());
+          ++travpos.pos;
 
-            if (travdir == TravParamDirection::LTR)
-              ++travpos.pos;
-            else if (travdir == TravParamDirection::RTL)
-              --travpos.pos;
-
+          if (travtype == TravParamType::STRIPED)
+          {
             bool done = true;
             for (int i = 0; i < travpos.childrensize(); ++i)
             {
-              newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
+              newexprat(i) = newtrav(rootarg(i), travpos.childat(i),
                 currdepth, qvars, currnt);
               bool idone = constpos.childat(i).isdone();
               if (idone && i == travpos.pos)
@@ -1240,13 +1256,13 @@ namespace ufo
             if (done)
               travpos.makedone();
 
-            return ParseTree(root, newexpr);
+            return ParseTree(root, std::move(newexpr));
           }
         }
 
         // Traversal
 
-        int start, end;
+        /*int start, end;
         function<bool(int)> cond;
         function<int(int)> nextpos;
         if (travdir == TravParamDirection::LTR)
@@ -1262,7 +1278,7 @@ namespace ufo
           end = 0;
           cond = [&] (int i) { return i >= 0; };
           nextpos = [] (int i) { return i - 1; };
-        }
+        }*/
 
         if (travtype == TravParamType::STRIPED)
         {
@@ -1320,7 +1336,7 @@ namespace ufo
             travpos.emptyqueue();
           }
 
-          for (int i = start; cond(i); i = nextpos(i))
+          for (int i = 0; i < root->arity(); ++i)
           {
             if (i != travpos.pos)
             {
@@ -1329,17 +1345,17 @@ namespace ufo
               if (travprio != TravParamPrio::DFS && i >= travpos.pos.min)
               {
                 TravPos temppos;
-                newexpr[i] = newtrav(root->arg(i), temppos,
+                newexprat(i) = newtrav(rootarg(i), temppos,
                   currdepth, qvars, currnt);
               }
               else
-                newexpr[i] = gettrav(root->arg(i), constpos.childat(i),
+                newexprat(i) = gettrav(rootarg(i), constpos.childat(i),
                   qvars, currnt, needdefer);
               if (needdefer)
               {
                 if (constpos.childat(i).isdone())
                   travpos.childat(i) = TravPos();
-                newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
+                newexprat(i) = newtrav(rootarg(i), travpos.childat(i),
                   currdepth, qvars, currnt);
               }
             }
@@ -1347,9 +1363,9 @@ namespace ufo
             {
               assert(!constpos.childat(i).isdone());
 
-              newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
+              newexprat(i) = newtrav(rootarg(i), travpos.childat(i),
                 currdepth, qvars, currnt);
-              if (travpos.pos < end)
+              if (travpos.pos < root->arity() - 1)
               {
                 bool done = true;
                 for (int i = travpos.pos.min + 1; i < root->arity(); ++i)
@@ -1362,9 +1378,9 @@ namespace ufo
                 {
                   TravPos *childpos = new TravPos(travpos, false);
 
-                  childpos->pos = CircularInt(nextpos(travpos.pos),
-                      nextpos(travpos.pos), root->arity());
-                  int startpos = nextpos(travpos.pos);
+                  childpos->pos = CircularInt(travpos.pos + 1,
+                      travpos.pos + 1, root->arity());
+                  int startpos = childpos->pos;
                   while (constpos.childat(childpos->pos).isdone())
                   {
                     ++childpos->pos;
@@ -1376,7 +1392,7 @@ namespace ufo
                     if (i == travpos.pos)
                       continue;
                     childpos->childat(i) = TravPos();
-                    newtrav(root->arg(i), childpos->childat(i),
+                    newtrav(rootarg(i), childpos->childat(i),
                       currdepth, qvars, currnt);
                   }
 
@@ -1457,7 +1473,7 @@ namespace ufo
               else
               {
                 travpos.childat(travpos.pos) = TravPos();
-                newtrav(root->arg(travpos.pos),
+                newtrav(rootarg(travpos.pos),
                   travpos.childat(travpos.pos), currdepth, qvars, currnt);
                 ++travpos.pos;
               }
@@ -1466,24 +1482,24 @@ namespace ufo
         }
         else if (travtype == TravParamType::ORDERED)
         {
-          int di = start;
+          int di = 0;
           bool startreset = false;
           while (constpos.childat(di).isdone())
           {
             // Reset our position
             travpos.childat(di) = TravPos();
-            newexpr[di] = newtrav(root->arg(di), travpos.childat(di),
+            newexprat(di) = newtrav(rootarg(di), travpos.childat(di),
               currdepth, qvars, currnt);
-            if (di == start)
+            if (di == 0)
               startreset = true;
 
-            assert(di != end);
+            assert(di != root->arity() - 1);
 
             // Increment next position
-            int nexti = nextpos(di);
+            int nexti = di + 1;
             if (!constpos.childat(nexti).isdone())
             {
-              newexpr[nexti] = newtrav(root->arg(nexti),
+              newexprat(nexti) = newtrav(rootarg(nexti),
                 travpos.childat(nexti), currdepth, qvars, currnt);
               break;
             }
@@ -1491,28 +1507,28 @@ namespace ufo
               di = nexti;
           }
 
-          for (int i = di; cond(i); i = nextpos(i))
+          for (int i = di; i < root->arity(); ++i)
           {
-            if (i != start)
+            if (i != 0)
             {
               if (constpos.childat(i).pos < 0)
-                newtrav(root->arg(i), travpos.childat(i), currdepth, qvars,
+                newtrav(rootarg(i), travpos.childat(i), currdepth, qvars,
                   currnt);
               bool needdefer = false;
-              newexpr[i] = gettrav(root->arg(i), constpos.childat(i), qvars,
+              newexprat(i) = gettrav(rootarg(i), constpos.childat(i), qvars,
                 currnt, needdefer);
               if (needdefer)
               {
                 if (constpos.childat(i).isdone())
                   travpos.childat(i) = TravPos();
-                newexpr[i] = newtrav(root->arg(i), travpos.childat(i),
+                newexprat(i) = newtrav(rootarg(i), travpos.childat(i),
                   currdepth, qvars, currnt);
               }
             }
           }
 
-          if (!startreset && !constpos.childat(start).isdone())
-            newexpr[start] = newtrav(root->arg(start), travpos.childat(start),
+          if (!startreset && !constpos.childat(0).isdone())
+            newexprat(0) = newtrav(rootarg(0), travpos.childat(0),
               currdepth, qvars, currnt);
 
           bool done = true;

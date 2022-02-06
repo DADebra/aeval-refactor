@@ -40,6 +40,5 @@ findopt() {
         fi
         shift 1
     done
-    echo ""
     return 1
 }

@@ -23,7 +23,8 @@ dotravcomptest() {
     pid1=$!
     freqhorn --v1 --attempts 500 --b4simpl --gen_method newtrav $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" > "$new" &
     pid2=$!
-    diff -w "$old" "$new"
+    echo "Traverse output | Newtrav output"
+    diff -w -y "$old" "$new"
     ret3=$?
     wait $pid1
     ret1=$?

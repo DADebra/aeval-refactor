@@ -1,6 +1,6 @@
 FROM alpine:latest AS shared
 
-RUN apk --no-cache add boost boost-coroutine boost-context boost-system gmp fuse z3
+RUN apk --no-cache add boost boost-coroutine boost-context boost-system gmp fuse z3 diffutils
 
 FROM shared AS build
 

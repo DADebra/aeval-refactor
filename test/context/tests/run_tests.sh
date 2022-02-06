@@ -9,20 +9,28 @@ cd "$(realpath $(dirname $0))"
 # Handle unexpected termination
 trap "kill -KILL 0" EXIT INT TERM QUIT
 
+normexit() {
+    trap - EXIT INT TERM QUIT
+    exit $1
+}
+
 if findopt "--help" "$@" >/dev/null
 then
+    printhelp "--test <string>" "Only run the test with the given name"
     printhelp "--num-cpus <integer>" "The number of CPU cores to use for running tests"
     #printhelp "--dump-output" "Print the output of each test when it completes"
     #printhelp "--rm" "Cleanup the output files of each test"
     echo
-    exit 1
+    normexit 1
 fi
 
 [ -z "$testoutdir" ] && testoutdir="./test_output"
-mkdir -p "$testoutdir" || exit $?
+mkdir -p "$testoutdir" || normexit $?
 
 numcpus="$(findopt "--num-cpus" "$@")"
 [ -z "$numcpus" ] && numcpus="$(nproc)"
+
+runtest="$(findopt "--test" "$@")"
 
 #opt_rm="N"
 #findopt "--rm" "$@" >/dev/null && opt_rm="Y"
@@ -31,8 +39,13 @@ numcpus="$(findopt "--num-cpus" "$@")"
 
 nowdate="$(date "+%m-%d-%Y_%H:%M")"
 # Define/create/initialize output files
-comboout="$testoutdir/test_${nowdate}_output.txt"
-timeout="$testoutdir/test_${nowdate}_timing.csv"
+if [ -z "$runtest" ]
+then
+    comboout="$testoutdir/test_${nowdate}_output.txt"
+    timeout="$testoutdir/test_${nowdate}_timing.csv"
+else
+    comboout="/dev/null"; timeout="/dev/null";
+fi
 
 echo "Log output of $(basename $0)" > "$comboout"
 echo "Command line: $@" >> "$comboout"
@@ -172,6 +185,9 @@ trcmd() {
 # List of all registered test cases
 testcases=""
 
+# Will be "yes" if --test was provided and we found the test with that name
+foundruntest=""
+
 # Usage: $1 = Command (delimited by US (^_)), $2 = Name, $3 = ExpectedRet,
 #        $4 = Parallel
 # 'Command' is not run in a shell for inconvenience.
@@ -182,7 +198,7 @@ addtest() {
     if [ $# -lt 4 -o -z "$1" -o -z "$2" -o -z "$3" -o -z "$4" ]
     then
         echo "ERROR: addtest expects 4 parameters!"
-        exit 4
+        normexit 4
     fi
     cmd="$1"; name="$2"; expectedret="$3"; parallel="$4";
     oldifs="$IFS"
@@ -190,6 +206,11 @@ addtest() {
 
     # Sanitize 'name'
     name="$(echo "$name" | tr -d '\n')"
+
+    if [ -n "$runtest" -a "$name" = "$runtest" ]
+    then
+        foundruntest="yes"
+    fi
 
     for testcase in $testcases
     do
@@ -199,7 +220,7 @@ addtest() {
         if [ "$tname" = "$name" ]
         then
             echo "ERROR: Test name \"$name\" already exists." 1>&2
-            exit 9
+            normexit 9
         fi
         IFS=""
     done
@@ -217,6 +238,12 @@ do
     . "./$testsh"
 done
 
+if [ -n "$runtest" -a -z "$foundruntest" ]
+then
+    echo "Couldn't find test named \"$runtest\". Exiting."
+    normexit 2
+fi
+
 oldifs="$IFS"
 IFS=""
 for testcase in $testcases
@@ -225,6 +252,34 @@ do
     set -- $testcase
     IFS="$oldifs"
     cmd="$1"; name="$2"; expectedret="$3"; parallel="$4";
+
+    if [ -n "$runtest" ]
+    then
+        if [ "$name" != "$runtest" ]
+        then
+            continue
+        else
+            timefile="$(mktemp)"
+            oldifs="$IFS"
+            IFS=""
+            set -- $cmd
+            IFS="$oldifs"
+            timecmd "$timefile" "$@" 2>&1
+            ret=$?
+            echo "Test finished"
+            echo
+            echo -n "Result: "
+            [ "$ret" = "$expectedret" ] && echo "${green}SUCCESS$nocolor" ||
+                echo "${red}FAILED$nocolor"
+            echo "Return value: $ret"
+            echo -n "Time taken: "
+            cat "$timefile" | tr -d '\n'
+            echo "s"
+            [ "$ret" = "$expectedret" ]
+            normexit $?
+        fi
+    fi
+
     if [ $(( $numjobs + $parallel )) -gt $numcpus ]
     then
         while :
@@ -281,7 +336,8 @@ echo "Total time taken: $timetaken seconds"
 
 # Cleanup our children
 trap '' TERM INT QUIT EXIT
-#kill -INT 0
+kill -INT 0
+sleep 0.5
 kill -TERM 0
-sleep 0.1
+sleep 0.5
 kill -QUIT 0
