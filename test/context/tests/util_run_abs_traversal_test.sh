@@ -27,9 +27,16 @@ dotravabstest() {
     mkfifo "$old"
     timeout 5s freqhorn --v1 --attempts 100 --b4simpl --gen_method $method $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" > "$old" &
     pid=$!
-    echo "Good output | Program output"
-    diff -w -y "good/$good" "$old"
+    diffout="$(mktemp)"
+    echo "Good output | Program output" > "$diffout"
+    diff -w -y "good/$good" "$old" >> "$diffout"
     ret1=$?
+    if [ $ret1 -eq 0 ]
+    then
+      rm "$diffout"
+    else
+      cat "$diffout"
+    fi
     wait $pid
     ret2=$?
     return $(( $ret1 + $ret2 ))

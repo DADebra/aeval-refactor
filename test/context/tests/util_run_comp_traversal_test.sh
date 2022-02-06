@@ -2,30 +2,50 @@
 
 #set -x
 
-benches="abdu_01.smt2 abdu_02.smt2 abdu_03.smt2 abdu_04.smt2"
+#benches="abdu_01.smt2 abdu_02.smt2 abdu_03.smt2 abdu_04.smt2"
+# How many lines to compare
+comp_lines=500
 
 if [ -z "$traversalsettings" ]
 then
     echo "ERROR: Must set \$traversalsettings!" 1>&2
     exit 11
 fi
+if [ -z "$benches" ]
+then
+    echo "ERROR: Must set \$benches!" 1>&2
+    exit 11
+fi
+if [ -z "$cfg" ]
+then
+    echo "ERROR: Must set \$cfg!" 1>&2
+    exit 11
+fi
 
-# Usage: $1 = CHC file to run on, $2 = traversal settings to use (space-delim)
+# Usage: $1 = CHC file to run on, $2 = traversal settings to use (space-delim),
+#        $3 = CFG to use
 dotravcomptest() {
-    cfg="traversal_cfg.smt2"
     bench="$1"
     settings="$2"
+    cfg="$3"
     old="$(mktemp)"
     new="$(mktemp)"
     rm "$old" "$new"
     mkfifo "$old" "$new"
-    freqhorn --v1 --attempts 500 --b4simpl --gen_method traverse $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" > "$old" &
+    freqhorn --v1 --b4simpl --gen_method traverse $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" | head -n "$comp_lines" > "$old" &
     pid1=$!
-    freqhorn --v1 --attempts 500 --b4simpl --gen_method newtrav $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" > "$new" &
+    freqhorn --v1 --b4simpl --gen_method newtrav $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" | head -n "$comp_lines" > "$new" &
     pid2=$!
-    echo "Traverse output | Newtrav output"
-    diff -w -y "$old" "$new"
+    diffout="$(mktemp)"
+    echo "Traverse output | Newtrav output" > "$diffout"
+    diff -W 200 -w -y "$old" "$new" >> "$diffout"
     ret3=$?
+    if [ $ret3 -eq 0 ]
+    then
+      rm "$diffout"
+    else
+      cat "$diffout"
+    fi
     wait $pid1
     ret1=$?
     wait $pid2
@@ -35,5 +55,5 @@ dotravcomptest() {
 
 for bench in $benches
 do
-    addtest "$(trcmd dotravcomptest "$bench" "$traversalsettings")" "Test newtrav for $bench and options $traversalsettings" 0 2
+    addtest "$(trcmd dotravcomptest "$bench" "$traversalsettings" "$cfg")" "Test equivalence with CFG $cfg for $bench and options $traversalsettings" 0 2
 done

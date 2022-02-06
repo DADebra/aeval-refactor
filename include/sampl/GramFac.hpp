@@ -221,6 +221,12 @@ namespace ufo
 
     // Key: <Non-terminal, Production>, Value: Priority
     unordered_map<std::pair<Expr, Expr>, cpp_rational> priomap;
+    inline cpp_rational priomapat(const std::pair<Expr,Expr> &prod)
+    {
+      if (priomap.count(prod) == 0)
+        priomap.emplace(prod, 1);
+      return priomap[prod];
+    }
 
     // priomap, but for getRandCand
     // Key: Non-terminal, Value: Distribution, in order given by CFG
@@ -951,11 +957,9 @@ namespace ufo
     inline bool shoulddefer(const Expr& nt, const Expr& expand)
     {
       auto prod = make_pair(nt, expand);
-      if (priomap.count(prod) == 0)
-        priomap.emplace(prod, 1);
-      if (priomap[prod] >= 1 || candnum[prod] == 0)
+      if (priomapat(prod) >= 1 || candnum[prod] == 0)
         return false;
-      return candnum[prod] > (int)(priomap[prod]*totalcandnum);
+      return candnum[prod] > (int)(priomapat(prod)*totalcandnum);
     }
 
     inline bool ptshoulddefer(const ParseTree &pt)
@@ -1663,13 +1667,12 @@ namespace ufo
           unordered_map<std::pair<Expr, Expr>, int> candnum;
           int totalcandnum = 0;
 
-
           // prod has same format as Key of candnum
           auto shoulddefer = [&] (const std::pair<Expr,Expr>& prod) -> bool
           {
-            if (candnum[prod] == 0 || priomap[prod] == 1)
+            if (candnum[prod] == 0 || priomapat(prod) == 1)
               return false;
-            return candnum[prod] > (int)(priomap[prod]*totalcandnum);
+            return candnum[prod] > (int)(priomapat(prod)*totalcandnum);
           };
 
           for (auto &kv : coros)
@@ -1693,6 +1696,7 @@ namespace ufo
                 {
                   sink(*itr->second);
                   candnum[itr->first]++;
+                  ++totalcandnum;
                   ++itr->second;
                   if (!itr->second)
                   {
@@ -1716,6 +1720,7 @@ namespace ufo
                 sink(*itr->second);
                 didsink = true;
                 candnum[itr->first]++;
+                ++totalcandnum;
                 ++itr->second;
                 if (!itr->second)
                 {
@@ -1738,7 +1743,7 @@ namespace ufo
               bool setbestcoro = false;
               for (auto itr = coros.begin(); itr != lastbest; ++itr)
               {
-                if (priomap[itr->first] > priomap[bestcoro->first])
+                if (priomapat(itr->first) > priomapat(bestcoro->first))
                 {
                   bestcoro = itr;
                   setbestcoro = true;
@@ -1752,7 +1757,7 @@ namespace ufo
                   ++itr;
                 for (; itr != coros.end(); ++itr)
                 {
-                  if (priomap[itr->first] >= priomap[bestcoro->first])
+                  if (priomapat(itr->first) >= priomapat(bestcoro->first))
                   {
                     bestcoro = itr;
                     setbestcoro = true;
@@ -1763,6 +1768,7 @@ namespace ufo
 
               sink(*bestcoro->second);
               candnum[bestcoro->first]++;
+              ++totalcandnum;
               ++bestcoro->second;
               if (!bestcoro->second)
               {
