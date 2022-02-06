@@ -38,18 +38,7 @@ cd "$testdir"
 opt_runtime="$(findopt "--runtime" "$@")"
 findopt "--verbose" "$@" >/dev/null && opt_verbose=Y
 
-if [ -z "$opt_runtime" ]
-then
-    if [ -n "$buildah" ]
-    then
-        opt_runtime="buildah"
-    elif [ -n "$docker" ]
-    then
-        opt_runtime="docker"
-    else
-        opt_runtime="host"
-    fi
-fi
+[ -z "$opt_runtime" ] && opt_runtime="host"
 
 if [ "$opt_runtime" != "host" ] && ! which "$opt_runtime" >/dev/null 2>&1
 then

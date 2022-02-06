@@ -51,6 +51,11 @@ class ParseTree
     return ptr->data;
   }
 
+  vector<ParseTree>& children()
+  {
+    return ptr->children;
+  }
+
   const vector<ParseTree>& children() const
   {
     return ptr->children;

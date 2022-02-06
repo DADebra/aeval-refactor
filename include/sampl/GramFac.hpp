@@ -88,23 +88,41 @@ namespace ufo
     class PTCoroCacheIter
     {
       int pos = 0;
-      PTCoroCache &cache;
+      PTCoroCache *cache;
 
       inline void advancecoro()
       {
-        while (cache.outcache.size() <= pos && cache.coro)
+        assert(cache);
+        while (cache->outcache.size() <= pos && cache->coro)
         {
-          cache.outcache.push_back(cache.coro.get());
-          cache.coro();
+          cache->outcache.push_back(cache->coro.get());
+          cache->coro();
         }
-        if (cache.outcache.size() <= pos)
+        if (cache->outcache.size() <= pos)
           pos = -1;
       }
 
       public:
 
       PTCoroCacheIter(int _pos, PTCoroCache& _cache) : pos(_pos),
-        cache(_cache) {}
+        cache(&_cache) {}
+      PTCoroCacheIter(const PTCoroCacheIter& other) : pos(other.pos),
+        cache(other.cache) {}
+      PTCoroCacheIter(PTCoroCacheIter&& other) : pos(other.pos),
+        cache(other.cache) {}
+
+      PTCoroCacheIter& operator=(const PTCoroCacheIter& other)
+      {
+        pos = other.pos;
+        cache = other.cache;
+        return *this;
+      }
+      PTCoroCacheIter& operator=(PTCoroCacheIter&& other)
+      {
+        pos = other.pos;
+        cache = other.cache;
+        return *this;
+      }
 
       operator bool()
       {
@@ -121,7 +139,7 @@ namespace ufo
         if (pos < 0)
           return nullptr;
 
-        return cache.outcache[pos];
+        return cache->outcache[pos];
       }
 
       void operator()()
@@ -144,12 +162,14 @@ namespace ufo
 
       PTCoroCacheIter begin()
       {
-        return std::move(PTCoroCacheIter(pos, cache));
+        assert(cache);
+        return std::move(PTCoroCacheIter(pos, *cache));
       }
 
       PTCoroCacheIter end()
       {
-        return std::move(PTCoroCacheIter(-1, cache));
+        assert(cache);
+        return std::move(PTCoroCacheIter(-1, *cache));
       }
     };
 
@@ -1889,6 +1909,28 @@ namespace ufo
       outs() << ", ";
       printvec(outs(), stuck);
       outs() << ")" << endl;*/
+
+      // To reverse ('rtl'), we just invert cand and root->arg(i)
+      /*auto sink = [this, &realsink] (ParseTree pt)
+      {
+        if (travdir == TravParamDirection::RTL &&
+        !isOpX<FAPP>(pt.data()) && pt.data()->arity() != 0)
+          std::reverse(pt.children().begin(), pt.children().end());
+        realsink(std::move(pt));
+      };
+      function<Expr(int)> rootarg;
+      if (travdir == TravParamDirection::LTR)
+        rootarg = [&] (int i) { return root->arg(i); };
+      else if (travdir == TravParamDirection::RTL)
+        rootarg = [&] (int i) { return root->arg(root->arity()-1-i); };
+      */
+      function<int(int)> dindex;
+      if (travdir == TravParamDirection::LTR)
+        dindex = [&] (int i) { return i; };
+      else if (travdir == TravParamDirection::RTL)
+        dindex = [&] (int i) { return root->arity()-1-i; };
+      auto rootarg = [&] (int i) { return root->arg(dindex(i)); };
+
       if (travtype == TravParamType::STRIPED ||
       stuck.size() == cand.size())
         //sink(m_efac.mkNary(root->op(), cand));
@@ -1922,23 +1964,19 @@ namespace ufo
         int min_i = 0, max_i = coros.size();
         if (stuck.size() != 0)
           min_i = *(--stuck.end()) + 1;
-        if (travdir == TravParamDirection::LTR)
-          for (int i = min_i; i < max_i; ++i)
-            free.push_back(i);
-        else if (travdir == TravParamDirection::RTL)
-          for (int i = max_i - 1; i >= min_i; --i)
-            free.push_back(i);
+        for (int i = min_i; i < max_i; ++i)
+          free.push_back(i);
 
         if (travdir == TravParamDirection::RND)
           random_shuffle(free.begin(), free.end());
 
         auto inloopfn = [&] (int pos) -> bool {
-          if (!*coros[pos])
+          if (!*coros[dindex(pos)])
             return false;
 
           vector<ParseTree> newcand = cand;
-          newcand[pos] = coros[pos]->get();
-          (*coros[pos])();
+          newcand[dindex(pos)] = coros[dindex(pos)]->get();
+          (*coros[dindex(pos)])();
           /*if (pos == 1 &&
           (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root)))
           {
@@ -1967,18 +2005,16 @@ namespace ufo
             sink(ParseTree(root, newcand));
           else
           {
-            vector<optional<PTCoroCacheIter>> newcoros;
+            vector<optional<PTCoroCacheIter>> newcoros(coros.size());
             for (int i = 0; i < coros.size(); ++i)
             {
               if (newstuck.find(i) == newstuck.end())
               {
-                newcoros.push_back(getCandCoro(root->arg(i), currdepth,
-                    qvars, currnt));
-                newcand[i] = newcoros[i]->get();
-                (*newcoros[i])();
+                newcoros[dindex(i)] = std::move(getCandCoro(rootarg(i),
+                    currdepth, qvars, currnt));
+                newcand[dindex(i)] = newcoros[dindex(i)]->get();
+                (*newcoros[dindex(i)])();
               }
-              else
-                newcoros.push_back(boost::none);
             }
 
             methcoros.push_back(getTravCoro(std::move(newcoros),
@@ -2021,14 +2057,11 @@ namespace ufo
             free.push_back(i);
 
         int nextstuck;
-        if (travdir == TravParamDirection::LTR)
-          nextstuck = free.back();
-        else if (travdir == TravParamDirection::RTL)
-          nextstuck = free.front();
-        else if (travdir == TravParamDirection::RND)
+        nextstuck = free.back();
+        if (travdir == TravParamDirection::RND)
           nextstuck = free[rand() % free.size()];
 
-        PTCoroCacheIter nextcoro = getCandCoro(root->arg(nextstuck),
+        PTCoroCacheIter nextcoro = getCandCoro(rootarg(nextstuck),
           currdepth, qvars, currnt);
 
         set<int> newstuck = stuck;
@@ -2036,7 +2069,7 @@ namespace ufo
 
         for (ParseTree exp : nextcoro)
         {
-          cand[nextstuck] = exp;
+          cand[dindex(nextstuck)] = exp;
 
           /*if (nextstuck == 1 &&
             (isOpX<MOD>(root) || isOpX<DIV>(root) || isOpX<IDIV>(root)))
