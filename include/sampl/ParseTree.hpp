@@ -89,6 +89,14 @@ class ParseTree
         return false;
     return true;
   }
+  bool operator !=(const ParseTree& other) const
+  {
+    return !(*this == other);
+  }
+  bool operator <(const ParseTree&) = delete;
+  bool operator >(const ParseTree&) = delete;
+  bool operator <=(const ParseTree&) = delete;
+  bool operator >=(const ParseTree&) = delete;
 
   void fixchildren()
   {

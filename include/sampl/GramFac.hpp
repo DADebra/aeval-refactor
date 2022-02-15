@@ -973,7 +973,8 @@ namespace ufo
     }
 
     ParseTree gettrav(const Expr& root, const TravPos& travpos,
-      std::shared_ptr<ExprUSet> qvars, Expr currnt, bool& needdefer)
+      std::shared_ptr<ExprUSet> qvars, Expr currnt, bool& needdefer,
+      int currdepth)
     {
       if (isOpX<FAPP>(root))
       {
@@ -986,15 +987,22 @@ namespace ufo
         }
         else if (fname == "either")
         {
+          int newdepth;
+          if (isRecursive(root->arg(travpos.pos), currnt))
+            newdepth = currdepth + 1;
+          else
+            newdepth = currdepth;
+
           needdefer= needdefer || shoulddefer(currnt, root->arg(travpos.pos));
-          return gettrav(root->arg(travpos.pos),
-            travpos.childat(travpos.pos), qvars, currnt, needdefer);
+          return gettrav(root->arg(travpos.pos), travpos.childat(travpos.pos),
+            qvars, currnt, needdefer, newdepth);
         }
         else if (defs.count(root) != 0)
         {
           // Root is non-terminal; expand
           return ParseTree(root, vector<ParseTree>{gettrav(defs.at(root),
-            travpos, qvars, root, needdefer)});
+            travpos, qvars, root, needdefer,
+            root == currnt ? currdepth : 0)});
         }
         else if (qvars != NULL && qvars->find(root->left()) != qvars->end())
         {
@@ -1045,16 +1053,34 @@ namespace ufo
         else if (travdir == TravParamDirection::RTL)
           dind = [&] (int i) { return root->arity()-1-i; };
 
+        if (travtype == TravParamType::ORDERED)
+        {
+          for (int i = 0; i < travpos.childrensize(); ++i)
+            newexpr[dind(i)] = gettrav(root->arg(dind(i)),
+              travpos.childat(dind(i)), localqvars, currnt,
+              needdefer, currdepth);
+          return ParseTree(root, std::move(newexpr));
+        }
+
         if (travpos.inqueue() && travpos.pos.limit != -1)
         {
           return gettrav(root, travpos.queueat(travpos.pos),
-            localqvars, currnt, needdefer);
+            localqvars, currnt, needdefer, currdepth);
         }
 
         for (int i = 0; i < travpos.childrensize(); ++i)
         {
-          newexpr[dind(i)] = gettrav(root->arg(dind(i)),
-            travpos.childat(dind(i)), localqvars, currnt, needdefer);
+          if (travprio != TravParamPrio::DFS && i >= travpos.pos.min &&
+              i != travpos.pos)
+          {
+            TravPos temppos;
+            newexpr[dind(i)] = newtrav(root->arg(dind(i)), temppos, currdepth,
+              localqvars, currnt);
+          }
+          else
+            newexpr[dind(i)] = gettrav(root->arg(dind(i)),
+              travpos.childat(dind(i)), localqvars, currnt,
+              needdefer, currdepth);
         }
 
         return ParseTree(root, std::move(newexpr));
@@ -1183,7 +1209,8 @@ namespace ufo
 
           assert(ret);
           bool unused = false;
-          assert(gettrav(root, travpos, 0, 0, unused) == ret);
+          assert(gettrav(root, travpos, qvars,
+            currnt, unused, currdepth) == ret);
           return ret;
         }
         else if (defs.count(root) != 0)
@@ -1400,7 +1427,8 @@ namespace ufo
 
             assert(ret);
             bool unused = false;
-            assert(gettrav(root, travpos, 0, 0, unused) == ret);
+            assert(gettrav(root, travpos, qvars,
+              currnt, unused, currdepth) == ret);
             return ret;
           }
           else if (travpos.pos.limit == -1)
@@ -1429,7 +1457,7 @@ namespace ufo
               }
               else
                 newexprat(i) = gettrav(rootarg(i), constposchildat(i),
-                  qvars, currnt, needdefer);
+                  qvars, currnt, needdefer, currdepth);
               if (needdefer)
               {
                 if (constposchildat(i).isdone())
@@ -1561,7 +1589,7 @@ namespace ufo
                   currnt);
               bool needdefer = false;
               newexprat(i) = gettrav(rootarg(i), constposchildat(i), qvars,
-                currnt, needdefer);
+                currnt, needdefer, currdepth);
               if (needdefer)
               {
                 if (constposchildat(i).isdone())
@@ -1585,7 +1613,9 @@ namespace ufo
 
         ParseTree ret = ParseTree(root, newexpr);
         bool unused = false;
-        assert(gettrav(root, travpos, 0, 0, unused) == ret);
+        ParseTree getret = gettrav(root, travpos, qvars,
+          currnt, unused, currdepth);
+        assert(getret == ret);
         return std::move(ret);
       }
     }
@@ -2635,7 +2665,7 @@ namespace ufo
           }
           nextpt = newtrav(inv, rootpos);
           bool unused = false;
-          assert(gettrav(inv, rootpos, 0, 0, unused) == nextpt);
+          assert(gettrav(inv, rootpos, 0, inv, unused, 0) == nextpt);
           //printPT(nextpt);
           nextcand = collapsePT(nextpt);
 

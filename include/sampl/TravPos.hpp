@@ -229,12 +229,12 @@ struct TravPos
 
   inline bool isdone() const
   {
-    return pos.min == -1;
+    return pos.limit == -2;
   }
 
   inline void makedone()
   {
-    pos.min = -1;
+    pos.limit = -2;
   }
 
   inline bool inqueue() const
