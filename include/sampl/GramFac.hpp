@@ -1347,10 +1347,12 @@ namespace ufo
                 while (constposchildat(travpos.pos).isdone())
                 {
                   ++travpos.pos;
-                  if (travpos.pos == startpos)
+                  if (travpos.pos == startpos ||
+                  (travprio == TravParamPrio::BFS &&
+                  travpos.pos == travpos.pos.min))
                   {
-                    assert(constpos.queuesize() != 0);
-                    travpos.makeinqueue();
+                    if (constpos.queuesize() != 0)
+                      travpos.makeinqueue();
                     break;
                   }
                 }
