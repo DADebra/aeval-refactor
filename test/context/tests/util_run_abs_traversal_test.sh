@@ -31,12 +31,12 @@ dotravabstest() {
     echo "Good output | Program output" > "$diffout"
     diff -w -y "good/$good" "$old" >> "$diffout"
     ret1=$?
-    if [ $ret1 -eq 0 ]
+    rm "$old"
+    if [ $ret1 -ne 0 ]
     then
-      rm "$diffout"
-    else
       cat "$diffout"
     fi
+    rm "$diffout"
     wait $pid
     ret2=$?
     return $(( $ret1 + $ret2 ))

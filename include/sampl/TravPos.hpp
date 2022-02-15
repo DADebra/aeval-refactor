@@ -10,7 +10,7 @@ struct CircularInt
   // min <= val < limit
   int min, val, limit;
   
-  CircularInt() : min(0), val(-1), limit(0) {}
+  CircularInt() : min(0), val(-2), limit(0) {}
   CircularInt(int _min, int _val, int _limit) :
     min(_min), val(_val), limit(_limit) {}
   CircularInt(const CircularInt& copy) :

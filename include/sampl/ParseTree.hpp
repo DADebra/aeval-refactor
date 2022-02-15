@@ -78,7 +78,16 @@ class ParseTree
 
   bool operator ==(const ParseTree& other) const
   {
-    return ptr.get() == other.ptr.get();
+    if (!ptr || !other.ptr)
+      return false;
+    if (ptr->data != other.ptr->data)
+      return false;
+    if (ptr->children.size() != other.ptr->children.size())
+      return false;
+    for (int i = 0; i < ptr->children.size(); ++i)
+      if (ptr->children[i] != other.ptr->children[i])
+        return false;
+    return true;
   }
 
   void fixchildren()

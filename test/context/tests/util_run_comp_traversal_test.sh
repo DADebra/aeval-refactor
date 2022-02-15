@@ -40,12 +40,12 @@ dotravcomptest() {
     echo "Traverse output | Newtrav output" > "$diffout"
     diff -W 200 -w -y "$old" "$new" >> "$diffout"
     ret3=$?
-    if [ $ret3 -eq 0 ]
+    rm "$old" "$new"
+    if [ $ret3 -ne 0 ]
     then
-      rm "$diffout"
-    else
       cat "$diffout"
     fi
+    rm "$diffout"
     wait $pid1
     ret1=$?
     wait $pid2

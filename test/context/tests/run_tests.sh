@@ -16,7 +16,8 @@ normexit() {
 
 if findopt "--help" "$@" >/dev/null
 then
-    printhelp "--test <string>" "Only run the test with the given name"
+    printhelp "--test <string>" "Only run the test with the given name,"
+    printhelp "" "or tests from the provided shell script (if ending in .sh)"
     printhelp "--num-cpus <integer>" "The number of CPU cores to use for running tests"
     #printhelp "--dump-output" "Print the output of each test when it completes"
     #printhelp "--rm" "Cleanup the output files of each test"
@@ -48,6 +49,9 @@ if [ -z "$runtest" ]
 then
     comboout="$TESTOUTDIR/test_${nowdate}_output.txt"
     timeout="$TESTOUTDIR/test_${nowdate}_timing.csv"
+elif [ "${runtest%.sh}" != "$runtest" ]
+then
+    comboout="/dev/stdout"; timeout="/dev/null";
 else
     comboout="/dev/null"; timeout="/dev/null";
 fi
@@ -145,8 +149,10 @@ checktestsdone() {
             fi
             echo "$success \"$name\": exit code $ret, in ${timetaken}s"
             echo
-            echo "$successplain \"$name\": exit code $ret, in ${timetaken}s" >> "$comboout"
-
+            if [ "$comboout" != "/dev/stdout" -a "$comboout" != "/dev/null" ]
+            then
+                echo "$successplain \"$name\": exit code $ret, in ${timetaken}s" >> "$comboout"
+            fi
             echo "Output for \"$name\":" >> "$comboout"
             cat "$outfile" >> "$comboout"
             printf "\"$name\",$timetaken\n" >> "$timeout"
@@ -238,10 +244,22 @@ then
     echo "No tests to run. Done."
 fi
 
-for testsh in $(ls test*.sh)
-do
-    . "./$testsh"
-done
+if [ -n "$runtest" -a "${runtest%.sh}" != "$runtest" ]
+then
+    if [ ! -e "./$runtest" ]
+    then
+        echo "Error: Test script \"$runtest\" not found. Exiting."
+        exit 8
+    fi
+    . "./$runtest"
+    foundruntest="yes"
+    runtest=""
+else
+    for testsh in $(ls test*.sh)
+    do
+        . "./$testsh"
+    done
+fi
 
 if [ -n "$runtest" -a -z "$foundruntest" ]
 then
