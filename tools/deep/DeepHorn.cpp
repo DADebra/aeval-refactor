@@ -178,7 +178,7 @@ int main (int argc, char ** argv)
   if (gram_trav_prio == NULL) gram_trav_prio = "sfs";
 
   GramParams gramparams = make_tuple(
-    CFGUtils::strtogenmethod(getStrValue(OPT_GRAM_GEN, "rnd", argc, argv)),
+    CFGUtils::strtogenmethod(getStrValue(OPT_GRAM_GEN, "newtrav", argc, argv)),
     getIntValue(OPT_GRAM_MAXREC, 3, argc, argv),
     CFGUtils::strtotravdir(getStrValue(OPT_GRAM_TRAV_DIR, "ltr", argc, argv)),
     CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "forward", argc, argv)),
