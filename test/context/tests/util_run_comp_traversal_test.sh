@@ -4,7 +4,7 @@
 
 #benches="abdu_01.smt2 abdu_02.smt2 abdu_03.smt2 abdu_04.smt2"
 # How many lines to compare
-comp_lines=500
+[ -z "$comp_lines" ] && comp_lines=500
 
 if [ -z "$traversalsettings" ]
 then
