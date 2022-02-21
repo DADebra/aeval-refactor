@@ -1091,7 +1091,7 @@ namespace ufo
       int currdepth = 0, std::shared_ptr<ExprUSet> qvars = NULL,
       Expr currnt = NULL)
     {
-      assert(("Cannot increment TravPos which is done!", !travpos.isdone()));
+      assert(("Cannot increment TravPos which is done!" && !travpos.isdone()));
 
       // Some operations should not cause copy-up; use constpos for these.
       const TravPos &constpos = travpos;
@@ -1292,7 +1292,7 @@ namespace ufo
             for (int i = 0; i < travpos.childrensize(); ++i)
             {
               newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-                currdepth, qvars, currnt);
+                currdepth, localqvars, currnt);
               bool idone = constposchildat(i).isdone();
               if (idone && i == travpos.pos)
                 ++travpos.pos;
@@ -1371,7 +1371,7 @@ namespace ufo
                 --travpos.pos;
                 travposchildat(travpos.pos) = TravPos();
                 newtrav(rootarg(travpos.pos),
-                  travposchildat(travpos.pos), currdepth, qvars, currnt);
+                  travposchildat(travpos.pos), currdepth, localqvars, currnt);
                 ++travpos.pos;
               }
             }
@@ -1408,7 +1408,7 @@ namespace ufo
             travpos.pos = checkpos;
 
             ret = newtrav(root, travpos.queueat(travpos.pos),
-              currdepth, qvars, currnt);
+              currdepth, localqvars, currnt);
 
             bool done = true;
             checkpos = travpos.pos;
@@ -1429,7 +1429,7 @@ namespace ufo
 
             assert(ret);
             bool unused = false;
-            assert(gettrav(root, travpos, qvars,
+            assert(gettrav(root, travpos, localqvars,
               currnt, unused, currdepth) == ret);
             return ret;
           }
@@ -1455,17 +1455,17 @@ namespace ufo
               {
                 TravPos temppos;
                 newexprat(i) = newtrav(rootarg(i), temppos,
-                  currdepth, qvars, currnt);
+                  currdepth, localqvars, currnt);
               }
               else
                 newexprat(i) = gettrav(rootarg(i), constposchildat(i),
-                  qvars, currnt, needdefer, currdepth);
+                  localqvars, currnt, needdefer, currdepth);
               if (needdefer)
               {
                 if (constposchildat(i).isdone())
                   travposchildat(i) = TravPos();
                 newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-                  currdepth, qvars, currnt);
+                  currdepth, localqvars, currnt);
               }
             }
             else
@@ -1473,7 +1473,7 @@ namespace ufo
               assert(!constposchildat(i).isdone());
 
               newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-                currdepth, qvars, currnt);
+                currdepth, localqvars, currnt);
               if (travpos.pos < root->arity() - 1)
               {
                 /*bool done = true;
@@ -1499,7 +1499,7 @@ namespace ufo
                       continue;
                     childpos->childat(dind(i)) = TravPos();
                     newtrav(rootarg(i), childpos->childat(dind(i)),
-                      currdepth, qvars, currnt);
+                      currdepth, localqvars, currnt);
                   }
 
                   bool done = true;
@@ -1564,7 +1564,7 @@ namespace ufo
             // Reset our position
             travposchildat(di) = TravPos();
             newexprat(di) = newtrav(rootarg(di), travposchildat(di),
-              currdepth, qvars, currnt);
+              currdepth, localqvars, currnt);
             if (di == 0)
               startreset = true;
 
@@ -1575,7 +1575,7 @@ namespace ufo
             if (!constposchildat(nexti).isdone())
             {
               newexprat(nexti) = newtrav(rootarg(nexti),
-                travposchildat(nexti), currdepth, qvars, currnt);
+                travposchildat(nexti), currdepth, localqvars, currnt);
               break;
             }
             else
@@ -1587,24 +1587,24 @@ namespace ufo
             if (i != 0)
             {
               if (constposchildat(i).pos < 0)
-                newtrav(rootarg(i), travposchildat(i), currdepth, qvars,
+                newtrav(rootarg(i), travposchildat(i), currdepth, localqvars,
                   currnt);
               bool needdefer = false;
-              newexprat(i) = gettrav(rootarg(i), constposchildat(i), qvars,
-                currnt, needdefer, currdepth);
+              newexprat(i) = gettrav(rootarg(i), constposchildat(i),
+                localqvars, currnt, needdefer, currdepth);
               if (needdefer)
               {
                 if (constposchildat(i).isdone())
                   travposchildat(i) = TravPos();
                 newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-                  currdepth, qvars, currnt);
+                  currdepth, localqvars, currnt);
               }
             }
           }
 
           if (!startreset && !constposchildat(0).isdone())
             newexprat(0) = newtrav(rootarg(0), travposchildat(0),
-              currdepth, qvars, currnt);
+              currdepth, localqvars, currnt);
 
           bool done = true;
           for (int i = 0; i < root->arity(); ++i)
@@ -1615,7 +1615,7 @@ namespace ufo
 
         ParseTree ret = ParseTree(root, newexpr);
         bool unused = false;
-        ParseTree getret = gettrav(root, travpos, qvars,
+        ParseTree getret = gettrav(root, travpos, localqvars,
           currnt, unused, currdepth);
         assert(getret == ret);
         return std::move(ret);
@@ -1860,10 +1860,10 @@ namespace ufo
         else
         {
           // Root is user-defined non-terminal
-          if (defs[root] != NULL)
+          if (defs.count(root) != 0)
           {
             //currnumcandcoros--;
-            PTCoroCacheIter newcoro = getCandCoro(defs[root], root == currnt ?
+            PTCoroCacheIter newcoro = getCandCoro(defs.at(root), root == currnt ?
               currdepth : 0, qvars, root);
             for (ParseTree pt : newcoro)
             {
@@ -2231,8 +2231,8 @@ namespace ufo
         else
         {
           // Root is user-defined non-terminal
-          if (defs[root] != NULL)
-            return getRandCand(defs[root], qvars);
+          if (defs.count(root) != 0)
+            return getRandCand(defs.at(root), qvars);
           else if (qvars != NULL &&
            qvars->find(root->first()) != qvars->end())
             // Root is a variable for a surrounding quantifier

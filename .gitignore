@@ -31,5 +31,13 @@ tools/deep_bench/windows/clusterjobs.log
 tools/deep_bench/windows/out-*.tar.gz
 
 *.swp
+*.swo
 test/context/files/commitsha
 test_output/
+tags
+compile_commands.json
+
+# A folder with a bunch of miscellaneous stuff that I don't want in the git repo
+old/
+# A set of grammars we don't want committed
+gf_grams/
