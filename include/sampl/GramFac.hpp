@@ -272,7 +272,7 @@ namespace ufo
     unordered_map<Expr,Expr> strcache;
 
     // Whether to print debugging information or not.
-    bool printLog;
+    int printLog;
 
     /*** PARAMETERS (respective to GramParams) ***/
 
@@ -2289,7 +2289,7 @@ namespace ufo
 
     public:
 
-    GRAMfactory(ExprFactory &_efac, EZ3 &_z3, bool _printLog) :
+    GRAMfactory(ExprFactory &_efac, EZ3 &_z3, int _printLog) :
       m_efac(_efac), z3(_z3), m_smt_solver(z3),
       printLog(_printLog), inv(NULL), getNextCandTrav(nullptr) {}
 

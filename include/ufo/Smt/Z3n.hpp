@@ -654,11 +654,16 @@ namespace ufo
       return res;
     }
 
-
     Model getModel () const
     {
       z3::model m (ctx, Z3_solver_get_model (ctx, solver));
       return ZModel<Z> (z3, m);
+    }
+
+    ZSolver<Z>::Model* getModelPtr () const
+    {
+      z3::model m (ctx, Z3_solver_get_model (ctx, solver));
+      return new ZModel<Z> (z3, m);
     }
 
     void push () { solver.push (); }
@@ -1015,12 +1020,18 @@ namespace ufo
         ctx.check_error ();
         
         z3::ast_vector rules (ctx, Z3_fixedpoint_get_rules(ctx, fp));
+        z3::ast_vector asss (ctx, Z3_fixedpoint_get_assertions(ctx, fp));
 
         for (unsigned i = 0; i < rules.size (); ++i){
             Expr rule = z3.toExpr (rules [i]);
             m_rules.push_back(rule);
         }
-        
+
+        for (unsigned i = 0; i < asss.size (); ++i){
+          Expr rule = z3.toExpr (asss [i]);
+          m_rules.push_back(rule);
+        }
+
         for (unsigned i = 0; i < queries.size (); ++i){
             m_queries.push_back(z3.toExpr (queries [i]));
         }

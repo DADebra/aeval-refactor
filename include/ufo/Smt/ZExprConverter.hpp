@@ -441,7 +441,7 @@ namespace ufo
       }
       else if (isOpX<BEXTRACT> (e))
       {
-        assert (bv::high (e) > bv::low (e));
+//        assert (bv::high (e) > bv::low (e));
         z3::ast a (ctx, marshal (bv::earg (e), ctx, cache, seen));
         res = Z3_mk_extract (ctx, bv::high (e), bv::low (e), a);
       }
@@ -714,7 +714,6 @@ namespace ufo
         unsigned low = Z3_get_decl_int_parameter (ctx, d, 1);
         return bv::extract (high, low, arg);
       }
-          
 
       if (dkind == Z3_OP_AS_ARRAY)
       {
@@ -901,6 +900,9 @@ namespace ufo
           break;
         case Z3_OP_BASHR:
           e = mknary<BASHR> (args.begin (), args.end ());
+          break;
+        case Z3_OP_CONCAT:
+          e = mknary<BCONCAT> (args.begin (), args.end ());
           break;
         default:
 	  return U::unmarshal (z, efac, cache, seen);

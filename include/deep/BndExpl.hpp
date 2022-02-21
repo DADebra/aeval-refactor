@@ -27,13 +27,18 @@ namespace ufo
 
     Expr inv;   // 1-inductive proof
 
+    bool debug;
+
     public:
 
-    BndExpl (CHCs& r) :
-      m_efac(r.m_efac), ruleManager(r), u(m_efac) {}
+    BndExpl (CHCs& r, bool d) :
+      m_efac(r.m_efac), ruleManager(r), u(m_efac), debug(d) {}
 
-    BndExpl (CHCs& r, Expr lms) :
-      m_efac(r.m_efac), ruleManager(r), u(m_efac), extraLemmas(lms) {}
+    BndExpl (CHCs& r, int to, bool d) :
+      m_efac(r.m_efac), ruleManager(r), u(m_efac, to), debug(d) {}
+
+    BndExpl (CHCs& r, Expr lms, bool d) :
+      m_efac(r.m_efac), ruleManager(r), u(m_efac), extraLemmas(lms), debug(d) {}
 
     map<Expr, ExprSet> concrInvs;
 
@@ -77,16 +82,39 @@ namespace ufo
       }
     }
 
-    Expr compactPrefix (int num)
+    Expr compactPrefix (int num, int unr = 0)
     {
-      vector<int>& pr = ruleManager.prefixes[num];
+      vector<int> pr = ruleManager.prefixes[num];
       if (pr.size() == 0) return mk<TRUE>(m_efac);
 
-      Expr pref = toExpr(pr);
-      ExprSet quantified;
-      filter (pref, bind::IsConst(), inserter (quantified, quantified.begin ()));
-      for (auto & a : bindVars.back()) quantified.erase(a);
-      pref = simpleQE(pref, quantified);
+      for (int j = pr.size() - 1; j >= 0; j--)
+      {
+        vector<int>& tmp = ruleManager.getCycleForRel(pr[j]);
+        for (int i = 0; i < unr; i++)
+          pr.insert(pr.begin() + j, tmp.begin(), tmp.end());
+      }
+
+      pr.push_back(ruleManager.cycles[num][0]);   // we are interested in prefixes, s.t.
+                                                  // the cycle is reachable
+      ExprVector ssa;
+      getSSA(pr, ssa);
+      if (!(bool)u.isSat(ssa))
+      {
+        if (unr > 10)
+        {
+          do {ssa.erase(ssa.begin());}
+          while (!(bool)u.isSat(ssa));
+        }
+        else return compactPrefix(num, unr+1);
+      }
+
+      if (ssa.empty()) return mk<TRUE>(m_efac);
+
+      ssa.pop_back();                              // remove the cycle from the formula
+      bindVars.pop_back();                         // and its variables
+      Expr pref = conjoin(ssa, m_efac);
+      pref = rewriteSelectStore(pref);
+      pref = keepQuantifiersRepl(pref, bindVars.back());
       return replaceAll(pref, bindVars.back(), ruleManager.chcs[ruleManager.cycles[num][0]].srcVars);
     }
 
@@ -112,13 +140,11 @@ namespace ufo
         auto &step = trace[s];
         bindVars2.clear();
         HornRuleExt& hr = ruleManager.chcs[step];
+        assert(hr.srcVars.size() == bindVars1.size());
+
         Expr body = hr.body;
         if (!hr.isFact && extraLemmas != NULL) body = mk<AND>(extraLemmas, body);
-
-        for (int i = 0; i < hr.srcVars.size(); i++)
-        {
-          body = replaceAll(body, hr.srcVars[i], bindVars1[i]);
-        }
+        body = replaceAll(body, hr.srcVars, bindVars1);
 
         for (int i = 0; i < hr.dstVars.size(); i++)
         {
@@ -154,42 +180,61 @@ namespace ufo
       }
     }
 
-    bool exploreTraces(int cur_bnd, int bnd, bool print = false)
+    tribool exploreTraces(int cur_bnd, int bnd, bool print = false)
     {
-      bool unsat = true;
-      int num_traces = 0;
-
-      while (unsat && cur_bnd <= bnd)
+      if (ruleManager.chcs.size() == 0)
       {
+        if (debug) outs () << "CHC system is empty\n";
+        if (print) outs () << "Success after complete unrolling\n";
+        return false;
+      }
+      if (!ruleManager.hasCycles())
+      {
+        if (debug) outs () << "CHC system does not have cycles\n";
+        bnd = ruleManager.chcs.size();
+      }
+      tribool res = indeterminate;
+      while (cur_bnd <= bnd)
+      {
+        if (debug)
+        {
+          outs () << ".";
+          outs().flush();
+        }
         vector<vector<int>> traces;
-        vector<int> empttrace;
-
         getAllTraces(mk<TRUE>(m_efac), ruleManager.failDecl, cur_bnd++, vector<int>(), traces);
-
+        bool toBreak = false;
         for (auto &a : traces)
         {
-          num_traces++;
-          unsat = bool(!u.isSat(toExpr(a)));
-          if (!unsat) break;
+          Expr ssa = toExpr(a);
+          res = u.isSat(ssa);
+          if (res || indeterminate (res))
+          {
+            if (debug) outs () << "\n";
+            toBreak = true;
+            break;
+          }
         }
+        if (toBreak) break;
       }
 
-      if (print)
+      if (debug || print)
       {
-        if (unsat)
-          outs () << "Success after complete unrolling (" << (cur_bnd - 1)<< " step)\n";
+        if (indeterminate(res)) outs () << "unknown\n";
+        else if (res) outs () << "Counterexample of length " << (cur_bnd - 1) << " found\n";
+        else if (ruleManager.hasCycles())
+          outs () << "No counterexample found up to length " << cur_bnd << "\n";
         else
-          outs () << "Counterexample of length " << (cur_bnd - 1) << " found\n";
+          outs () << "Success after complete unrolling\n";
       }
-      return unsat;
+      return res;
     }
 
     bool kIndIter(int bnd1, int bnd2)
     {
       assert (bnd1 <= bnd2);
       assert (bnd2 > 1);
-      bool init = exploreTraces(bnd1, bnd2);
-      if (!init)
+      if (!exploreTraces(bnd1, bnd2))
       {
         outs() << "Base check failed at step " << bnd2 << "\n";
         exit(0);
@@ -294,52 +339,133 @@ namespace ufo
       return itp;
     }
 
-    // used for a loop and a splitter
+    void fillVars(Expr srcRel, ExprVector& srcVars, ExprVector& vars, int l, int s, vector<int>& mainInds, vector<ExprVector>& versVars, ExprSet& allVars)
+    {
+      for (int l1 = l; l1 < bindVars.size(); l1 = l1 + s)
+      {
+        ExprVector vers;
+        int ai = 0;
+
+        for (int i = 0; i < vars.size(); i++) {
+          int var = mainInds[i];
+          Expr bvar;
+          if (var >= 0)
+          {
+            if (ruleManager.hasArrays[srcRel])
+              bvar = bindVars[l1-1][var];
+            else
+              bvar = bindVars[l1][var];
+          }
+          else
+          {
+            bvar = replaceAll(vars[i], srcVars, bindVars[l1-1]);
+            bvar = replaceAll(bvar, bindVars[l1-1][-var-1], bindVars[l1][-var-1]);
+            allVars.insert(bindVars[l1][-var-1]);
+            ai++;
+          }
+          vers.push_back(bvar);
+        }
+        versVars.push_back(vers);
+        allVars.insert(vers.begin(), vers.end());
+      }
+    }
+
+    void getOptimConstr(vector<ExprVector>& versVars, int vs, ExprVector& srcVars,
+                            ExprSet& constr, Expr phaseGuard, ExprVector& diseqs)
+    {
+      for (auto v : versVars)
+        for (int i = 0; i < v.size(); i++)
+          for (int j = i + 1; j < v.size(); j++)
+            diseqs.push_back(mk<ITE>(mk<NEQ>(v[i], v[j]), mkMPZ(1, m_efac), mkMPZ(0, m_efac)));
+
+      for (int i = 0; i < vs; i++)
+        for (int j = 0; j < versVars.size(); j++)
+          for (int k = j + 1; k < versVars.size(); k++)
+            diseqs.push_back(mk<ITE>(mk<NEQ>(versVars[j][i], versVars[k][i]), mkMPZ(1, m_efac), mkMPZ(0, m_efac)));
+
+      Expr extr = disjoin(constr, m_efac);
+      if (debug) outs () << "Adding extra constraints to every iteration: " << extr << "\n";
+      for (auto & bv : bindVars)
+        diseqs.push_back(mk<ITE>(replaceAll(extr, srcVars, bv), mkMPZ(0, m_efac), mkMPZ(1, m_efac)));
+      if (phaseGuard != NULL)
+        for (auto & bv : bindVars)
+          diseqs.push_back(mk<ITE>(replaceAll(phaseGuard, srcVars, bv), mkMPZ(0, m_efac), mkMPZ(1, m_efac)));
+    }
+
+    Expr findSelect(int t, int i)
+    {
+      Expr tr = ruleManager.chcs[t].body;
+      ExprVector& srcVars = ruleManager.chcs[t].srcVars;
+      ExprVector st;
+      filter (tr, IsStore (), inserter(st, st.begin()));
+      for (auto & s : st)
+      {
+        if (!contains(s->left(), srcVars[i])) continue;
+        if (!isOpX<INT_TY>(typeOf(s)->last())) continue;
+        if (!hasOnlyVars(s, srcVars)) continue;
+        return mk<SELECT>(s->left(), s->right());
+      }
+      st.clear();
+      filter (tr, IsSelect (), inserter(st, st.begin()));
+      for (auto & s : st)
+      {
+        if (!contains(s->left(), srcVars[i])) continue;
+        if (!isOpX<INT_TY>(typeOf(s->left())->last())) continue;
+        if (!hasOnlyVars(s, srcVars)) continue;
+        return s;
+      }
+      return NULL;
+    }
+
+    // used for a loop and a phaseGuard
     bool unrollAndExecuteSplitter(
           Expr srcRel,
-          ExprVector& srcVars,
+          ExprVector& invVars,
 				  vector<vector<double> >& models,
-          Expr splitter, Expr invs, int k = 10)
+          Expr phaseGuard, Expr invs, bool fwd, ExprSet& constr, int k = 10)
     {
-      assert (splitter != NULL);
+      assert (phaseGuard != NULL);
 
       // helper var
       string str = to_string(numeric_limits<double>::max());
       str = str.substr(0, str.find('.'));
       cpp_int max_double = lexical_cast<cpp_int>(str);
 
-      for (int i = 0; i < ruleManager.cycles.size(); i++)
+      for (int cyc = 0; cyc < ruleManager.cycles.size(); cyc++)
       {
         vector<int> mainInds;
-        vector<int> arrInds;
-        auto & loop = ruleManager.cycles[i];
+        auto & loop = ruleManager.cycles[cyc];
+        ExprVector& srcVars = ruleManager.chcs[loop[0]].srcVars;
         if (srcRel != ruleManager.chcs[loop[0]].srcRelation) continue;
         if (models.size() > 0) continue;
 
-        auto& hr = ruleManager.chcs[loop[0]];
-        ExprVector vars;
-
-        for (int i = 0; i < ruleManager.chcs[loop[0]].srcVars.size(); i++)
+        ExprVector vars, varsMask;
+        for (int i = 0; i < srcVars.size(); i++)
         {
-          Expr var = ruleManager.chcs[loop[0]].srcVars[i];
-          if (bind::isIntConst(var))
+          Expr t = typeOf(srcVars[i]);
+          if (isOpX<INT_TY>(t))
           {
             mainInds.push_back(i);
-            vars.push_back(var);
+            vars.push_back(srcVars[i]);
+            varsMask.push_back(srcVars[i]);
           }
-          else if (isConst<ARRAY_TY> (var) && ruleManager.hasArrays[srcRel])
+          else if (isOpX<ARRAY_TY>(t) && ruleManager.hasArrays[srcRel])
           {
-            vars.push_back(mk<SELECT>(var, ruleManager.chcs[loop[0]].srcVars[ruleManager.iterator[srcRel]]));
-            mainInds.push_back(-1);
-            arrInds.push_back(i);
+            Expr v = findSelect(loop[0], i);
+            if (v != NULL)
+            {
+              vars.push_back(v);
+              mainInds.push_back(-i - 1);  // to be on the negative side
+              varsMask.push_back(srcVars[i]);
+            }
           }
         }
 
-        if (vars.size() < 2 && i == ruleManager.cycles.size() - 1)
+        if (vars.size() < 2 && cyc == ruleManager.cycles.size() - 1)
           continue; // does not make much sense to run with only one var when it is the last cycle
-        srcVars = vars;
+        invVars = vars;
 
-        auto & prefix = ruleManager.prefixes[i];
+        auto & prefix = ruleManager.prefixes[cyc];
         vector<int> trace;
         int l = 0;                              // starting index (before the loop)
         if (ruleManager.hasArrays[srcRel]) l++; // first iter is usually useless
@@ -350,84 +476,80 @@ namespace ufo
 
         ExprVector ssa;
         getSSA(trace, ssa);
-
-        ssa.push_back(mk<AND>(mkNeg(splitter), invs));
-        ssa.push_back(replaceAll(splitter, ruleManager.chcs[loop[0]].srcVars,
-                                 bindVars[0]));
-
-        bindVars.pop_back();
-        int traceSz = trace.size();
-
-        bool toContinue = false;
-        if (!u.isSat(ssa))
+        if (fwd)
         {
-//          errs () << "Unable to find a suitable unrolling for " << *srcRel << "\n";
+          ssa.push_back(invs);
+          ssa.push_back(replaceAll(phaseGuard, srcVars, bindVars[loop.size() - 1]));
+        }
+        else
+        {
+          ssa.push_back(phaseGuard);
+          ssa.push_back(replaceAll(invs, srcVars, bindVars[loop.size() - 1]));
+        }
+        bindVars.pop_back();
+
+        // compute vars for opt constraint
+        vector<ExprVector> versVars;
+        ExprSet allVars;
+        ExprVector diseqs;
+        fillVars(srcRel, srcVars, vars, l, loop.size(), mainInds, versVars, allVars);
+        getOptimConstr(versVars, vars.size(), srcVars, constr, phaseGuard, diseqs);
+
+        Expr cntvar = bind::intConst(mkTerm<string> ("_FH_cnt", m_efac));
+        allVars.insert(cntvar);
+        allVars.insert(bindVars.back().begin(), bindVars.back().end());
+        ssa.push_back(mk<EQ>(cntvar, mkplus(diseqs, m_efac)));
+
+        auto res = u.isSat(ssa);
+        if (indeterminate(res) || !res)
+        {
+          if (debug) outs () << "Unable to solve the BMC formula for " <<  srcRel << " and phase guard " << phaseGuard <<"\n";
           continue;
         }
+        ExprMap allModels;
+        u.getOptModel<GT>(allVars, allModels, cntvar);
 
-        ExprSet splitterVars;
-        set<int> splitterVarsIndex; // Get splitter vars here
+        ExprSet phaseGuardVars;
+        set<int> phaseGuardVarsIndex; // Get phaseGuard vars here
+        filter(phaseGuard, bind::IsConst(), inserter(phaseGuardVars, phaseGuardVars.begin()));
+        for (auto & a : phaseGuardVars)
         {
-          filter(splitter, bind::IsConst(),
-                inserter(splitterVars, splitterVars.begin()));
-          for(auto itr = splitterVars.begin(), end = splitterVars.end(); itr != end; itr++)
-          {
-            splitterVarsIndex.insert(getVarIndex(*itr, ruleManager.chcs[loop[0]].srcVars));
-          }
+          int i = getVarIndex(a, varsMask);
+          assert(i >= 0);
+          phaseGuardVarsIndex.insert(i);
         }
 
-        for (; l < bindVars.size(); l = l + loop.size())
+        if (debug) outs () << "\nUnroll and execute the cycle for " <<  srcRel << " and phase guard " << phaseGuard <<"\n";
+
+        for (int j = 0; j < versVars.size(); j++)
         {
           vector<double> model;
-//          outs () << "model for " << l << ": [";
-          int ai = 0;
+          if (debug) outs () << "  model for " << j << ": [";
           bool toSkip = false;
           SMTUtils u2(m_efac);
           ExprSet equalities;
 
-          for(auto i: splitterVarsIndex)
+          for (auto i: phaseGuardVarsIndex)
           {
-            Expr srcVar = ruleManager.chcs[loop[0]].srcVars[i];
-            Expr bvar = bindVars[l][i];
-            if (u.isModelSkippable(bvar))
-            {
-              toSkip = true;
-              break;
-            }
-            Expr m = u.getModel(bvar);
+            Expr srcVar = varsMask[i];
+            Expr bvar = versVars[j][i];
+            if (isOpX<SELECT>(bvar)) bvar = bvar->left();
+            Expr m = allModels[bvar];
+            if (m == NULL) { toSkip = true; break; }
             equalities.insert(mk<EQ>(srcVar, m));
           }
           if (toSkip) continue;
-          equalities.insert(splitter);
+          equalities.insert(phaseGuard);
 
-          if(u2.isSat(equalities)) //exclude models that don't satisfy splitter
+          if (u2.isSat(equalities)) //exclude models that don't satisfy phaseGuard
           {
             vector<double> model;
 
             for (int i = 0; i < vars.size(); i++) {
-              int var = mainInds[i];
-              Expr bvar;
-              if (var >= 0)
-              {
-                if (ruleManager.hasArrays[srcRel])
-                  bvar = bindVars[l-1][var];
-                else
-                  bvar = bindVars[l][var];
-              }
-              else
-              {
-                bvar = mk<SELECT>(bindVars[l][arrInds[ai]], bindVars[l-1][ruleManager.iterator[srcRel]]);
-                ai++;
-              }
-              if (u.isModelSkippable(bvar))
-              {
-                toSkip = true;
-                break;
-              }
-              Expr m = u.getModel(bvar);
+              Expr bvar = versVars[j][i];
+              Expr m = allModels[bvar];
               double value;
-              if (m == bvar) value = 0;
-              else
+              if (m != NULL && isOpX<MPZ>(m))
               {
                 if (lexical_cast<cpp_int>(m) > max_double ||
                     lexical_cast<cpp_int>(m) < -max_double)
@@ -437,16 +559,28 @@ namespace ufo
                 }
                 value = lexical_cast<double>(m);
               }
+              else
+              {
+                toSkip = true;
+                break;
+              }
               model.push_back(value);
-//              outs () << *bvar << " = " << *m << ", ";
+              if (debug) outs () << *bvar << " = " << *m << ", ";
+              if (j == 0)
+              {
+                if (isOpX<SELECT>(bvar))
+                  concrInvs[srcRel].insert(mk<EQ>(vars[i]->left(), allModels[bvar->left()]));
+                else
+                  concrInvs[srcRel].insert(mk<EQ>(vars[i], m));
+              }
             }
             if (!toSkip) models.push_back(model);
           }
-//          else
-//          {
-//            outs () << "   <  skipping  >      ";
-//          }
-//          outs () << "\b\b]\n";
+          else
+          {
+            if (debug) outs () << "   <  skipping  >      ";
+          }
+          if (debug) outs () << "\b\b]\n";
         }
       }
 
@@ -455,8 +589,11 @@ namespace ufo
 
     //used for multiple loops to unroll inductive clauses k times and collect corresponding models
     bool unrollAndExecuteMultiple(
-          map<Expr, ExprVector>& srcVars,
-				  map<Expr, vector<vector<double> > > & models, int k = 10)
+          map<Expr, ExprVector>& invVars,
+				  map<Expr, vector<vector<double> > > & models,
+          map<Expr, ExprVector>& arrRanges,
+          map<Expr, ExprSet>& constr,
+          int k = 10)
     {
       // helper var
       string str = to_string(numeric_limits<double>::max());
@@ -465,38 +602,41 @@ namespace ufo
 
       map<int, bool> chcsConsidered;
       map<int, Expr> exprModels;
+      bool res = false;
 
-      for (int i = 0; i < ruleManager.cycles.size(); i++)
+      for (int cyc = 0; cyc < ruleManager.cycles.size(); cyc++)
       {
         vector<int> mainInds;
-        vector<int> arrInds;
-        auto & loop = ruleManager.cycles[i];
+        auto & loop = ruleManager.cycles[cyc];
         Expr srcRel = ruleManager.chcs[loop[0]].srcRelation;
+        ExprVector& srcVars = ruleManager.chcs[loop[0]].srcVars;
         if (models[srcRel].size() > 0) continue;
 
-        auto& hr = ruleManager.chcs[loop[0]];
         ExprVector vars;
-        for (int i = 0; i < ruleManager.chcs[loop[0]].srcVars.size(); i++)
+        for (int i = 0; i < srcVars.size(); i++)
         {
-          Expr var = ruleManager.chcs[loop[0]].srcVars[i];
-          if (bind::isIntConst(var))
+          Expr t = typeOf(srcVars[i]);
+          if (isOpX<INT_TY>(t))
           {
             mainInds.push_back(i);
-            vars.push_back(var);
+            vars.push_back(srcVars[i]);
           }
-          else if (isConst<ARRAY_TY> (var) && ruleManager.hasArrays[srcRel])
+          else if (isOpX<ARRAY_TY>(t) && ruleManager.hasArrays[srcRel])
           {
-            vars.push_back(mk<SELECT>(var, ruleManager.chcs[loop[0]].srcVars[ruleManager.iterator[srcRel]]));
-            mainInds.push_back(-1);
-            arrInds.push_back(i);
+            Expr v = findSelect(loop[0], i);
+            if (v != NULL)
+            {
+              vars.push_back(v);
+              mainInds.push_back(-i - 1);  // to be on the negative side
+            }
           }
         }
 
-        if (vars.size() < 2 && i == ruleManager.cycles.size() - 1)
+        if (vars.size() < 2 && cyc == ruleManager.cycles.size() - 1)
           continue; // does not make much sense to run with only one var when it is the last cycle
-        srcVars[srcRel] = vars;
+        invVars[srcRel] = vars;
 
-        auto & prefix = ruleManager.prefixes[i];
+        auto & prefix = ruleManager.prefixes[cyc];
         vector<int> trace;
         Expr lastModel = mk<TRUE>(m_efac);
 
@@ -535,13 +675,31 @@ namespace ufo
         getSSA(trace, ssa);
         bindVars.pop_back();
         int traceSz = trace.size();
+        assert(bindVars.size() == traceSz - 1);
+
+        // compute vars for opt constraint
+        vector<ExprVector> versVars;
+        ExprSet allVars;
+        ExprVector diseqs;
+        fillVars(srcRel, srcVars, vars, l, loop.size(), mainInds, versVars, allVars);
+        getOptimConstr(versVars, vars.size(), srcVars, constr[srcRel], NULL, diseqs);
+
+        Expr cntvar = bind::intConst(mkTerm<string> ("_FH_cnt", m_efac));
+        allVars.insert(cntvar);
+        allVars.insert(bindVars.back().begin(), bindVars.back().end());
+        ssa.insert(ssa.begin(), mk<EQ>(cntvar, mkplus(diseqs, m_efac)));
+
+        // for arrays, make sure the ranges are large enough
+        for (auto & v : arrRanges[srcRel])
+          ssa.insert(ssa.begin(), replaceAll(mk<GT>(v, mkMPZ(k, m_efac)), srcVars, bindVars[0]));
 
         bool toContinue = false;
+        bool noopt = false;
         while (true)
         {
-          if (ssa.size() - loop.size() < 2)
+          if (bindVars.size() <= 1)
           {
-            errs () << "Unable to find a suitable unrolling for " << *srcRel << "\n";
+            if (debug) outs () << "Unable to find a suitable unrolling for " << *srcRel << "\n";
             toContinue = true;
             break;
           }
@@ -552,14 +710,16 @@ namespace ufo
                 trace.size() != traceSz - 1) // finalizing the unrolling (exit CHC)
             {
               trace.push_back(backCHC);
-              ssa.clear();                           // encode from scratch
+              ssa.clear();                   // encode from scratch
               getSSA(trace, ssa);
               bindVars.pop_back();
+              noopt = true;   // TODO: support optimization queries
             }
             else break;
           }
           else
           {
+            noopt = true;      // TODO: support
             if (trace.size() == traceSz)
             {
               trace.pop_back();
@@ -576,41 +736,28 @@ namespace ufo
         }
 
         if (toContinue) continue;
-
+        res = true;
         map<int, ExprSet> ms;
 
-        for (; l < bindVars.size(); l = l + loop.size())
+        ExprMap allModels;
+        if (noopt)
+          u.getModel(allVars, allModels);
+        else
+          u.getOptModel<GT>(allVars, allModels, cntvar);
+
+        if (debug) outs () << "\nUnroll and execute the cycle for " <<  srcRel << "\n";
+        for (int j = 0; j < versVars.size(); j++)
         {
           vector<double> model;
-//          outs () << "model for " << l << ": [";
-          int ai = 0;
           bool toSkip = false;
-          for (int i = 0; i < vars.size(); i++) {
-            int var = mainInds[i];
-            Expr bvar;
-            if (var >= 0)
-            {
-              if (ruleManager.hasArrays[srcRel])
-                bvar = bindVars[l-1][var];
-              else
-                bvar = bindVars[l][var];
-            }
-            else
-            {
-              bvar = mk<SELECT>(bindVars[l][arrInds[ai]], bindVars[l-1][ruleManager.iterator[srcRel]]);
-              ai++;
-            }
-            if (u.isModelSkippable(bvar))
-            {
-              toSkip = true;
-              break;
-            }
-            Expr m = u.getModel(bvar);
-            if (var >= 0 && m != bvar) ms[var].insert(mk<EQ>(vars[var], m));
+          if (debug) outs () << "  model for " << j << ": [";
 
+          for (int i = 0; i < vars.size(); i++)
+          {
+            Expr bvar = versVars[j][i];
+            Expr m = allModels[bvar];
             double value;
-            if (m == bvar) value = 0;
-            else
+            if (m != NULL && isOpX<MPZ>(m))
             {
               if (lexical_cast<cpp_int>(m) > max_double ||
                   lexical_cast<cpp_int>(m) < -max_double)
@@ -620,44 +767,55 @@ namespace ufo
               }
               value = lexical_cast<double>(m);
             }
+            else
+            {
+              toSkip = true;
+              break;
+            }
             model.push_back(value);
-//            outs () << *bvar << " = " << *m << ", ";
+            if (debug) outs () << *bvar << " = " << *m << ", ";
+            if (!containsOp<ARRAY_TY>(bvar))
+              ms[i].insert(mk<EQ>(vars[i], m));
           }
           if (toSkip)
           {
-//            outs () << "\b\b   <  skipping  >      ]\n";
+            if (debug) outs () << "\b\b   <  skipping  >      ]\n";
           }
           else
           {
             models[srcRel].push_back(model);
-//            outs () << "\b\b]\n";
+            if (debug) outs () << "\b\b]\n";
           }
         }
 
         for (auto & a : ms)
-        {
-          concrInvs[srcRel].insert(disjoin(a.second, m_efac));
-        }
+          concrInvs[srcRel].insert(simplifyArithm(disjoin(a.second, m_efac)));
 
         // although we care only about integer variables for the matrix above,
         // we still keep the entire model to bootstrap the model generation for the next loop
         if (chcsConsidered[trace.back()])
-          exprModels[trace.back()] = replaceAll(u.getModel(bindVars.back()),
+        {
+          ExprSet mdls;
+          for (auto & a : bindVars.back())
+            if (allModels[a] != NULL)
+              mdls.insert(mk<EQ>(a, allModels[a]));
+          exprModels[trace.back()] = replaceAll(conjoin(mdls, m_efac),
             bindVars.back(), ruleManager.chcs[trace.back()].srcVars);
+        }
       }
 
-      return true;
+      return res;
     }
   };
 
-  inline void unrollAndCheck(string smt, int bnd1, int bnd2)
+  inline void unrollAndCheck(string smt, int bnd1, int bnd2, int to, bool skip_elim, int debug)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
-    CHCs ruleManager(m_efac, z3);
-    ruleManager.parse(smt);
-    BndExpl ds(ruleManager);
-    ds.exploreTraces(bnd1, bnd2, true);
+    CHCs ruleManager(m_efac, z3, debug);
+    if (!ruleManager.parse(smt, !skip_elim)) return;
+    BndExpl bnd(ruleManager, to, debug);
+    bnd.exploreTraces(bnd1, bnd2, true);
   };
 
   inline bool kInduction(CHCs& ruleManager, int bnd)
@@ -668,7 +826,7 @@ namespace ufo
       return false;
     }
 
-    BndExpl ds(ruleManager);
+    BndExpl ds(ruleManager, false);
 
     bool success = false;
     int i;

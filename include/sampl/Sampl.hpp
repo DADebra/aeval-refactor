@@ -44,7 +44,7 @@ namespace ufo
     bool hasArrays = false;
 
     // Whether to print debugging information or not
-    bool printLog;
+    int printLog;
 
     public:
 
@@ -55,10 +55,10 @@ namespace ufo
 
     ExprSet learnedExprs;
 
-    bool initilized = true;
     bool done = false;
+    int initialized = 0;
 
-    SamplFactory(ExprFactory &_efac, EZ3 &_z3, bool aggp, bool _printLog) :
+    SamplFactory(ExprFactory &_efac, EZ3 &_z3, bool aggp, int _printLog) :
       m_efac(_efac), lf(_efac, aggp), bf(_efac), af(_efac, aggp),
       printLog(_printLog), gf(_efac, _z3, _printLog) {}
 
@@ -112,16 +112,13 @@ namespace ufo
       lf.initialize();
       if (hasArrays)
       {
-        if (arrAccessVars.empty() || arrRange.empty())
-        {
-          initilized = false;
-        }
-        else
+        if (!arrAccessVars.empty() && !arrRange.empty())
         {
           af.initialize(lf.getVars(), arrCands, arrAccessVars, arrRange);
+          initialized++;
         }
       }
-
+      initialized++;
       gf.initialize_intconsts();
     }
 
@@ -222,9 +219,11 @@ namespace ufo
       {
         lf.stabilizeDensities(ar.first, addepsilon, freqs);
       }
+
+      if (initialized == 2) af.initializeLAfactories();
     }
 
-    Expr getFreshCandidate(bool arrSimpl = true)
+    Expr getFreshCandidate()
     {
       if (gf.initialized)
       {
@@ -234,9 +233,9 @@ namespace ufo
 
       // for now, if a CHC system has arrays, we try candidates only with array
       // in the future, we will need arithmetic candidates as well
-      if (hasArrays && initilized)
+      if (hasArrays && initialized == 2)
       {
-        Expr cand = arrSimpl ? af.guessSimplTerm() : af.guessTerm();
+        Expr cand = af.getQCand();
         if (cand != NULL)
         {
           for (auto & v : lf.nonlinVars) cand = replaceAll(cand, v.second, v.first);

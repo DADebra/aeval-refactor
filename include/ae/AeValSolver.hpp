@@ -12,25 +12,25 @@ namespace ufo
 {
 
   /** engine to solve validity of \forall-\exists formulas and synthesize Skolem relation */
-  
+
   class AeValSolver {
   private:
-    
+
     Expr s;
     Expr t;
     ExprSet v; // existentially quantified vars
     ExprVector stVars;
-    
+
     ExprSet tConjs;
     ExprSet usedConjs;
     ExprMap defMap;
     ExprSet conflictVars;
-    
+
     ExprFactory &efac;
     EZ3 z3;
     ZSolver<EZ3> smt;
     SMTUtils u;
-    
+
     unsigned partitioning_size;
     ExprVector projections;
     ExprVector instantiations;
@@ -38,12 +38,12 @@ namespace ufo
     vector<ExprMap> skolMaps;
     vector<ExprMap> someEvals;
     Expr skolSkope;
-    
+
     bool debug;
     unsigned fresh_var_ind;
-    
+
   public:
-    
+
     AeValSolver (Expr _s, Expr _t, ExprSet &_v) :
     s(_s), t(_t), v(_v),
     efac(s->getFactory()),
@@ -61,7 +61,7 @@ namespace ufo
         defMap[exp] = definition;
       }
     }
-    
+
     /**
      * Decide validity of \forall s => \exists v . t
      */
@@ -80,12 +80,12 @@ namespace ufo
         if (debug) outs() << "\nE.v.: 0; Iter.: 0; Result: " << (res? "invalid" : "valid") << "\n\n";
         return res;
       }
-      
+
       smt.push ();
       smt.assertExpr (t);
-      
+
       boost::tribool res = true;
-      
+
       while (smt.solve ())
       {
         if (debug) {
@@ -114,13 +114,13 @@ namespace ufo
         smt.push();
         smt.assertExpr (t);
       }
-      
+
       if (debug) outs() << "\nE.v.: " << v.size() << "; Iter.: " << partitioning_size
              << "; Result: " << (res? "invalid" : "valid") << "\n\n";
-      
+
       return res;
     }
-    
+
     /**
      * Extract MBP and local Skolem
      */
@@ -132,16 +132,25 @@ namespace ufo
       for (auto &exp: v)
       {
         ExprMap map;
-        pr = z3_qe_model_project_skolem (z3, m, exp, pr, map);
-        getLocalSkolems(m, exp, map, substsMap, modelMap, pr);
+        ExprSet lits;
+        u.getTrueLiterals(pr, m, lits);
+//        pr = z3_qe_model_project_skolem (z3, m, exp, pr, map);
+        pr = z3_qe_model_project_skolem (z3, m, exp, conjoin(lits, efac), map);
+        if (m.eval(exp) != exp) modelMap[exp] = mk<EQ>(exp, m.eval(exp));
+        for (auto it = lits.begin(); it != lits.end(); ){
+          if (contains(*it, exp)) ++it;
+          else it = lits.erase(it);
+        }
+        substsMap[exp] = conjoin(lits, efac);
       }
-      
+
       someEvals.push_back(modelMap);
       skolMaps.push_back(substsMap);
       projections.push_back(pr);
     }
-    
+
     /**
+     * Legacy code, for old Z3
      * Compute local skolems based on the model
      */
     void getLocalSkolems(ZSolver<EZ3>::Model &m, Expr exp,
@@ -152,9 +161,9 @@ namespace ufo
         for (auto &e: map){
           Expr ef = e.first;
           Expr es = e.second;
-          
+
           if (debug) outs() << "subst: " << *ef << "  <-->  " << *es << "\n";
-          
+
           if (isOpX<TRUE>(es)){
             substs.insert(ineqNegReverter(ef));
           } else if (isOpX<FALSE>(es)){
@@ -180,28 +189,28 @@ namespace ufo
         modelMap[exp] = mk<EQ>(exp, m.eval(exp));
       }
     }
-    
+
     /**
      * Global Skolem function from MBPs and local ones
      */
     Expr getSimpleSkolemFunction()
     {
       if (partitioning_size == 0){
-        outs() << "WARNING: Skolem can be arbitrary\n";
+        if (debug) outs() << "WARNING: Skolem can be arbitrary\n";
         return mk<TRUE>(efac);
       }
-      
+
       skolSkope = mk<TRUE>(efac);
-      
+
       for (int i = 0; i < partitioning_size; i++)
       {
         ExprSet skoledvars;
         ExprMap substsMap;
         for (auto &exp: v) {
-          
+
           Expr exp2 = skolMaps[i][exp];
-          
-          if (exp2 != NULL)
+
+          if (exp2 != NULL && !isOpX<TRUE>(exp2))
           {
             // GF: todo simplif (?)
             exp2 = getAssignmentForVar(exp, exp2);
@@ -219,9 +228,9 @@ namespace ufo
           {
             exp2 = getDefaultAssignment(exp);
           }
-          
+
           if (debug) outs() << "compiling skolem [pt1]: " << *exp <<  "    -- >   " << *exp2 << "\n";
-          
+
           substsMap[exp] = exp2;
         }
 
@@ -236,22 +245,22 @@ namespace ufo
         }
 
         instantiations.push_back(conjoin(cnjs, efac));
-        if (debug) outs() << "Sanity check [" <<i << "]: " << u.implies(mk<AND> (s,mk<AND> (projections[i], instantiations[i])), t) << "\n";
+        if (debug) outs() << "Sanity check [" <<i << "]: " << (bool)u.implies(mk<AND> (s,mk<AND> (projections[i], instantiations[i])), t) << "\n";
       }
       Expr sk = mk<TRUE>(efac);
-      
+
       for (int i = partitioning_size - 1; i >= 0; i--){
         if (isOpX<TRUE>(projections[i]) && isOpX<TRUE>(sk)) sk = instantiations[i];
         else sk = mk<ITE>(projections[i], instantiations[i], sk);
       }
-      
+
       Expr skol = simplifiedAnd(skolSkope, sk);
-      
-      if (true) outs() << "Sanity check: " << u.implies(mk<AND>(s, skol), t) << "\n";
-      
+
+      if (false) outs() << "Sanity check: " << (bool)u.implies(mk<AND>(s, skol), t) << "\n";
+
       return skol;
     }
-    
+
     /**
      * Valid Subset of S (if overall AE-formula is invalid)
      */
@@ -325,7 +334,7 @@ namespace ufo
       }
       return simplifyBool(mk<AND>(s, prs));
     }
-    
+
     /**
      * Mine the structure of T to get what was assigned to a variable
      */
@@ -356,7 +365,7 @@ namespace ufo
       }
       return def;
     }
-    
+
     /**
      * Self explanatory
      */
@@ -380,7 +389,7 @@ namespace ufo
         }
       }
     }
-    
+
     /**
      * Self explanatory
      */
@@ -404,14 +413,14 @@ namespace ufo
         }
       }
     }
-    
+
     /**
      * Weird thing, never happens in the experiments
      */
     void GetSymbolicNeg(ExprVector vec, Expr& lower, Expr& upper, Expr& candidate)
     {
       // TODO: maybe buggy in LIA, due to a naive shrinking of the segment;
-      
+
       for (int i = 0; i < vec.size(); i++){
 
         ExprVector forLower;
@@ -419,7 +428,7 @@ namespace ufo
         forLower.push_back(vec[i]);
         Expr updLower;
         GetSymbolicMax(forLower, updLower);
-      
+
         ExprVector forUpper;
         forUpper.push_back(upper);
         forUpper.push_back(vec[i]);
@@ -440,7 +449,7 @@ namespace ufo
         candidate = mk<DIV>(mk<PLUS>(lower, upper), mkTerm (mpq_class (2), efac));
       }
     }
-    
+
     /**
      * Aux
      */
@@ -456,7 +465,7 @@ namespace ufo
       }
       if (tmp) vec.push_back(a);
     }
-    
+
     /**
      * Based on type
      */
@@ -467,7 +476,7 @@ namespace ufo
       else           // that is, isRealConst(var) == true
         return mkTerm (mpq_class (0), efac);
     }
-    
+
     /**
      * Return "e + c"
      */
@@ -475,21 +484,22 @@ namespace ufo
     {
       if (isOpX<MPZ>(e) && isInt)
         return mkMPZ(c + boost::lexical_cast<cpp_int> (e), efac);
-      
+
       Expr ce = isInt ? mkMPZ(c, efac) :
                         mkTerm (mpq_class (lexical_cast<string>(c)), efac);
       return mk<PLUS>(e, ce);
     }
-    
+
     /**
      * Extract function from relation
      */
     Expr getAssignmentForVar(Expr var, Expr exp)
     {
+      exp = simplifyArithmConjunctions(exp);
       if (debug) outs () << "getAssignmentForVar " << *var << " in " << *exp << "\n";
 
       bool isInt = bind::isIntConst(var);
-      
+
       if (isOp<ComparissonOp>(exp))
       {
         // TODO: write a similar simplifier fo booleans
@@ -535,31 +545,32 @@ namespace ufo
         ExprVector conjNEG;
         ExprVector conjEG;
         for (auto it = exp->args_begin(), end = exp->args_end(); it != end; ++it){
-          if (isOpX<EQ>(*it)){
-            if (var == (*it)->left()) {
-              pushVecRedund(conjEG, (*it)->right());
+          Expr norm = ineqSimplifier(var, *it);
+          if (isOpX<EQ>(norm)){
+            if (var == (norm)->left()) {
+              pushVecRedund(conjEG, (norm)->right());
             } else {
               incomplete = true;
             }
           }
-          else if (isOpX<LT>(*it) || isOpX<LEQ>(*it)){
-            if (var == (*it)->left()) {
-              pushVecRedund(conjLT, (*it)->right());
+          else if (isOpX<LT>(norm) || isOpX<LEQ>(norm)){
+            if (var == (norm)->left()) {
+              pushVecRedund(conjLT, (norm)->right());
             } else {
               incomplete = true;
             }
           }
-          else if (isOpX<GT>(*it) || isOpX<GEQ>(*it)){
-            if (var == (*it)->left()) {
-              pushVecRedund(conjGT, (*it)->right());
+          else if (isOpX<GT>(norm) || isOpX<GEQ>(norm)){
+            if (var == (norm)->left()) {
+              pushVecRedund(conjGT, (norm)->right());
             } else {
               incomplete = true;
             }
-          } else if (isOpX<NEG>(*it)){
-            Expr negated = (*it)->left();
-            
+          } else if (isOpX<NEG>(norm)){
+            Expr negated = (norm)->left();
+
             if (isOpX<EQ>(negated)){
-              
+
               if (var == negated->left()) {
                 pushVecRedund(conjNEG, negated->right());
               } else {
@@ -634,7 +645,7 @@ namespace ufo
       }
       return exp;
     }
-    
+
     /**
      * Check if there are bounded cycles (at most lvl steps) in the map
      */
@@ -645,46 +656,46 @@ namespace ufo
 
       ExprSet all;
       filter (entr, bind::IsConst (), inserter (all, all.begin()));
-      
+
       if (!emptyIntersect(var2, all)) return true;
-      
+
       bool res = false;
       if (lvl > 0) for (auto& exp: all) res |= findCycles(m, exp, var2, lvl-1);
-      
+
       return res;
     }
-    
+
     /**
      * Unfolding/simplifying of the map with definitions / substitutions
      */
     void refreshMapEntry (ExprMap &m, Expr var)
     {
       if (debug && false) outs() << "refreshMapEntry for " << *var << "\n";
-      
+
       Expr entr = m[var];
       if (std::find(std::begin(conflictVars), std::end (conflictVars), var) != std::end(conflictVars))
       {
         entr = defMap[var];
         conflictVars.erase(var);
       }
-    
+
       if (entr == NULL) return;
-      
+
       if (conflictVars.empty() && findCycles(m, var, var, 1))
       {
         // FIXME: it does not find all cycles unfortunately
         if (debug) outs () << "cycle found for " << *var << "\n";
         conflictVars.insert(var);
       }
-      
+
       ExprSet skv;
       filter (entr, bind::IsConst (), inserter (skv, skv.begin()));
-      
+
       for (auto& exp2: skv) {
         refreshMapEntry(m, exp2);
         entr = simplifyBool (u.simplifyITE (replaceAll(entr, exp2, m[exp2])));
       }
-      
+
       m[var] = u.numericUnderapprox(mk<EQ>(var, entr))->right();
     }
 
@@ -695,9 +706,9 @@ namespace ufo
     {
       smt.reset();
       smt.assertExpr(form);
-      
+
       string errorInfo;
-      
+
       if (errorInfo.empty ())
       {
         smt.toSmtLib (outs());
@@ -708,67 +719,93 @@ namespace ufo
 
   inline static bool qeUnsupported (Expr e)
   {
-    return (isNonlinear(e) || containsOp<MOD>(e) || containsOp<DIV>(e) || containsOp<ARRAY_TY>(e));
+    if (containsOp<ARRAY_TY>(e)) return true;
+    if (containsOp<MOD>(e)) return true;
+    if (containsOp<DIV>(e)) return true;
+    if (containsOp<BVSORT>(e)) return true;
+    return isNonlinear(e);
   }
 
-  /**
-   * Simple wrapper
-   */
-  inline static Expr eliminateQuantifiers(Expr cond, ExprSet& vars)
+  inline static Expr coreQE(Expr fla, ExprSet& vars)
   {
-    ExprFactory &efac = cond->getFactory();
-    SMTUtils u(efac);
-    if (vars.size() == 0) return simplifyBool(cond);
-
-    Expr newCond = simplifyArithm(simpleQE(cond, vars));
-
-    if (!emptyIntersect(newCond, vars) &&
-        !containsOp<FORALL>(cond) && !containsOp<EXISTS>(cond) && !qeUnsupported(newCond))
+    if (!emptyIntersect(fla, vars) &&
+        !containsOp<FORALL>(fla) && !containsOp<EXISTS>(fla) && !qeUnsupported(fla))
     {
-      AeValSolver ae(mk<TRUE>(efac), newCond, vars); // exists quantified . formula
-      if (ae.solve()) {
-        newCond = ae.getValidSubset();
-      } else {
-        return mk<TRUE>(efac);
-      }
+      AeValSolver ae(mk<TRUE>(fla->getFactory()), fla, vars); // exists quantified . formula
+      if (ae.solve()) return ae.getValidSubset();
+      else return mk<TRUE>(fla->getFactory());
     }
-
-    ExprSet cnj;
-    getConj(newCond, cnj);
-    ineqMerger(cnj, true);
-
-    for (auto it = cnj.begin(); it != cnj.end(); )
-    {
-      ExprVector av;
-      filter (*it, bind::IsConst (), inserter(av, av.begin()));
-      map<Expr, ExprVector> qv;
-      getQVars (*it, qv);
-      for (auto & a : qv)
-        for (auto & b : a.second)
-          for (auto it1 = av.begin(); it1 != av.end(); )
-            if (*it1 == b) {
-              it1 = av.erase(it1); break; }
-            else ++it1;
-
-      if (emptyIntersect(av, vars)) ++it;
-      else it = cnj.erase(it);
-    }
-    return simplifyBool(conjoin(cnj, efac));
+    return fla;
   };
 
-  inline static Expr eliminateQuantifiers(Expr cond, ExprVector& vars)
+  inline static Expr coreQE(Expr fla, ExprVector& vars)
   {
     ExprSet varsSet;
     for (auto & v : vars) varsSet.insert(v);
-    return eliminateQuantifiers(cond, varsSet);
+    return coreQE(fla, varsSet);
   }
 
-  inline static Expr keepQuantifiers(Expr cond, ExprVector& vars)
+  template<typename Range> static Expr eliminateQuantifiers(Expr fla, Range& qVars,
+                                       bool doArithm = true, bool doCore = true)
+  {
+    if (qVars.size() == 0) return fla;
+    ExprSet dsjs, newDsjs;
+    getDisj(fla, dsjs);
+    if (dsjs.size() > 1)
+    {
+      for (auto & d : dsjs) newDsjs.insert(eliminateQuantifiers(d, qVars));
+      return disjoin(newDsjs, fla->getFactory());
+    }
+
+    ExprSet hardVars;
+    filter (fla, bind::IsConst (), inserter(hardVars, hardVars.begin()));
+    minusSets(hardVars, qVars);
+    ExprSet cnjs;
+    getConj(fla, cnjs);
+    constantPropagation(hardVars, cnjs, doArithm);
+    Expr tmp = simpEquivClasses(hardVars, cnjs, fla->getFactory());
+    tmp = simpleQE(tmp, qVars);
+    if (doCore)
+      return coreQE(tmp, qVars);
+    else
+      return tmp;
+  }
+
+  template<typename Range> static Expr eliminateQuantifiersRepl(Expr fla, Range& vars)
+  {
+    ExprFactory &efac = fla->getFactory();
+    SMTUtils u(efac);
+    ExprSet complex;
+    findComplexNumerics(fla, complex);
+    ExprMap repls;
+    ExprSet varsCond; varsCond.insert(vars.begin(), vars.end());
+    for (auto & a : complex)
+    {
+      Expr repl = bind::intConst(mkTerm<string>
+                                 ("__repl_" + lexical_cast<string>(repls.size()), efac));
+      repls[a] = repl;
+      for (auto & v : vars) if (contains(a, v)) varsCond.erase(v);
+    }
+    Expr condTmp = replaceAll(fla, repls);
+    Expr tmp = eliminateQuantifiers(condTmp, varsCond);
+    tmp = replaceAllRev(tmp, repls);
+    return eliminateQuantifiers(tmp, vars);
+  }
+
+  inline static Expr keepQuantifiers(Expr fla, ExprVector& vars)
   {
     ExprSet varsSet;
-    filter (cond, bind::IsConst (), inserter(varsSet, varsSet.begin()));
+    filter (fla, bind::IsConst (), inserter(varsSet, varsSet.begin()));
     minusSets(varsSet, vars);
-    return eliminateQuantifiers(cond, varsSet);
+    return eliminateQuantifiers(fla, varsSet);
+  }
+
+  inline static Expr keepQuantifiersRepl(Expr fla, ExprVector& vars)
+  {
+    ExprSet varsSet;
+    filter (fla, bind::IsConst (), inserter(varsSet, varsSet.begin()));
+    minusSets(varsSet, vars);
+    return eliminateQuantifiersRepl(fla, varsSet);
   }
 
   inline static Expr abduce (Expr goal, Expr assm)

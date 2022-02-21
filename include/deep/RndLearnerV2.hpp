@@ -23,7 +23,7 @@ namespace ufo
 
     public:
 
-    RndLearnerV2 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp, bool debug) :
+    RndLearnerV2 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp, int debug) :
       RndLearner (efac, z3, r, to, /*k-induction*/ false, freqs, /*epsilon*/ true, aggp, debug){}
 
     Expr getModel(ExprVector& vars)
@@ -335,10 +335,8 @@ namespace ufo
     }
   };
   
-  inline void learnInvariants2(string smt, vector<string> grammars,
-      unsigned to, const char * outfile, int maxAttempts, int itp,
-      int batch, int retry, bool freqs, bool aggp, bool debug, bool do_boot,
-      GramParams gramps)
+  inline void learnInvariants2(string smt, unsigned to, int maxAttempts,
+                               int itp, int batch, int retry, bool freqs, bool aggp, int debug, bool dBoot, vector<string> grammars, GramParams gramps)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -354,35 +352,29 @@ namespace ufo
 
     std::srand(std::time(0));
 
-//    if (ruleManager.hasArrays)
-//    {
-//      outs () << "Arrays are not supported in this mode\n";
-//      exit(0);
-//    }
     if (ruleManager.decls.size() > 1)
     {
-      outs() << "WARNING: learning multiple invariants is currently unsupported in --v2.\n"
-             << "         Run --v1\n";
+      outs() << "WARNING: learning multiple invariants is unsupported in --v2.\n"
+             << "         Run --v3\n";
       return;
     }
 
-    for (auto& dcl: ruleManager.decls) ds.initializeDecl(dcl, gramps);
+    for (auto& dcl: ruleManager.decls) ds.initializeDecl(dcl->left(), gramps);
 
     ExprSet cands;
 
     if (itp > 0) ds.bootstrapBoundedProofs(itp, cands);
 
-    for (auto& dcl: ruleManager.decls) ds.doSeedMining (dcl->arg(0), cands);
+    for (auto& dcl: ruleManager.decls) ds.prepareSeeds(dcl->arg(0), cands); // cands isn't used
 
     bool success = false;
-    if (do_boot)
+    if (dBoot)
     {
       success = ds.houdini(cands, true, false);
-      outs () << "Number of bootstrapped lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
+      if (debug)
+        outs () << "Number of bootstrapped lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
       if (success)
-      {
         outs () << "Success after the bootstrapping\n";
-      }
     }
 
     if (!success)
@@ -390,20 +382,16 @@ namespace ufo
       ds.calculateStatistics();
       ds.prioritiesDeferred();
 
-      int iter = -1;
-      success = ds.synthesize(maxAttempts, batch, retry, iter);
-      if (success) outs () << "Total number of learned lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
+      int iters = -1;
+      success = ds.synthesize(maxAttempts, batch, retry, iters);
+      if (debug)
+        if (success) outs () << "Total number of learned lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
 
-      if (success) outs () << "\nSuccess after the sampling\n";
-      else         outs () << "\nNo success after " << iter << " iterations\n";
+      if (success) outs () << "Success after sampling\n";
+      else         outs () << "No success after " << maxAttempts << " iterations\n";
     }
 
-    if (success && outfile != NULL)
-    {
-      vector<ExprSet> invs;
-      invs.push_back(ds.getlearnedLemmas(0));
-      ds.serializeInvariants(invs, outfile);
-    }
+    if (success) ds.printSolution();
   }
 }
 
