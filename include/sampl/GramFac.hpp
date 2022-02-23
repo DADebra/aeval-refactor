@@ -380,14 +380,14 @@ namespace ufo
     }
 
     // A map of <Non-terminal, Set of Expansions> (see findExpansions)
-    typedef unordered_map<Expr,unordered_set<ParseTree>> ExpansionsMap;
+    typedef unordered_map<Expr,vector<ParseTree>> ExpansionsMap;
 
     // Key: Non-terminal   Value: Set of Expr's that First expands to
     void findExpansions(const ParseTree& pt, ExpansionsMap& outmap)
     {
       return foreachPt(pt, [&] (const Expr& nt, const ParseTree& prod)
       {
-        outmap[nt].insert(prod);
+        outmap[nt].push_back(prod);
       });
     }
 
