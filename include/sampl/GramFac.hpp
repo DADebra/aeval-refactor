@@ -219,7 +219,7 @@ namespace ufo
     // List of FAPP (or EQ, GT, etc.) constraints specified in the grammar
     ExprVector constraints;
 
-    // Key: <Non-terminal, Production>, Value: Priority
+    // Key: <Either Expr, Production>, Value: Priority
     unordered_map<std::pair<Expr, Expr>, cpp_rational> priomap;
     inline cpp_rational priomapat(const std::pair<Expr,Expr> &prod)
     {
@@ -229,7 +229,7 @@ namespace ufo
     }
 
     // priomap, but for getRandCand
-    // Key: Non-terminal, Value: Distribution, in order given by CFG
+    // Key: Either Expr, Value: Distribution, in order given by CFG
     unordered_map<Expr, discrete_distribution<int>> distmap;
 
     // Needed for randomness in getRandCand
@@ -303,14 +303,26 @@ namespace ufo
     // exp is e.g. (= iterm iterm), nonterm is e.g. iterm
     bool isRecursive(const Expr& exp, const Expr& nonterm)
     {
+      // Handle simple recursion
+      if (exp == nonterm)
+        return true;
+      if (isOpX<FDECL>(exp))
+        return false; // We don't need to search this deep
+      if (isOpX<FAPP>(exp))
+      {
+        // Handle the case of a nested either (e.g. (either 1 (either ...)))
+        // We don't want this to be recursive, as this is just a way to
+        //   control the traversal and should be equivalent to a non-nested
+        //   either.
+        string expname = lexical_cast<string>(bind::fname(exp)->left());
+        if (expname == "either")
+          return false;
+      }
       for (auto itr = exp->args_begin(); itr != exp->args_end(); ++itr)
       {
         if (isRecursive(*itr, nonterm))
           return true;
       }
-      // Handle simple recursion
-      if (exp == nonterm)
-        return true;
 
       return false;
     }
@@ -341,7 +353,7 @@ namespace ufo
     {
       if (pt.children().size() == 0)
         return;
-      else if (pt.children().size() == 1)
+      else if (isOpX<FAPP>(pt.data()) && defs.count(pt.data()) != 0)
       {
         const ParseTree* realnt = &pt;
         while (defs.count(realnt->children()[0].data()) != 0)
@@ -954,9 +966,9 @@ namespace ufo
       return true;
     }
 
-    inline bool shoulddefer(const Expr& nt, const Expr& expand)
+    inline bool shoulddefer(const Expr& either, const Expr& expand)
     {
-      auto prod = make_pair(nt, expand);
+      auto prod = make_pair(either, expand);
       if (priomapat(prod) >= 1 || candnum[prod] == 0)
         return false;
       return candnum[prod] > (int)(priomapat(prod)*totalcandnum);
@@ -967,7 +979,7 @@ namespace ufo
       bool ret = false;
       foreachExp(pt, [&] (const Expr &nt, const Expr &expand)
       {
-        ret |= shoulddefer(nt, expand);
+        ret |= shoulddefer(defs.at(nt), expand);
       });
       return ret;
     }
@@ -993,7 +1005,7 @@ namespace ufo
           else
             newdepth = currdepth;
 
-          needdefer= needdefer || shoulddefer(currnt, root->arg(travpos.pos));
+          needdefer= needdefer || shoulddefer(root, root->arg(travpos.pos));
           return gettrav(root->arg(travpos.pos), travpos.childat(travpos.pos),
             qvars, currnt, needdefer, newdepth);
         }
@@ -1149,7 +1161,7 @@ namespace ufo
 
           startpos = checkpos;
           while (constpos.childat(checkpos).isdone() ||
-           shoulddefer(currnt, root->arg(checkpos)) ||
+           shoulddefer(root, root->arg(checkpos)) ||
            (isRecursive(root->arg(checkpos), currnt) &&
            currdepth == maxrecdepth))
           {
@@ -1592,13 +1604,13 @@ namespace ufo
               bool needdefer = false;
               newexprat(i) = gettrav(rootarg(i), constposchildat(i),
                 localqvars, currnt, needdefer, currdepth);
-              if (needdefer)
+              /*if (needdefer)
               {
                 if (constposchildat(i).isdone())
                   travposchildat(i) = TravPos();
                 newexprat(i) = newtrav(rootarg(i), travposchildat(i),
                   currdepth, localqvars, currnt);
-              }
+              }*/
             }
           }
 
@@ -1703,8 +1715,8 @@ namespace ufo
             else
               newdepth = currdepth;
 
-            coros.push_back(std::move(make_pair(make_pair(root->arg(i),
-              currnt), getCandCoro(root->arg(i), newdepth, qvars,currnt))));
+            coros.push_back(std::move(make_pair(make_pair(root, root->arg(i)),
+              getCandCoro(root->arg(i), newdepth, qvars, currnt))));
             if (!*coros.back().second)
               coros.pop_back();
             else if (travtype == TravParamType::STRIPED)
@@ -1735,7 +1747,7 @@ namespace ufo
           // With in-coro priorities
           auto lastbest = coros.begin();
 
-          // Key: <Production, Non-terminal>,
+          // Key: <Either Expr, Non-terminal>,
           // Value: number of cands generated with Production
           unordered_map<std::pair<Expr, Expr>, int> candnum;
           int totalcandnum = 0;
@@ -2478,6 +2490,74 @@ namespace ufo
         // Parse combined grammar
         Expr gram = z3_from_smtlib<EZ3>(z3, aug_gram.str());
 
+        // Parse and rewrite priorities
+        RW<function<Expr(Expr)>> rw(new function<Expr(Expr)>(
+          [this] (Expr e) -> Expr
+        {
+          if (isOpX<FAPP>(e))
+          {
+            string ename = lexical_cast<string>(bind::fname(e)->left());
+            if (ename == "either")
+            {
+              ExprVector newdefargs;
+              vector<cpp_rational> rweights;
+              for (int i = 1; i < e->arity(); ++i)
+              {
+                string iname = "";
+                if (isOpX<FAPP>(e->arg(i)))
+                  iname = lexical_cast<string>(bind::fname(e->arg(i))->left());
+                if (iname == "prio")
+                  newdefargs.push_back(e->arg(i)->arg(1));
+                else
+                  newdefargs.push_back(e->arg(i));
+              }
+              Expr newe = bind::fapp(e->left(), newdefargs);
+
+              for (int i = 1; i < e->arity(); ++i)
+              {
+                cpp_rational prio;
+                string iname = "";
+                if (isOpX<FAPP>(e->arg(i)))
+                  iname = lexical_cast<string>(bind::fname(e->arg(i))->left());
+                if (iname == "prio")
+                {
+                  std::pair<Expr,Expr> keypair(newe, e->arg(i)->arg(1));
+                  prio = lexical_cast<cpp_rational>(e->arg(i)->arg(2));
+                  priomap[keypair] = prio;
+                }
+                else
+                {
+                  std::pair<Expr,Expr> keypair(newe, e->arg(i));
+                  prio = 1.0;
+                  priomap[keypair] = prio;
+                }
+                rweights.push_back(prio);
+              }
+
+              // Simple GCD, to make sure all priorities convert to integers
+              int gcd = 1;
+              for (auto &rw : rweights)
+                gcd *= (int)denominator(rw);
+
+              vector<int> iweights;
+              for (auto &rw : rweights)
+                iweights.push_back((int)(rw * gcd));
+
+              distmap.emplace(newe,
+                std::move(discrete_distribution<int>(iweights.begin(),
+                iweights.end())));
+
+              return newe;
+            }
+            else
+              return e;
+          }
+          else
+            return e;
+        }));
+        gram = dagVisit(rw, gram);
+
+
         // Find root of grammar and fill in `defs` map.
         for (auto iter = gram->args_begin(); iter != gram->args_end(); ++iter)
         {
@@ -2496,51 +2576,7 @@ namespace ufo
               inv = ex->left();
             }
 
-            if (isOpX<FAPP>(ex->right()) &&
-            lexical_cast<string>(bind::fname(ex->right())->left())=="either")
-            {
-              ExprVector newdefargs;
-              vector<cpp_rational> rweights;
-              for (auto itr = ++ex->right()->args_begin();
-              itr != ex->right()->args_end(); ++itr)
-              {
-                if (isOpX<FAPP>(*itr) &&
-                lexical_cast<string>(bind::fname(*itr)->left()) == "prio")
-                {
-                  std::pair<Expr,Expr> keypair(ex->left(), (*itr)->arg(1));
-                  auto prio = lexical_cast<cpp_rational>((*itr)->arg(2));
-                  priomap[keypair] = prio;
-                  rweights.push_back(prio);
-                  newdefargs.push_back((*itr)->arg(1));
-                }
-                else
-                {
-                  std::pair<Expr, Expr> keypair(ex->left(), *itr);
-                  priomap[keypair] = 1;
-                  rweights.push_back(1);
-                  newdefargs.push_back(*itr);
-                }
-              }
-
-              // Simple GCD, to make sure all priorities convert to integers
-              int gcd = 1;
-              for (auto &rw : rweights)
-                gcd *= (int)denominator(rw);
-
-              vector<int> iweights;
-              for (auto &rw : rweights)
-                iweights.push_back((int)(rw * gcd));
-
-              Expr newright = bind::fapp(ex->right()->left(), newdefargs);
-
-              distmap.emplace(newright,
-                std::move(discrete_distribution<int>(iweights.begin(),
-                iweights.end())));
-
-              defs[ex->left()] = newright;
-            }
-            else
-              defs[ex->left()] = ex->right();
+            defs[ex->left()] = ex->right();
           }
           else if (isOpX<FAPP>(ex))
           {
@@ -2627,6 +2663,29 @@ namespace ufo
         printPT(p, depth + 1);
     }
 
+    std::list<ParseTree> deferred_cands;
+    bool didComplain = false;
+    ParseTree getCandidate_Done()
+    {
+      if (deferred_cands.size() != 0)
+      {
+        if ((printLog || b4simpl) && !didComplain)
+        {
+          outs()<< "Done with normal candidates, using deferred ones" << endl;
+          didComplain = true;
+        }
+        ParseTree ret = deferred_cands.front();
+        deferred_cands.pop_front();
+        return ret;
+      }
+
+      outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
+      done = true;
+      //exit(0);
+      return NULL;
+
+    }
+
     Expr getFreshCandidate()
     {
       if (inv == NULL)
@@ -2646,47 +2705,61 @@ namespace ufo
         {
           if (!*getNextCandTrav)
           {
-            outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
-            done = true;
-            //exit(0);
-            return NULL;
+            nextpt = getCandidate_Done();
+            if (!nextpt)
+              return NULL;
+          }
+          else
+          {
+            nextpt = getNextCandTrav->get();
+            (*getNextCandTrav)();
           }
 
-          nextpt = getNextCandTrav->get();
           nextcand = collapsePT(nextpt);
-          (*getNextCandTrav)();
         }
         else if (genmethod == GramGenMethod::NEWTRAV)
         {
           if (rootpos.isdone())
           {
-            outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
-            done = true;
-            //exit(0);
-            return NULL;
+            nextpt = getCandidate_Done();
+            if (!nextpt)
+              return NULL;
           }
-          nextpt = newtrav(inv, rootpos);
-          bool unused = false;
-          assert(gettrav(inv, rootpos, 0, inv, unused, 0) == nextpt);
+          else
+          {
+            nextpt = newtrav(inv, rootpos);
+            bool unused = false;
+            assert(gettrav(inv, rootpos, 0, inv, unused, 0) == nextpt);
+          }
           //printPT(nextpt);
           nextcand = collapsePT(nextpt);
-
-          // Update candnum and totalcandnum
-          foreachExp(nextpt, [&] (const Expr& nt, const Expr& prod)
-            {
-              candnum[make_pair(nt, prod)]++;
-            });
-          totalcandnum++;
         }
         else if (genmethod == GramGenMethod::RND)
         {
           nextcand = getRandCand(inv);
         }
 
+        // Update candnum and totalcandnum
+        foreachExp(nextpt, [&] (const Expr& nt, const Expr& prod)
+          {
+            candnum[make_pair(defs.at(nt), prod)]++;
+          });
+        totalcandnum++;
+
         nextpt.fixchildren();
 
         if (b4simpl)
           outs() << "Before simplification: " << nextcand << endl;
+
+        if (constraints.size() != 0 && !doesSatConstraints(nextpt))
+        {
+          nextcand = NULL;
+          nextpt = NULL;
+          if (b4simpl)
+            outs() << "Doesn't satisfy constraints" << endl;
+          continue;
+        }
+
         nextcand = simplifyBool(simplifyArithm(nextcand));
         if (isOpX<TRUE>(nextcand) || isOpX<FALSE>(nextcand))
         {
@@ -2694,31 +2767,35 @@ namespace ufo
           nextpt = NULL;
           if (b4simpl)
             outs() << "Tautology/Contradiction" << endl;
+          continue;
         }
-        else if (constraints.size() != 0 && !doesSatConstraints(nextpt))
-        {
-          nextcand = NULL;
-          nextpt = NULL;
-          if (b4simpl)
-            outs() << "Doesn't satisfy constraints" << endl;
-        }
-        else if (!gramCands.insert(nextcand).second)
+
+        if (!gramCands.insert(nextcand).second)
         {
           nextcand = NULL;
           nextpt = NULL;
           if (b4simpl)
             outs() << "Old candidate" << endl;
+          continue;
         }
-        else
+
+        if (ptshoulddefer(nextpt))
         {
-          if (gramCandsOrder.size() == MAXGRAMCANDS)
-          {
-            gramCands.erase(gramCandsOrder[0]);
-            gramCandsOrder.pop_front();
-          }
-          gramCandsOrder.push_back(nextcand);
-          break;
+          deferred_cands.push_back(nextpt);
+          nextpt = NULL;
+          nextcand = NULL;
+          if (b4simpl)
+            outs() << "Need to defer candidate" << endl;
+          continue;
         }
+
+        if (gramCandsOrder.size() == MAXGRAMCANDS)
+        {
+          gramCands.erase(gramCandsOrder[0]);
+          gramCandsOrder.pop_front();
+        }
+        gramCandsOrder.push_back(nextcand);
+        break;
       }
 
       return nextcand;
