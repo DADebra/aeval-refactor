@@ -92,6 +92,7 @@ int main (int argc, char ** argv)
   const char *OPT_MBP = "--eqs-mbp";
   const char *OPT_SER = "--serialize";
   const char *OPT_DEBUG = "--debug";
+  const char *OPT_PRINT_SYGUS = "--print-sygus";
 
   if (getBoolValue(OPT_HELP, false, argc, argv) || argc == 1){
     outs () <<
@@ -114,12 +115,13 @@ int main (int argc, char ** argv)
         " " << OPT_ARITHM << "                   do not apply arithmetic constant propagation during parsing\n" <<
         " " << OPT_TO << "                            timeout for each Z3 run in ms (default: 1000)\n" <<
         " " << OPT_SER << "                     serialize the intermediate CHC representation to `chc.smt2` (and exit)\n" <<
-        " " << OPT_DEBUG << " <LVL>                   print debugging information during run (default level: 0)\n\n" <<
+        " " << OPT_DEBUG << " <LVL>                   print debugging information during run (default level: 0)\n" <<
+        " " << OPT_PRINT_SYGUS << "                   print CHC (and grammar if provided) in SyGuS format to stdout\n\n" <<
         "V1 options only:\n" <<
         " " << OPT_ADD_EPSILON << "                           add small probabilities to features that never happen in the code\n" <<
         " " << OPT_K_IND << "                          run k-induction after each learned lemma\n\n" <<
         "V2 and V3 options only:\n" <<
-        " " << OPT_NO_BOOT << "                  disable bootstrapping\n\n" <<
+        " " << OPT_NO_BOOT << "                       disable bootstrapping\n\n" <<
         "V2 options only:\n" <<
         " " << OPT_ITP << "                           bound for itp-based proofs\n" <<
         " " << OPT_BATCH << "                         threshold for how many candidates to check at once\n" <<
@@ -193,6 +195,14 @@ int main (int argc, char ** argv)
   bool d_ser = getBoolValue(OPT_SER, false, argc, argv);
   int debug = getIntValue(OPT_DEBUG, 0, argc, argv);
   bool do_boot = !getBoolValue(OPT_NO_BOOT, false, argc, argv);
+  bool printSygus = getBoolValue(OPT_PRINT_SYGUS, false, argc, argv);
+
+  if (printSygus)
+  {
+    vers3 = true; vers1 = vers2 = false;
+    do_boot = false;
+    debug = 0;
+  }
 
   if (d_m || d_p || d_d || d_s) do_disj = true;
   if (do_disj)
@@ -241,7 +251,7 @@ int main (int argc, char ** argv)
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
                      do_dl, do_mu, do_elim, do_arithm, do_disj, do_prop, mbp_eqs,
-                     d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot,
+                     d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot, printSygus,
                      grammars, gramparams);
   else if (vers2) // run the TACAS'18 algorithm
     learnInvariants2(string(argv[argc-1]), to, max_attempts,

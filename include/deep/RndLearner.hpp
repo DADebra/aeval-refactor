@@ -749,6 +749,61 @@ namespace ufo
         assert(hasOnlyVars(res, ruleManager.invVars[rel]));
       }
     }
+
+    void printSygus()
+    {
+      if (ruleManager.decls.size() > 1)
+      {
+        outs() << "SyGuS output for CHCs with multiple invariants is currently unsupported";
+        exit(9);
+      }
+      int invNum = 0;
+      Expr rel = decls[invNum];
+      SamplFactory& sf = sfs[invNum].back();
+      // For whatever reason, CVC5 doesn't accept 'Inv_*' as a logic...
+      if (ruleManager.hasAnyArrays)
+        outs() << "(set-logic ANIA)\n";
+      else
+        outs() << "(set-logic NIA)\n";
+
+      // Benchmarks sometimes reference uninterpreted variables in their
+      //   queries.
+      for (auto &var : ruleManager.origVrs)
+        outs() << "(declare-var " << m_z3.toSmtLib(var) << " " <<
+          m_z3.toSmtLib(typeOf(var)) << ")\n";
+
+      outs() << "(synth-fun " << rel << "-inv ( ";
+      for (auto &var : ruleManager.invVars[rel])
+      {
+        outs() << "(" << m_z3.toSmtLib(var) << " " <<
+          m_z3.toSmtLib(bind::typeOf(var)) << ") ";
+      }
+      outs() << ") Bool ";
+
+      // Print CFG
+      sf.printSygusGram();
+
+      outs() << ")\n";
+      assert(ruleManager.chcs.size() == 3);
+      for (int i = 0; i < 3; ++i)
+      {
+        auto chc = ruleManager.chcs[i];
+        outs() << "(define-fun " << rel << "-inv_c" << i << " (";
+        for (auto &vec : {chc.srcVars, chc.dstVars})
+          for (auto &var : vec)
+            outs() << "(" << m_z3.toSmtLib(var) << " " << m_z3.toSmtLib(typeOf(var)) << ") ";
+        outs() << ") Bool ";
+        if (chc.isQuery)
+          outs() << "(not " << m_z3.toSmtLib(chc.body) << "))\n";
+        else
+          outs() << m_z3.toSmtLib(chc.body) << ")\n";
+      }
+      outs() << "(inv-constraint " << rel << "-inv ";
+      for (int i = 0; i < 3; ++i)
+        outs() << rel << "-inv_c" << i << " ";
+      outs() << ")\n";
+      outs() << "(check-synth)" << endl;
+    }
   };
 
   inline void learnInvariants(string smt, unsigned to, int maxAttempts,

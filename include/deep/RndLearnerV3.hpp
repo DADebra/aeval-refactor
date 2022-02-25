@@ -2050,7 +2050,7 @@ namespace ufo
   inline void learnInvariants3(string smt, unsigned maxAttempts, unsigned to,
        bool freqs, bool aggp, int dat, int mut, bool doElim, bool doArithm,
        bool doDisj, int doProp, int mbpEqs, bool dAllMbp, bool dAddProp, bool dAddDat,
-       bool dStrenMbp, int dFwd, bool dRec, bool dGenerous, bool dSee, bool ser, int debug, bool dBoot, vector<string> grammars, GramParams gramps)
+       bool dStrenMbp, int dFwd, bool dRec, bool dGenerous, bool dSee, bool ser, int debug, bool dBoot, bool printSygus, vector<string> grammars, GramParams gramps)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -2109,6 +2109,12 @@ namespace ufo
         for (auto & a : cands[dcl]) ds.propagate(dcl, a, true);
       ds.addCandidates(dcl, cands[dcl]);
       ds.prepareSeeds(dcl, cands[dcl]);
+    }
+
+    if (printSygus)
+    {
+      ds.printSygus();
+      exit(0);
     }
 
     if (dBoot)

@@ -347,6 +347,13 @@ namespace ufo
         return gf.done;
       return false;
     }
+
+    void printSygusGram()
+    {
+      if (gf.initialized)
+        return gf.printSygusGram();
+      // TODO: Enable printing of grammars for other factory types.
+    }
   };
 }
 

@@ -300,6 +300,14 @@ namespace ufo
 
     private:
 
+    inline bool isEither(const Expr& exp)
+    {
+      if (!isOpX<FAPP>(exp))
+        return false;
+      string expname = lexical_cast<string>(fname(exp)->left());
+      return expname == "either";
+    }
+
     // exp is e.g. (= iterm iterm), nonterm is e.g. iterm
     bool isRecursive(const Expr& exp, const Expr& nonterm)
     {
@@ -308,15 +316,13 @@ namespace ufo
         return true;
       if (isOpX<FDECL>(exp))
         return false; // We don't need to search this deep
-      if (isOpX<FAPP>(exp))
+      if (isEither(exp))
       {
         // Handle the case of a nested either (e.g. (either 1 (either ...)))
         // We don't want this to be recursive, as this is just a way to
         //   control the traversal and should be equivalent to a non-nested
         //   either.
-        string expname = lexical_cast<string>(bind::fname(exp)->left());
-        if (expname == "either")
-          return false;
+        return false;
       }
       for (auto itr = exp->args_begin(); itr != exp->args_end(); ++itr)
       {
@@ -2494,63 +2500,57 @@ namespace ufo
         RW<function<Expr(Expr)>> rw(new function<Expr(Expr)>(
           [this] (Expr e) -> Expr
         {
-          if (isOpX<FAPP>(e))
+          if (isEither(e))
           {
-            string ename = lexical_cast<string>(bind::fname(e)->left());
-            if (ename == "either")
+            ExprVector newdefargs;
+            vector<cpp_rational> rweights;
+            for (int i = 1; i < e->arity(); ++i)
             {
-              ExprVector newdefargs;
-              vector<cpp_rational> rweights;
-              for (int i = 1; i < e->arity(); ++i)
-              {
-                string iname = "";
-                if (isOpX<FAPP>(e->arg(i)))
-                  iname = lexical_cast<string>(bind::fname(e->arg(i))->left());
-                if (iname == "prio")
-                  newdefargs.push_back(e->arg(i)->arg(1));
-                else
-                  newdefargs.push_back(e->arg(i));
-              }
-              Expr newe = bind::fapp(e->left(), newdefargs);
-
-              for (int i = 1; i < e->arity(); ++i)
-              {
-                cpp_rational prio;
-                string iname = "";
-                if (isOpX<FAPP>(e->arg(i)))
-                  iname = lexical_cast<string>(bind::fname(e->arg(i))->left());
-                if (iname == "prio")
-                {
-                  std::pair<Expr,Expr> keypair(newe, e->arg(i)->arg(1));
-                  prio = lexical_cast<cpp_rational>(e->arg(i)->arg(2));
-                  priomap[keypair] = prio;
-                }
-                else
-                {
-                  std::pair<Expr,Expr> keypair(newe, e->arg(i));
-                  prio = 1.0;
-                  priomap[keypair] = prio;
-                }
-                rweights.push_back(prio);
-              }
-
-              // Simple GCD, to make sure all priorities convert to integers
-              int gcd = 1;
-              for (auto &rw : rweights)
-                gcd *= (int)denominator(rw);
-
-              vector<int> iweights;
-              for (auto &rw : rweights)
-                iweights.push_back((int)(rw * gcd));
-
-              distmap.emplace(newe,
-                std::move(discrete_distribution<int>(iweights.begin(),
-                iweights.end())));
-
-              return newe;
+              string iname = "";
+              if (isOpX<FAPP>(e->arg(i)))
+                iname = lexical_cast<string>(bind::fname(e->arg(i))->left());
+              if (iname == "prio")
+                newdefargs.push_back(e->arg(i)->arg(1));
+              else
+                newdefargs.push_back(e->arg(i));
             }
-            else
-              return e;
+            Expr newe = bind::fapp(e->left(), newdefargs);
+
+            for (int i = 1; i < e->arity(); ++i)
+            {
+              cpp_rational prio;
+              string iname = "";
+              if (isOpX<FAPP>(e->arg(i)))
+                iname = lexical_cast<string>(bind::fname(e->arg(i))->left());
+              if (iname == "prio")
+              {
+                std::pair<Expr,Expr> keypair(newe, e->arg(i)->arg(1));
+                prio = lexical_cast<cpp_rational>(e->arg(i)->arg(2));
+                priomap[keypair] = prio;
+              }
+              else
+              {
+                std::pair<Expr,Expr> keypair(newe, e->arg(i));
+                prio = 1.0;
+                priomap[keypair] = prio;
+              }
+              rweights.push_back(prio);
+            }
+
+            // Simple GCD, to make sure all priorities convert to integers
+            int gcd = 1;
+            for (auto &rw : rweights)
+              gcd *= (int)denominator(rw);
+
+            vector<int> iweights;
+            for (auto &rw : rweights)
+              iweights.push_back((int)(rw * gcd));
+
+            distmap.emplace(newe,
+              std::move(discrete_distribution<int>(iweights.begin(),
+              iweights.end())));
+
+            return newe;
           }
           else
             return e;
@@ -2653,6 +2653,153 @@ namespace ufo
             std::bind(&GRAMfactory::getNextCandTrav_fn, this,
             std::placeholders::_1, inv, currdepth, qvars, currnt)));
       }
+    }
+
+    // Returns a set of all quantified variables (which will be used outside
+    //   of the scope of the quantifier).
+    // Each variable is an FAPP, for direct re-use.
+    ExprUSet getQVars()
+    {
+      ExprUSet qvars;
+      unordered_map<Expr,bool> visited;
+      function<void(Expr)> qvars_visit = [&] (Expr root)
+      {
+        if (visited[root])
+          return;
+        visited[root] = true;
+
+        if (isOpX<FORALL>(root) || isOpX<EXISTS>(root))
+        {
+          for (int i = 0; i < root->arity() - 1; ++i)
+            qvars.insert(fapp(root->arg(i)));
+        }
+
+        for (int i = 0; i < root->arity(); ++i)
+        {
+          if (defs.count(root->arg(i)) != 0)
+            qvars_visit(defs.at(root->arg(i)));
+          qvars_visit(root->arg(i));
+        }
+      };
+      qvars_visit(defs.at(inv));
+      return qvars;
+    }
+
+    void printSygusGram()
+    {
+      // SyGuS requires us to declare the start symbol of the CFG first,
+      //   and that production definitions are in the same order as
+      //   declarations. Thus, decide on the order first.
+      vector<pair<Expr,Expr>> prods; // Key: nt, Value: production(s)
+      prods.push_back(make_pair(inv, defs[inv]));
+      for (auto &pair : defs)
+        if (pair.first != inv)
+          prods.push_back(pair);
+
+      // Include quantified variables as uninterpreted non-terminals
+      for (auto &qvar : getQVars())
+        prods.push_back(make_pair(qvar, nullptr));
+
+      // Declare non-terminals
+      outs() << "(\n  ";
+      for (auto &pair : prods)
+        outs()<<"("<<pair.first<<" "<<z3.toSmtLib(typeOf(pair.first))<<") ";
+      outs() << ") ";
+
+      // Declare productions
+      outs() << "(\n";
+      for (auto &pair : prods)
+      {
+        string nname = lexical_cast<string>(fname(pair.first)->left());
+
+        // Define corresponding non-terminal (again...)
+        outs()<<"    ("<<pair.first<<" "<<z3.toSmtLib(typeOf(pair.first))<<" ";
+        outs() << "( "; // Start of productions
+        int strpos;
+        if (nname == "INT_CONSTS")
+        {
+          outs() << "(Constant Int) ";
+        }
+        else if ((strpos = nname.rfind("VARS")) > 0 && strpos == nname.length() - 4)
+        {
+          // nname ends in "VARS", must be a auto-generated non-terminal
+          // TODO: Ugly hack
+          outs() << "(Variable " << z3.toSmtLib(typeOf(pair.first)) << ") ";
+        }
+        else if (pair.second == NULL)
+        {
+          // I assume (Constant Int) refers to all valid integers
+          outs() << "(Constant " << z3.toSmtLib(typeOf(pair.first)) << ") ";
+        }
+        else
+        {
+          // We allow quantified variables to be used "outside" of their
+          // proper scope. CVC5 doesn't. Re-write Expr's of form:
+          //   (forall ((favar Int)) (...)) to
+          //   (forall ((favar-qvar Int)) (=> (= favar favar-qvar) (...)))
+          RW<function<Expr(Expr)>> quantrw(new function<Expr(Expr)>(
+            [this] (Expr e) -> Expr {
+            if (isOpX<FORALL>(e) || isOpX<EXISTS>(e))
+            {
+              vector<Expr> newquant, conj_eqs;
+              for (int i = 0; i < e->arity() - 1; ++i)
+              {
+                assert(isOpX<FDECL>(e->arg(i)));
+                string varname = lexical_cast<string>(e->arg(i)->left());
+                Expr newvar = fdecl(
+                  mkTerm(varname + "-qvar", m_efac),
+                  vector<Expr>({e->arg(i)->right()}));
+                newquant.push_back(newvar);
+                conj_eqs.push_back(mk<EQ>(fapp(e->arg(i)), fapp(newvar)));
+              }
+              Expr conj = conj_eqs.size() > 1 ?
+                mknary<AND>(conj_eqs.begin(), conj_eqs.end()) :
+                conj_eqs[0];
+              newquant.push_back(mk<IMPL>(conj, e->right()));
+              return mknary<FORALL>(newquant.begin(), newquant.end());
+            }
+
+            if (isEither(e))
+            {
+              vector<Expr> newargs;
+              bool hasEither = false;
+              for (int i = 1; i < e->arity(); ++i)
+              {
+                if (isEither(e->arg(i)))
+                {
+                  hasEither = true;
+                  for (int x = 1; x < e->arg(i)->arity(); ++x)
+                    newargs.push_back(e->arg(i)->arg(x));
+                }
+                else
+                  newargs.push_back(e->arg(i));
+              }
+
+              if (hasEither)
+                return fapp(fname(e), newargs);
+              else
+                return e;
+            }
+
+            return e;
+          }));
+          Expr prod = dagVisit(quantrw, pair.second);
+
+          if (isOpX<FAPP>(prod))
+          {
+            string pname = lexical_cast<string>(fname(prod)->left());
+            if (pname == "either")
+              for (int i = 1; i < prod->arity(); ++i)
+                outs() << z3.toSmtLib(prod->arg(i)) << " ";
+            else
+              outs() << z3.toSmtLib(prod) << " ";
+          }
+          else
+            outs() << z3.toSmtLib(prod);
+        }
+        outs() << "))\n";
+      }
+      outs() << "  )\n";
     }
 
     static void printPT(ParseTree pt, int depth = 0)

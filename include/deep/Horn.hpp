@@ -325,7 +325,7 @@ namespace ufo
         if ((*it)->isQuery) it = dwtoCHCs.erase(it);
           else ++it;
 
-      if (debug >= 0)
+      if (debug > 0)
       {
         outs () << (doElim ? "  Simplified " : "  Parsed ") << "CHCs:\n";
         print(debug >= 3, true);
