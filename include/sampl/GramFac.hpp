@@ -2494,7 +2494,33 @@ namespace ufo
         aug_gram << user_cfg.str();
 
         // Parse combined grammar
-        Expr gram = z3_from_smtlib<EZ3>(z3, aug_gram.str());
+        Expr gram;
+        try
+        {
+          gram = z3_from_smtlib<EZ3>(z3, aug_gram.str());
+        }
+        catch (z3::exception e)
+        {
+          // Z3 has a nasty habit of printing all of the (either ...)
+          //   functions that we define, leading to thousands of lines of
+          //   output on a parsing failure.
+          // Just print all of the lines up until the listed declarations.
+          string emsg = string(e.msg());
+          int startpos = 0, endpos = emsg.find('\n');
+          if (endpos == string::npos)
+          {
+            errs() << emsg << endl;
+            exit(10);
+          }
+          while (emsg.substr(startpos, 9) != "declared:")
+          {
+            errs() << emsg.substr(startpos, endpos - startpos);
+            startpos = endpos + 1;
+            endpos = emsg.find('\n', startpos);
+          }
+          errs() << ")" << endl;
+          exit(10);
+        }
 
         // Parse and rewrite priorities
         RW<function<Expr(Expr)>> rw(new function<Expr(Expr)>(

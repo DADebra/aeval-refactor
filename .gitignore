@@ -41,3 +41,6 @@ compile_commands.json
 old/
 # A set of grammars we don't want committed
 gf_grams/
+
+# Newest version of Horn.hpp will produce this unconditionally if --debug is specified.
+chc.dot
