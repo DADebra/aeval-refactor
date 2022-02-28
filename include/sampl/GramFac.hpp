@@ -2517,6 +2517,8 @@ namespace ufo
             errs() << emsg.substr(startpos, endpos - startpos);
             startpos = endpos + 1;
             endpos = emsg.find('\n', startpos);
+            if (endpos == string::npos)
+              break;
           }
           errs() << ")" << endl;
           exit(10);
