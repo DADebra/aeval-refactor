@@ -261,6 +261,10 @@ namespace ufo
     // Key: Sort, Value: List of variables of that sort.
     unordered_map<Expr, varset> inv_vars;
 
+    // Variables which always increment, decrement, or stay constant within
+    // the loop.
+    unordered_map<Expr, varset> inv_vars_inc, inv_vars_dec, inv_vars_const;
+
     // Variables for the other invariants in the input file.
     // Key: Sort, Value: List of variables of that sort.
     unordered_map<Expr, varset> other_inv_vars;
@@ -2326,6 +2330,21 @@ namespace ufo
       int_consts.insert(iconst);
     }
 
+    void addIncVar(Expr var)
+    {
+      inv_vars_inc[bind::typeOf(var)].insert(var);
+    }
+
+    void addDecVar(Expr var)
+    {
+      inv_vars_dec[bind::typeOf(var)].insert(var);
+    }
+
+    void addConstVar(Expr var)
+    {
+      inv_vars_const[bind::typeOf(var)].insert(var);
+    }
+
     void setParams(GramParams params)
     {
       std::tie(genmethod, maxrecdepth, travdir, travorder, travtype,
@@ -2392,6 +2411,11 @@ namespace ufo
             // Special *_VARS variable
             aug_gram << "(declare-fun " << vars_name << " () " <<
               sort_smt << ")\n";
+
+            // Special *_INC, *_DEC, *_CONST variables
+            for (auto& str : {"_INC", "_DEC", "_CONST"} )
+              aug_gram << "(declare-fun " << vars_name << str << " () " <<
+                sort_smt << ")\n";
             // Generate *_prio declarations
             aug_gram << "(declare-fun prio (" <<
               sort_smt << " Real) " << sort_smt << ")\n";
@@ -2410,9 +2434,12 @@ namespace ufo
         ExprSet donesorts;
         donesorts.insert(mk<BOOL_TY>(m_efac));
 
+        // Which variables we've already declared.
+        ExprUSet donevars;
+
         // Easiest way to handle all_inv_vars and inv_vars
         auto generate_all = [&] (unordered_map<Expr, varset> vars,
-            bool thisinv)
+            const char* suffix, bool thisinv)
         {
           for (auto& pair : vars)
           {
@@ -2433,7 +2460,8 @@ namespace ufo
             }
 
             string vars_name(sort_name);
-              vars_name += "_VARS";
+            vars_name += "_VARS";
+            vars_name += suffix;
             for (auto& c : vars_name)
               c = (char)toupper(c);
 
@@ -2448,6 +2476,8 @@ namespace ufo
             for (auto& var : pair.second)
             {
               // var is a FAPP
+              if (!donevars.insert(var).second)
+                continue;
               aug_gram << z3_to_smtlib(z3, bind::fname(var)) << endl;
             }
 
@@ -2476,8 +2506,11 @@ namespace ufo
           }
         };
 
-        generate_all(inv_vars, true);
-        generate_all(other_inv_vars, false);
+        generate_all(inv_vars, "", true);
+        generate_all(inv_vars_inc, "_INC", true);
+        generate_all(inv_vars_dec, "_DEC", true);
+        generate_all(inv_vars_const, "_CONST", true);
+        generate_all(other_inv_vars, "", false);
 
         // Generate INT_CONSTS declaration
         aug_gram << "(declare-fun " << INT_CONSTS << " () Int)\n";
@@ -2492,6 +2525,13 @@ namespace ufo
         aug_gram << "(declare-fun maxrecdepth (String) Int)\n";
 
         aug_gram << user_cfg.str();
+
+        if (printLog >= 3)
+        {
+          outs() << "User-provided grammar:\n";
+          outs() << aug_gram.str();
+          outs() << endl;
+        }
 
         // Parse combined grammar
         Expr gram;

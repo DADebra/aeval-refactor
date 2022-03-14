@@ -493,6 +493,28 @@ namespace ufo
         }
       }
 
+      // Look for (array) counter variables
+      for (auto& chc : ruleManager.chcs)
+      {
+        if (!chc.isInductive)
+          continue; // Not a loop, ignore
+        if (chc.srcRelation != chc.dstRelation)
+          continue; // Not a loop, ignore
+        for (int i = 0; i < chc.srcVars.size(); ++i)
+        {
+          Expr var = chc.srcVars[i], varprime = chc.dstVars[i];
+          if (!isOpX<INT_TY>(typeOf(var)))
+            continue; // Only consider integer counters
+          if (u.implies(chc.body, mk<GT>(varprime, var)))
+            sf.addIncVar(var); // Variable which always increments
+          if (u.implies(chc.body, mk<LT>(varprime, var)))
+            sf.addDecVar(var); // Variable which always decrements
+          if (u.implies(chc.body, mk<EQ>(varprime, var)))
+            sf.addConstVar(var); // Variable which always stays the same
+        }
+      }
+
+
       arrCands.push_back(ExprSet());
       arrAccessVars.push_back(ExprVector());
       arrIterRanges.push_back(ExprSet());
@@ -761,10 +783,11 @@ namespace ufo
       Expr rel = decls[invNum];
       SamplFactory& sf = sfs[invNum].back();
       // For whatever reason, CVC5 doesn't accept 'Inv_*' as a logic...
-      if (ruleManager.hasAnyArrays)
+      /*if (ruleManager.hasAnyArrays)
         outs() << "(set-logic ANIA)\n";
       else
-        outs() << "(set-logic NIA)\n";
+        outs() << "(set-logic NIA)\n";*/
+      outs() << "(set-logic ALL)\n";
 
       // Benchmarks sometimes reference uninterpreted variables in their
       //   queries.

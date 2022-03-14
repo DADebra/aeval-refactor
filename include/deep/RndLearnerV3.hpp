@@ -346,6 +346,11 @@ namespace ufo
       {
         auto qv = bind::fapp(cand->arg(i));
         auto str = getQvit(invNum, qv);
+        if (!str)
+        {
+          cands.push_back(simplifyQuants(cand));
+          continue;
+        }
         Expr itRepl = str->iter;
 
         if (contains(cand->last()->right(), qv))
