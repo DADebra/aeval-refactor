@@ -261,9 +261,10 @@ namespace ufo
     // Key: Sort, Value: List of variables of that sort.
     unordered_map<Expr, varset> inv_vars;
 
-    // Variables which always increment, decrement, or stay constant within
-    // the loop.
-    unordered_map<Expr, varset> inv_vars_inc, inv_vars_dec, inv_vars_const;
+    // Variables which always increment, decrement, stay constant, or do none
+    // of the above within the loop.
+    unordered_map<Expr, varset> inv_vars_inc, inv_vars_dec, inv_vars_const,
+      inv_vars_unknown;
 
     // Variables for the other invariants in the input file.
     // Key: Sort, Value: List of variables of that sort.
@@ -2345,6 +2346,11 @@ namespace ufo
       inv_vars_const[bind::typeOf(var)].insert(var);
     }
 
+    void addUnknownVar(Expr var)
+    {
+      inv_vars_unknown[bind::typeOf(var)].insert(var);
+    }
+
     void setParams(GramParams params)
     {
       std::tie(genmethod, maxrecdepth, travdir, travorder, travtype,
@@ -2412,8 +2418,8 @@ namespace ufo
             aug_gram << "(declare-fun " << vars_name << " () " <<
               sort_smt << ")\n";
 
-            // Special *_INC, *_DEC, *_CONST variables
-            for (auto& str : {"_INC", "_DEC", "_CONST"} )
+            // Special *_INC, *_DEC, *_CONST, *_UNKN variables
+            for (auto& str : {"_INC", "_DEC", "_CONST", "_UNKN"} )
               aug_gram << "(declare-fun " << vars_name << str << " () " <<
                 sort_smt << ")\n";
             // Generate *_prio declarations
@@ -2510,6 +2516,7 @@ namespace ufo
         generate_all(inv_vars_inc, "_INC", true);
         generate_all(inv_vars_dec, "_DEC", true);
         generate_all(inv_vars_const, "_CONST", true);
+        generate_all(inv_vars_unknown, "_UNKN", true);
         generate_all(other_inv_vars, "", false);
 
         // Generate INT_CONSTS declaration

@@ -124,6 +124,12 @@ namespace ufo
       gf.addConstVar(var);
     }
 
+    // Add variable which is none of the above
+    void addUnknownVar(Expr var)
+    {
+      gf.addUnknownVar(var);
+    }
+
     void initialize(ExprSet& arrCands, ExprVector& arrAccessVars, ExprSet& arrRange)
     {
       bf.initialize();

@@ -507,10 +507,12 @@ namespace ufo
             continue; // Only consider integer counters
           if (u.implies(chc.body, mk<GT>(varprime, var)))
             sf.addIncVar(var); // Variable which always increments
-          if (u.implies(chc.body, mk<LT>(varprime, var)))
+          else if (u.implies(chc.body, mk<LT>(varprime, var)))
             sf.addDecVar(var); // Variable which always decrements
-          if (u.implies(chc.body, mk<EQ>(varprime, var)))
+          else if (u.implies(chc.body, mk<EQ>(varprime, var)))
             sf.addConstVar(var); // Variable which always stays the same
+          else
+            sf.addUnknownVar(var); // Variable which does none of the above
         }
       }
 
