@@ -159,8 +159,17 @@ namespace ufo
                 outs () << "CTI:\n";
                 for (auto & v : invarVars[ind1])
                 {
-                  outs () << "  " << hr.srcVars[v.first] << " = "
-                                  << m->eval(hr.srcVars[v.first]) << "\n";
+                    outs () << "  " << hr.srcVars[v.first] << " = "
+                                    << m->eval(hr.srcVars[v.first]) << "\n";
+                }
+              }
+              else
+              {
+                outs () << "CEX:\n";
+                for (auto & v : invarVars[ind2])
+                {
+                  outs () << "  " << hr.dstVars[v.first] << " = "
+                                  << m->eval(hr.dstVars[v.first]) << "\n";
                 }
               }
             }
