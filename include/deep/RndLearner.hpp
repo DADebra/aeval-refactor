@@ -148,6 +148,23 @@ namespace ufo
         boost::tribool res = m_smt_solver.solve ();
         if (res || indeterminate(res))    // SAT   == candidate failed
         {
+          if (printLog)
+          {
+            if (indeterminate(res)) outs () << "CTI unknown\n";
+            else
+            {
+              auto m = m_smt_solver.getModelPtr();
+              if (hr.isInductive)
+              {
+                outs () << "CTI:\n";
+                for (auto & v : invarVars[ind1])
+                {
+                  outs () << "  " << hr.srcVars[v.first] << " = "
+                                  << m->eval(hr.srcVars[v.first]) << "\n";
+                }
+              }
+            }
+          }
           curCandidates[ind2] = mk<TRUE>(m_efac);
           return checkCandidates();
         }
@@ -344,7 +361,21 @@ namespace ufo
         }
 
         m_smt_safety_solvers[num-1].assertExpr(invApp);
-        safety_progress[num-1] = bool(!m_smt_safety_solvers[num-1].solve ());
+        auto res = m_smt_safety_solvers[num-1].solve ();
+        safety_progress[num-1] = bool(!res);
+
+        if (printLog)
+        {
+          if (indeterminate(res)) outs () << "CEX unknown\n";
+          else if (res)
+          {
+            auto m = m_smt_safety_solvers[num-1].getModelPtr();
+            outs () << "Safety CEX:\n";
+            for (auto & v : invarVars[ind])
+              outs () << "  " << hr.srcVars[v.first] << " = "
+                              << m->eval(hr.srcVars[v.first]) << "\n";
+          }
+        }
 
         numOfSMTChecks++;
       }
@@ -471,7 +502,7 @@ namespace ufo
       curCandidates.push_back(NULL);
 
       sfs.push_back(vector<SamplFactory> ());
-      sfs.back().push_back(SamplFactory (m_efac, m_z3, aggressivepruning, 
+      sfs.back().push_back(SamplFactory (m_efac, m_z3, aggressivepruning,
             printLog));
       SamplFactory& sf = sfs.back().back();
 
