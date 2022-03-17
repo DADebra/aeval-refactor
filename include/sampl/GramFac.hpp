@@ -2886,15 +2886,15 @@ namespace ufo
     }
 
     std::list<ParseTree> deferred_cands;
-    bool didComplain = false;
+    bool ignoreprios = false;
     ParseTree getCandidate_Done()
     {
       if (deferred_cands.size() != 0)
       {
-        if ((printLog || b4simpl) && !didComplain)
+        if ((printLog || b4simpl) && !ignoreprios)
         {
           outs()<< "Done with normal candidates, using deferred ones" << endl;
-          didComplain = true;
+          ignoreprios = true;
         }
         ParseTree ret = deferred_cands.front();
         deferred_cands.pop_front();
@@ -2992,22 +2992,22 @@ namespace ufo
           continue;
         }
 
-        if (!gramCands.insert(nextcand).second)
-        {
-          nextcand = NULL;
-          nextpt = NULL;
-          if (b4simpl)
-            outs() << "Old candidate" << endl;
-          continue;
-        }
-
-        if (ptshoulddefer(nextpt))
+        if (!ignoreprios && ptshoulddefer(nextpt))
         {
           deferred_cands.push_back(nextpt);
           nextpt = NULL;
           nextcand = NULL;
           if (b4simpl)
             outs() << "Need to defer candidate" << endl;
+          continue;
+        }
+
+        if (!gramCands.insert(nextcand).second)
+        {
+          nextcand = NULL;
+          nextpt = NULL;
+          if (b4simpl)
+            outs() << "Old candidate" << endl;
           continue;
         }
 
