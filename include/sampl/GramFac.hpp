@@ -2894,8 +2894,9 @@ namespace ufo
         if ((printLog || b4simpl) && !ignoreprios)
         {
           outs()<< "Done with normal candidates, using deferred ones" << endl;
-          ignoreprios = true;
         }
+        if (!ignoreprios)
+          ignoreprios = true;
         ParseTree ret = deferred_cands.front();
         deferred_cands.pop_front();
         return ret;
