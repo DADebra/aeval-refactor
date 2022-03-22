@@ -20,11 +20,12 @@
 
 (assert (= ANY_INV (either
   (= (+ iterm4 iterm3 iterm2) 0)
-  (= (+ iterm2 iterm3 iterm4) 0)
+  (= 0 (+ iterm2 iterm3 iterm4))
   (= (+ iterm3 iterm2 iterm4) 0)
-  (= (+ iterm4 iterm2 iterm3) 0)
+  (= 0 (+ iterm4 iterm2 iterm3))
   (= (+ iterm4 iterm3) 0)
-  (= (+ iterm3 iterm4) 0)
+  (= 0 (+ iterm3 iterm4))
   (= (+ iterm1 iterm3) 0)
-  (= (+ iterm4 iterm1) 0)
+  (= 0 (+ iterm4 iterm1))
+  (= (+ iterm1 iterm1) (+ iterm2 iterm2))
 )))

@@ -8,6 +8,7 @@
 benches="abdu_01.smt2" # Doesn't matter
 cfg="trav1.5_cfg.smt2" # Doesn't matter (though this one is good to use)
 extrasettings="--maxrecdepth 1" # Additional settings to apply
+comp_lines=1000 # More than usual
 
 traversalsettings=""
 for type in striped ordered

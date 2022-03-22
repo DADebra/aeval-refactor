@@ -1472,7 +1472,7 @@ namespace ufo
           {
             if (i != travpos.pos)
             {
-              assert(constposchildat(i).pos >= 0);
+              assert(constposchildat(i).pos > -2);
               bool needdefer = false;
               if (travprio != TravParamPrio::DFS && i >= travpos.pos.min)
               {

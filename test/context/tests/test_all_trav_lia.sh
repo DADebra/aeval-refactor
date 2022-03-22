@@ -15,6 +15,8 @@ benches="abdu_01.smt2 const_mod_1.smt2 s_split_01.smt2 s_split_09.smt2
     dillig14.smt2 dillig43.smt2 exact_iters_2.smt2 s_disj_ite_03.smt2
     s_mutants_07.smt2 s_seeds_02.smt2 s_triv_03.smt2 trex3.smt2"
 
+# Disabled until I add test grouping (because these tests take like 30 mins)
+if false; then
 traversalsettings=""
 for type in striped ordered
 do
@@ -40,3 +42,4 @@ do
         done
     done
 done
+fi
