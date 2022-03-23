@@ -23,8 +23,8 @@ namespace ufo
 
     public:
 
-    RndLearnerV2 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp, int debug) :
-      RndLearner (efac, z3, r, to, /*k-induction*/ false, freqs, /*epsilon*/ true, aggp, debug){}
+    RndLearnerV2 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp, int debug, string fileName) :
+      RndLearner (efac, z3, r, to, /*k-induction*/ false, freqs, /*epsilon*/ true, aggp, debug, fileName){}
 
     Expr getModel(ExprVector& vars)
     {
@@ -333,6 +333,13 @@ namespace ufo
       outIters = iter - 1;
       return success;
     }
+
+    virtual bool checkReadLemmasSafety()
+    {
+      bool success = true;
+      for (auto a : qr) success = success && checkSafetyAndReset(a);
+      return success;
+    }
   };
   
   inline void learnInvariants2(string smt, unsigned to, int maxAttempts,
@@ -343,7 +350,7 @@ namespace ufo
 
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
-    RndLearnerV2 ds(m_efac, z3, ruleManager, to, freqs, aggp, debug);
+    RndLearnerV2 ds(m_efac, z3, ruleManager, to, freqs, aggp, debug, smt);
 
     if (!ds.fillgrams(grammars))
       return; // Couldn't find grammars for all invariants.
@@ -381,6 +388,7 @@ namespace ufo
     {
       ds.calculateStatistics();
       ds.prioritiesDeferred();
+      ds.readLemmas();
 
       int iters = -1;
       success = ds.synthesize(maxAttempts, batch, retry, iters);
@@ -392,6 +400,8 @@ namespace ufo
     }
 
     if (success) ds.printSolution();
+    else ds.writeAllLemmas();
+    exit(success ? 0 : 1);
   }
 }
 

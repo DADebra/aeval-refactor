@@ -71,8 +71,8 @@ namespace ufo
 
     RndLearnerV3 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp,
                   int _mu, int _da, bool _d, int _m, bool _dAllMbp, bool _dAddProp,
-                  bool _dAddDat, bool _dStrenMbp, int _dFwd, bool _dR, bool _dG, int _to, int debug) :
-      RndLearnerV2 (efac, z3, r, to, freqs, aggp, debug),
+                  bool _dAddDat, bool _dStrenMbp, int _dFwd, bool _dR, bool _dG, int _to, int debug, string fileName) :
+      RndLearnerV2 (efac, z3, r, to, freqs, aggp, debug, fileName),
                   mut(_mu), dat(_da), dDisj(_d), mbpEqs(_m), dAllMbp(_dAllMbp),
                   dAddProp(_dAddProp), dAddDat(_dAddDat), dStrenMbp(_dStrenMbp),
                   dFwd(_dFwd), dRecycleCands(_dR), dGenerous(_dG), to(_to) {}
@@ -2050,6 +2050,11 @@ namespace ufo
           pprint(c.second, 4);
         }
     }
+
+    virtual bool checkReadLemmasSafety()
+    {
+      return checkAllLemmas();
+    }
   };
 
   inline void learnInvariants3(string smt, unsigned maxAttempts, unsigned to,
@@ -2082,7 +2087,7 @@ namespace ufo
 
     RndLearnerV3 ds(m_efac, z3, ruleManager, to, freqs, aggp, mut, dat,
                     doDisj, mbpEqs, dAllMbp, dAddProp, dAddDat, dStrenMbp,
-                    dFwd, dRec, dGenerous, to, debug);
+                    dFwd, dRec, dGenerous, to, debug, smt);
     ds.boot = dBoot;
 
     if (!ds.fillgrams(grammars))
@@ -2127,8 +2132,12 @@ namespace ufo
 
     ds.calculateStatistics();
     ds.deferredPriorities();
+    ds.readLemmas();
     std::srand(std::time(0));
-    ds.synthesize(maxAttempts);
+    bool success = ds.synthesize(maxAttempts);
+    if (!success)
+      ds.writeAllLemmas();
+    exit(success ? 0 : 1);
   }
 }
 

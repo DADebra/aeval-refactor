@@ -44,3 +44,4 @@ gf_grams/
 
 # Newest version of Horn.hpp will produce this unconditionally if --debug is specified.
 chc.dot
+lemmas_*

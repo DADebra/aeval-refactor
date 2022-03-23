@@ -50,17 +50,18 @@ namespace ufo
 
     bool statsInitialized;
     int printLog;
+    string fileName;          // the name of the SMT input file
 
     public:
 
     // The locations of the CFGs. Key: Invariant Name, Value: CFG path
     unordered_map<string, string> grams;
 
-    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, int debug) :
+    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, int debug, string _fileName) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3, to), u(efac, to),
       invNumber(0), numOfSMTChecks(0), oneInductiveProof(true), kind_succeeded (!k),
       densecode(b1), addepsilon(b2), aggressivepruning(b3),
-      statsInitialized(false), printLog(debug){}
+      statsInitialized(false), printLog(debug), fileName(_fileName) {}
 
     bool isTautology (Expr a)     // adjusted for big disjunctions
     {
@@ -148,7 +149,7 @@ namespace ufo
         boost::tribool res = m_smt_solver.solve ();
         if (res || indeterminate(res))    // SAT   == candidate failed
         {
-          if (printLog)
+          if (printLog >= 2)
           {
             if (indeterminate(res)) outs () << "CTI unknown\n";
             else
@@ -373,7 +374,7 @@ namespace ufo
         auto res = m_smt_safety_solvers[num-1].solve ();
         safety_progress[num-1] = bool(!res);
 
-        if (printLog)
+        if (printLog >= 2)
         {
           if (indeterminate(res)) outs () << "CEX unknown\n";
           else if (res)
@@ -668,7 +669,7 @@ namespace ufo
       }
     }
 
-    void synthesize(int maxAttempts, ExprSet& itpCands)
+    bool synthesize(int maxAttempts, ExprSet& itpCands)
     {
       if (printLog) outs () << "\nSAMPLING\n========\n";
       bool success = false;
@@ -756,7 +757,7 @@ namespace ufo
 
       if (printLog) outs () << "        number of SMT checks: " << numOfSMTChecks << "\n";
       if (success) printSolution();
-      exit(success ? 0 : 1);
+      return success;
     }
 
     void checkAllLemmas(vector<ExprSet>& lms, vector<ExprSet>& curMinLms, int& numTries, int invInd)
@@ -811,7 +812,142 @@ namespace ufo
         u.print(res);
         outs () << ")\n";
         assert(hasOnlyVars(res, ruleManager.invVars[rel]));
+
+        writeLemmas(i, simplify);
       }
+    }
+
+    string getLemmaFilename(int invNum)
+    {
+      assert(invNum >= 0 && invNum < invNumber);
+      size_t nameStart, nameEnd, nameLen;
+      nameStart = fileName.rfind('/');
+      if (nameStart == string::npos)
+        nameStart = 0;
+      else
+        ++nameStart;
+
+      nameEnd = fileName.rfind(".smt2");
+      if (nameEnd != string::npos)
+        nameLen = nameEnd - nameStart;
+      else
+        nameLen = string::npos;
+
+      // TODO: For now, in the current directory. Should be in input's dir?
+      return string("lemmas_") + fileName.substr(nameStart, nameLen) + 
+        "_" + lexical_cast<string>(decls[invNum]) + ".smt2";
+    }
+
+    void writeLemmas(int invNum, bool simplify = true)
+    {
+      ExprSet lms = sfs[invNum].back().learnedExprs;
+      if (lms.size() == 0)
+        return;
+      if (simplify)
+      {
+        // TODO: I think this is good enough?
+        u.removeRedundantConjuncts(lms);
+      }
+
+      ofstream lemmaFile(getLemmaFilename(invNum));
+      for (auto &var : ruleManager.invVars[decls[invNum]])
+        lemmaFile << "(declare-fun " << m_z3.toSmtLib(var) << " () " <<
+          m_z3.toSmtLib(bind::typeOf(var)) << ")\n";
+      for (Expr lemma : lms)
+      {
+        lemmaFile << "(assert ";
+        u.print(lemma, lemmaFile);
+        lemmaFile << ")\n";
+      }
+    }
+
+    void writeAllLemmas(bool simplify = true)
+    {
+      for (int i = 0; i < invNumber; ++i)
+        writeLemmas(i, simplify);
+    }
+
+    void readLemmas()
+    {
+      for (int i = 0; i < invNumber; ++i)
+      {
+        string lemmaFilename = getLemmaFilename(i);
+        { ifstream lemmaFile(lemmaFilename);
+          if (!lemmaFile)
+            continue;
+        }
+        SamplFactory &sf = sfs[i].back();
+        string lemmaStr;
+        try
+        {
+          Expr lemmas = z3_from_smtlib_file<EZ3>(m_z3, lemmaFilename.c_str());
+          assert(isOpX<AND>(lemmas));
+          for (int x = 0; x < lemmas->arity(); ++x)
+          {
+            sf.learnedExprs.insert(lemmas->arg(x));
+            sf.assignPrioritiesForLearned(sf.exprToSampl(lemmas->arg(x)));
+          }
+        }
+        catch (z3::exception e)
+        {
+          outs() << "WARNING:\n";
+          outs() << "Couldn't parse lemma file \"" << lemmaFilename << "\":\n";
+          outs() << e.msg();
+          outs() << endl;
+        }
+      }
+
+      checkReadLemmas();
+    }
+
+    void checkReadLemmas()
+    {
+      for (int i = 0; i < invNumber; ++i)
+      {
+        ExprSet &lemmas = sfs[i].back().learnedExprs;
+        if (lemmas.size() == 0)
+          continue;
+        for (auto itr = lemmas.begin(); itr != lemmas.end(); ++itr)
+        {
+          curCandidates[i] = *itr;
+          if (!checkCandidates())
+          {
+            outs() << "WARNING: Lemma file contains non-inductive expression: " << z3_to_smtlib<EZ3>(m_z3, *itr) << ". Discarding.\n";
+            for (int i = 0; i < invNumber; ++i)
+            {
+              itr = sfs[i].back().learnedExprs.erase(itr);
+            }
+          }
+          curCandidates[i] = NULL;
+        }
+      }
+
+      if (checkReadLemmasSafety())
+      {
+        outs() << "Success after reading known lemmas from file\n";
+        printSolution();
+        exit(0);
+      }
+    }
+
+    // True == all safe
+    virtual bool checkReadLemmasSafety()
+    {
+      bool success = true;
+      for (int i = 0; i < invNumber; ++i)
+      {
+        if (sfs[i].back().learnedExprs.size() == 0)
+          return false;
+        m_smt_solver.reset();
+        curCandidates[i] = sfs[i].back().getAllLemmas();
+        assert(checkCandidates());
+        success &= checkSafety();
+        curCandidates[i] = NULL;
+      }
+      if (!success)
+        for (int i = 0; i < invNumber; ++i)
+          curCandidates[i] = NULL;
+      return success;
     }
 
     void printSygus()
@@ -879,7 +1015,7 @@ namespace ufo
 
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
-    RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug);
+    RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt);
 
     if (!ds.fillgrams(grammars))
       return; // Couldn't find grammars for all invariants.
@@ -909,7 +1045,11 @@ namespace ufo
     }
 
     ds.calculateStatistics();
-    ds.synthesize(maxAttempts, itpCands);
+    ds.readLemmas();
+    bool success = ds.synthesize(maxAttempts, itpCands);
+    if (!success)
+      ds.writeAllLemmas();
+    exit(success ? 0 : 1);
   };
 }
 
