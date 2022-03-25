@@ -52,16 +52,19 @@ namespace ufo
     int printLog;
     string fileName;          // the name of the SMT input file
 
+    int strenOrWeak;          // 0 = none, 1 = weaken, 2 = strengthen, 3 = both; interpreted as bit field
+
     public:
 
     // The locations of the CFGs. Key: Invariant Name, Value: CFG path
     unordered_map<string, string> grams;
 
-    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, int debug, string _fileName) :
+    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, int debug, string _fileName, int sw) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3, to), u(efac, to),
       invNumber(0), numOfSMTChecks(0), oneInductiveProof(true), kind_succeeded (!k),
       densecode(b1), addepsilon(b2), aggressivepruning(b3),
-      statsInitialized(false), printLog(debug), fileName(_fileName) {}
+      statsInitialized(false), printLog(debug), fileName(_fileName),
+      strenOrWeak(sw) {}
 
     bool isTautology (Expr a)     // adjusted for big disjunctions
     {
@@ -669,6 +672,25 @@ namespace ufo
       }
     }
 
+    Expr getStrenOrWeak(Expr cand, int invind)
+    {
+      Expr rel = decls[invind];
+      for (auto &chc : ruleManager.chcs)
+      {
+        if (chc.isFact && chc.dstRelation == rel && (strenOrWeak & 1))
+        {
+          cand = mk<OR>(cand, chc.body); // Interpret as weakening of pre-condition
+          for (auto & v : invarVars[invind])
+          {
+            cand = replaceAll(cand, chc.dstVars[v.first], v.second);
+          }
+        }
+        if (chc.isQuery && chc.srcRelation == rel && (strenOrWeak & 2))
+          cand = mk<AND>(cand, mk<NEG>(chc.body)); // Interpret as strengthening of post-condition
+      }
+      return cand;
+    }
+
     bool synthesize(int maxAttempts, ExprSet& itpCands)
     {
       if (printLog) outs () << "\nSAMPLING\n========\n";
@@ -709,7 +731,7 @@ namespace ufo
             break;
           }
 
-          curCandidates[j] = cand;
+          curCandidates[j] = getStrenOrWeak(cand, j);
         }
 
         if (alldone) break;
@@ -1008,14 +1030,14 @@ namespace ufo
   };
 
   inline void learnInvariants(string smt, unsigned to, int maxAttempts,
-                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, vector<string> grammars, GramParams gramparams)
+                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, vector<string> grammars, GramParams gramparams)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
 
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
-    RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt);
+    RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt, sw);
 
     if (!ds.fillgrams(grammars))
       return; // Couldn't find grammars for all invariants.

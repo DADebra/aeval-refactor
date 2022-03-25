@@ -91,6 +91,8 @@ int main (int argc, char ** argv)
   const char *OPT_REC = "--re";
   const char *OPT_MBP = "--eqs-mbp";
   const char *OPT_SER = "--serialize";
+  //const char *OPT_TEMPL = "--inv-templ";
+  const char *OPT_NO_WEAK = "--no-weaken";
   const char *OPT_DEBUG = "--debug";
   const char *OPT_PRINT_SYGUS = "--print-sygus";
 
@@ -115,6 +117,8 @@ int main (int argc, char ** argv)
         " " << OPT_ARITHM << "                   do not apply arithmetic constant propagation during parsing\n" <<
         " " << OPT_TO << "                            timeout for each Z3 run in ms (default: 1000)\n" <<
         " " << OPT_SER << "                     serialize the intermediate CHC representation to `chc.smt2` (and exit)\n" <<
+        //" " << OPT_TEMPL << " <0 = none, 1 = weaken pre-condition, 2 = strengthen post-condition, 3 = both>\n" <<
+        " " << OPT_NO_WEAK << "                     don't look for a weakening of the pre-condition\n" <<
         " " << OPT_DEBUG << " <LVL>                   print debugging information during run (default level: 0)\n" <<
         " " << OPT_PRINT_SYGUS << "                   print CHC (and grammar if provided) in SyGuS format to stdout\n\n" <<
         "V1 options only:\n" <<
@@ -193,6 +197,8 @@ int main (int argc, char ** argv)
   bool d_g = !getBoolValue(OPT_D6, false, argc, argv);
   bool d_r = getBoolValue(OPT_REC, false, argc, argv);
   bool d_ser = getBoolValue(OPT_SER, false, argc, argv);
+  //int templ = getIntValue(OPT_TEMPL, 1, argc, argv);
+  int templ = getBoolValue(OPT_NO_WEAK, false, argc, argv) ? 0 : 1;
   int debug = getIntValue(OPT_DEBUG, 0, argc, argv);
   bool do_boot = !getBoolValue(OPT_NO_BOOT, false, argc, argv);
   bool printSygus = getBoolValue(OPT_PRINT_SYGUS, false, argc, argv);
@@ -251,15 +257,15 @@ int main (int argc, char ** argv)
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
                      do_dl, do_mu, do_elim, do_arithm, do_disj, do_prop, mbp_eqs,
-                     d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot, printSygus,
+                     d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot, templ, printSygus,
                      grammars, gramparams);
   else if (vers2) // run the TACAS'18 algorithm
     learnInvariants2(string(argv[argc-1]), to, max_attempts,
-                  itp, batch, retry, densecode, aggressivepruning, debug, do_boot,
+                  itp, batch, retry, densecode, aggressivepruning, debug, do_boot, templ,
                   grammars, gramparams);
   else            // run the FMCAD'17 algorithm
     learnInvariants(string(argv[argc-1]), to, max_attempts,
-                  kinduction, itp, densecode, addepsilon, aggressivepruning, debug,
+                  kinduction, itp, densecode, addepsilon, aggressivepruning, debug, templ,
                   grammars, gramparams);
   return 0;
 }
