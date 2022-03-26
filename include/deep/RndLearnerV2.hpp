@@ -23,8 +23,8 @@ namespace ufo
 
     public:
 
-    RndLearnerV2 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp, int debug, string fileName, int sw) :
-      RndLearner (efac, z3, r, to, /*k-induction*/ false, freqs, /*epsilon*/ true, aggp, debug, fileName, sw){}
+    RndLearnerV2 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp, int debug, string fileName, int sw, bool sl) :
+      RndLearner (efac, z3, r, to, /*k-induction*/ false, freqs, /*epsilon*/ true, aggp, debug, fileName, sw, sl){}
 
     Expr getModel(ExprVector& vars)
     {
@@ -345,14 +345,14 @@ namespace ufo
   };
   
   inline void learnInvariants2(string smt, unsigned to, int maxAttempts,
-                               int itp, int batch, int retry, bool freqs, bool aggp, int debug, bool dBoot, int sw, vector<string> grammars, GramParams gramps)
+                               int itp, int batch, int retry, bool freqs, bool aggp, int debug, bool dBoot, int sw, bool sl, vector<string> grammars, GramParams gramps)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
 
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
-    RndLearnerV2 ds(m_efac, z3, ruleManager, to, freqs, aggp, debug, smt, sw);
+    RndLearnerV2 ds(m_efac, z3, ruleManager, to, freqs, aggp, debug, smt, sw, sl);
 
     if (!ds.fillgrams(grammars))
       return; // Couldn't find grammars for all invariants.

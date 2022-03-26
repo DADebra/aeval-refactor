@@ -53,18 +53,19 @@ namespace ufo
     string fileName;          // the name of the SMT input file
 
     int strenOrWeak;          // 0 = none, 1 = weaken, 2 = strengthen, 3 = both; interpreted as bit field
+    bool saveLemmas;          // false = don't save/restore lemmas from file
 
     public:
 
     // The locations of the CFGs. Key: Invariant Name, Value: CFG path
     unordered_map<string, string> grams;
 
-    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, int debug, string _fileName, int sw) :
+    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, int debug, string _fileName, int sw, bool sl) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3, to), u(efac, to),
       invNumber(0), numOfSMTChecks(0), oneInductiveProof(true), kind_succeeded (!k),
       densecode(b1), addepsilon(b2), aggressivepruning(b3),
       statsInitialized(false), printLog(debug), fileName(_fileName),
-      strenOrWeak(sw) {}
+      strenOrWeak(sw), saveLemmas(sl) {}
 
     bool isTautology (Expr a)     // adjusted for big disjunctions
     {
@@ -695,6 +696,7 @@ namespace ufo
     {
       if (printLog) outs () << "\nSAMPLING\n========\n";
       bool success = false;
+      bool alldone = true;
       int iter = 1;
 
       for (int i = 0; i < maxAttempts; i++)
@@ -702,7 +704,6 @@ namespace ufo
         // first, guess candidates for each inv.declaration
 
         bool skip = false;
-        bool alldone = true;
         for (int j = 0; j < invNumber; j++)
         {
           if (curCandidates[j] != NULL) continue;   // if the current candidate is good enough
@@ -862,6 +863,8 @@ namespace ufo
 
     void writeLemmas(int invNum, bool simplify = true)
     {
+      if (!saveLemmas)
+        return;
       ExprSet lms = sfs[invNum].back().learnedExprs;
       if (lms.size() == 0)
         return;
@@ -891,6 +894,8 @@ namespace ufo
 
     void readLemmas()
     {
+      if (!saveLemmas)
+        return;
       for (int i = 0; i < invNumber; ++i)
       {
         string lemmaFilename = getLemmaFilename(i);
@@ -1030,14 +1035,14 @@ namespace ufo
   };
 
   inline void learnInvariants(string smt, unsigned to, int maxAttempts,
-                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, vector<string> grammars, GramParams gramparams)
+                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, bool sl, vector<string> grammars, GramParams gramparams)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
 
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
-    RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt, sw);
+    RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt, sw, sl);
 
     if (!ds.fillgrams(grammars))
       return; // Couldn't find grammars for all invariants.

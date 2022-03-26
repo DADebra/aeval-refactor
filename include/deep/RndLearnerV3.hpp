@@ -71,8 +71,8 @@ namespace ufo
 
     RndLearnerV3 (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool freqs, bool aggp,
                   int _mu, int _da, bool _d, int _m, bool _dAllMbp, bool _dAddProp,
-                  bool _dAddDat, bool _dStrenMbp, int _dFwd, bool _dR, bool _dG, int _to, int debug, string fileName, int sw) :
-      RndLearnerV2 (efac, z3, r, to, freqs, aggp, debug, fileName, sw),
+                  bool _dAddDat, bool _dStrenMbp, int _dFwd, bool _dR, bool _dG, int _to, int debug, string fileName, int sw, bool sl) :
+      RndLearnerV2 (efac, z3, r, to, freqs, aggp, debug, fileName, sw, sl),
                   mut(_mu), dat(_da), dDisj(_d), mbpEqs(_m), dAllMbp(_dAllMbp),
                   dAddProp(_dAddProp), dAddDat(_dAddDat), dStrenMbp(_dStrenMbp),
                   dFwd(_dFwd), dRecycleCands(_dR), dGenerous(_dG), to(_to) {}
@@ -2063,7 +2063,7 @@ namespace ufo
   inline void learnInvariants3(string smt, unsigned maxAttempts, unsigned to,
        bool freqs, bool aggp, int dat, int mut, bool doElim, bool doArithm,
        bool doDisj, int doProp, int mbpEqs, bool dAllMbp, bool dAddProp, bool dAddDat,
-       bool dStrenMbp, int dFwd, bool dRec, bool dGenerous, bool dSee, bool ser, int debug, bool dBoot, int sw, bool printSygus, vector<string> grammars, GramParams gramps)
+       bool dStrenMbp, int dFwd, bool dRec, bool dGenerous, bool dSee, bool ser, int debug, bool dBoot, int sw, bool sl, bool printSygus, vector<string> grammars, GramParams gramps)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -2090,7 +2090,7 @@ namespace ufo
 
     RndLearnerV3 ds(m_efac, z3, ruleManager, to, freqs, aggp, mut, dat,
                     doDisj, mbpEqs, dAllMbp, dAddProp, dAddDat, dStrenMbp,
-                    dFwd, dRec, dGenerous, to, debug, smt, sw);
+                    dFwd, dRec, dGenerous, to, debug, smt, sw, sl);
     ds.boot = dBoot;
 
     if (!ds.fillgrams(grammars))
