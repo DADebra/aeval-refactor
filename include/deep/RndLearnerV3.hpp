@@ -940,7 +940,7 @@ namespace ufo
         if (printLog >= 3 && dRecycleCands)
           outs () << "Number of deferred candidates: " << deferredCandidates[invNum].size() << "\n";
 
-        if (rndStarted) cand = getStrenOrWeak(cand, invNum);
+        if (rndStarted) cand = getStrenOrWeak(cand, invNum, strenOrWeak);
 
         if (printLog) outs () << " - - - Sampled cand (#" << i << ") for " << decls[invNum] << ": "
                               << cand << (printLog >= 3 ? " 😎\n" : "\n");

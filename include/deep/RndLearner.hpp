@@ -29,6 +29,7 @@ namespace ufo
     ExprVector decls;
     vector<vector<SamplFactory>> sfs;
     ExprVector curCandidates;
+    bool changedCandidates = false;
 
     vector<map<int, Expr>> invarVars;
     vector<ExprVector> invarVarsShort;
@@ -123,21 +124,24 @@ namespace ufo
           ind1 = getVarIndex(hr.srcRelation, decls);
           SamplFactory& sf1 = sfs[ind1].back();
 
-          cand1 = curCandidates[ind1];
-
-          for (auto & v : invarVars[ind1])
-          {
-            cand1 = replaceAll(cand1, v.second, hr.srcVars[v.first]);
-          }
-          m_smt_solver.assertExpr(cand1);
-
           lmApp = sf1.getAllLemmas();
           for (auto & v : invarVars[ind1])
           {
             lmApp = replaceAll(lmApp, v.second, hr.srcVars[v.first]);
           }
           m_smt_solver.assertExpr(lmApp);
+
+          cand1 = curCandidates[ind1];
+
+          for (auto & v : invarVars[ind1])
+          {
+            cand1 = replaceAll(cand1, v.second, hr.srcVars[v.first]);
+          }
+          m_smt_solver.push();
+          m_smt_solver.assertExpr(cand1);
         }
+        else
+          m_smt_solver.push();
 
         // pushing dst relation
         cand2 = curCandidates[ind2];
@@ -153,34 +157,53 @@ namespace ufo
         boost::tribool res = m_smt_solver.solve ();
         if (res || indeterminate(res))    // SAT   == candidate failed
         {
-          if (printLog >= 2)
+          if (!bool(strenOrWeak & 2))
           {
-            if (indeterminate(res)) outs () << "CTI unknown\n";
-            else
+            m_smt_solver.pop();
+            if (!isOpX<TRUE>(hr.srcRelation))
+              m_smt_solver.assertExpr(getStrenOrWeak(cand1, ind1, 2));
+            m_smt_solver.assertExpr(mk<NEG>(getStrenOrWeak(cand2, ind2, 2, true)));
+            res = m_smt_solver.solve();
+            numOfSMTChecks++;
+            if (!res)
             {
-              auto m = m_smt_solver.getModelPtr();
-              if (hr.isInductive)
-              {
-                outs () << "CTI:\n";
-                for (auto & v : invarVars[ind1])
-                {
-                    outs () << "  " << hr.srcVars[v.first] << " = "
-                                    << m->eval(hr.srcVars[v.first]) << "\n";
-                }
-              }
+              changedCandidates = true;
+              if (!isOpX<TRUE>(hr.srcRelation) && ind1 != ind2)
+                curCandidates[ind1] = getStrenOrWeak(curCandidates[ind1], ind1, 2);
+              curCandidates[ind2] = getStrenOrWeak(curCandidates[ind2], ind2, 2);
+            }
+          }
+          if (res || indeterminate(res))
+          {
+            if (printLog >= 2)
+            {
+              if (indeterminate(res)) outs () << "CTI unknown\n";
               else
               {
-                outs () << "CEX:\n";
-                for (auto & v : invarVars[ind2])
+                auto m = m_smt_solver.getModelPtr();
+                if (hr.isInductive)
                 {
-                  outs () << "  " << hr.dstVars[v.first] << " = "
-                                  << m->eval(hr.dstVars[v.first]) << "\n";
+                  outs () << "CTI:\n";
+                  for (auto & v : invarVars[ind1])
+                  {
+                      outs () << "  " << hr.srcVars[v.first] << " = "
+                                      << m->eval(hr.srcVars[v.first]) << "\n";
+                  }
+                }
+                else
+                {
+                  outs () << "CEX:\n";
+                  for (auto & v : invarVars[ind2])
+                  {
+                    outs () << "  " << hr.dstVars[v.first] << " = "
+                                    << m->eval(hr.dstVars[v.first]) << "\n";
+                  }
                 }
               }
             }
+            curCandidates[ind2] = mk<TRUE>(m_efac);
+            return checkCandidates();
           }
-          curCandidates[ind2] = mk<TRUE>(m_efac);
-          return checkCandidates();
         }
       }
 
@@ -673,21 +696,29 @@ namespace ufo
       }
     }
 
-    Expr getStrenOrWeak(Expr cand, int invind)
+    Expr getStrenOrWeak(Expr cand, int invind, int sw, bool isprime = false)
     {
       Expr rel = decls[invind];
       for (auto &chc : ruleManager.chcs)
       {
-        if (chc.isFact && chc.dstRelation == rel && (strenOrWeak & 1))
+        if (chc.isFact && chc.dstRelation == rel && (sw & 1))
         {
           cand = mk<OR>(cand, chc.body); // Interpret as weakening of pre-condition
-          for (auto & v : invarVars[invind])
-          {
-            cand = replaceAll(cand, chc.dstVars[v.first], v.second);
-          }
+          if (!isprime)
+            for (auto & v : invarVars[invind])
+            {
+              cand = replaceAll(cand, chc.dstVars[v.first], v.second);
+            }
         }
-        if (chc.isQuery && chc.srcRelation == rel && (strenOrWeak & 2))
+        if (chc.isQuery && chc.srcRelation == rel && (sw & 2))
+        {
           cand = mk<AND>(cand, mk<NEG>(chc.body)); // Interpret as strengthening of post-condition
+          if (isprime)
+            for (auto & v : invarVars[invind])
+            {
+              cand = replaceAll(cand, v.second, ruleManager.invVarsPrime[rel][v.first]);
+            }
+        }
       }
       return cand;
     }
@@ -696,7 +727,6 @@ namespace ufo
     {
       if (printLog) outs () << "\nSAMPLING\n========\n";
       bool success = false;
-      bool alldone = true;
       int iter = 1;
 
       for (int i = 0; i < maxAttempts; i++)
@@ -704,6 +734,7 @@ namespace ufo
         // first, guess candidates for each inv.declaration
 
         bool skip = false;
+        bool alldone = true;
         for (int j = 0; j < invNumber; j++)
         {
           if (curCandidates[j] != NULL) continue;   // if the current candidate is good enough
@@ -732,7 +763,7 @@ namespace ufo
             break;
           }
 
-          curCandidates[j] = getStrenOrWeak(cand, j);
+          curCandidates[j] = getStrenOrWeak(cand, j, strenOrWeak);
         }
 
         if (alldone) break;
@@ -751,6 +782,9 @@ namespace ufo
         // check all the candidates at once for all CHCs :
 
         int isInductive = checkCandidates();
+        if (changedCandidates)
+          isInductive = checkCandidates();
+        changedCandidates = false;
         if (isInductive) success = checkSafety();       // query is checked here
 
         reportCheckingResults();
@@ -814,8 +848,70 @@ namespace ufo
       }
     }
 
+    void sanityCheck()
+    {
+      for (int i = 0; i < invNumber; ++i)
+      {
+        curCandidates[i] = sfs[i].back().getAllLemmas();
+      }
+      // Check init and inductiveness
+      for (auto &hr: ruleManager.chcs)
+      {
+        if (hr.isQuery) continue;
+        m_smt_solver.reset();
+        int ind1;  // to be identified later
+        int ind2 = getVarIndex(hr.dstRelation, decls);
+
+        // pushing body
+        m_smt_solver.assertExpr (hr.body);
+        Expr cand1;
+        Expr cand2;
+
+        // pushing src relation
+        if (!isOpX<TRUE>(hr.srcRelation))
+        {
+          ind1 = getVarIndex(hr.srcRelation, decls);
+          cand1 = curCandidates[ind1];
+          for (auto & v : invarVars[ind1])
+          {
+            cand1 = replaceAll(cand1, v.second, hr.srcVars[v.first]);
+          }
+          m_smt_solver.assertExpr(cand1);
+        }
+
+        // pushing dst relation
+        cand2 = curCandidates[ind2];
+        for (auto & v : invarVars[ind2])
+        {
+          cand2 = replaceAll(cand2, v.second, hr.dstVars[v.first]);
+        }
+        m_smt_solver.assertExpr(mk<NEG>(cand2));
+
+        assert(!m_smt_solver.solve());
+      }
+      if (m_smt_safety_solvers.size() == 0)
+        setupSafetySolver(1000);
+      resetSafetySolver();
+      int num = 0;
+      for (auto &hr: ruleManager.chcs)
+      {
+        if (!hr.isQuery) continue;
+        num++;
+        int ind = getVarIndex(hr.srcRelation, decls);
+        Expr invApp = curCandidates[ind];
+        for (auto & v : invarVars[ind])
+        {
+          invApp = replaceAll(invApp, v.second, hr.srcVars[v.first]);
+        }
+
+        m_smt_safety_solvers[num-1].assertExpr(invApp);
+        assert(!m_smt_safety_solvers[num-1].solve());
+      }
+    }
+
     void printSolution(bool simplify = true)
     {
+      sanityCheck();
       for (int i = 0; i < decls.size(); i++)
       {
         Expr rel = decls[i];
@@ -878,12 +974,28 @@ namespace ufo
       for (auto &var : ruleManager.invVars[decls[invNum]])
         lemmaFile << "(declare-fun " << m_z3.toSmtLib(var) << " () " <<
           m_z3.toSmtLib(bind::typeOf(var)) << ")\n";
-      for (Expr lemma : lms)
+
+      ExprSet lemmasToGo = lms;
+
+      while (lemmasToGo.size() != 0)
       {
-        lemmaFile << "(assert ";
-        u.print(lemma, lemmaFile);
-        lemmaFile << ")\n";
+        bool didRemove = false;
+        for (auto itr = lemmasToGo.begin(); itr != lemmasToGo.end(); ++itr)
+        {
+          curCandidates[invNum] = *itr;
+          if (!checkCandidates())
+            continue;
+          lemmaFile << "(assert ";
+          u.print(*itr, lemmaFile);
+          lemmaFile << ")\n";
+          itr = lemmasToGo.erase(itr);
+          didRemove = true;
+          if (lemmasToGo.size() == 0)
+            break;
+        }
+        assert(didRemove);
       }
+      curCandidates[invNum] = NULL;
     }
 
     void writeAllLemmas(bool simplify = true)
@@ -909,11 +1021,27 @@ namespace ufo
         {
           Expr lemmas = z3_from_smtlib_file<EZ3>(m_z3, lemmaFilename.c_str());
           assert(isOpX<AND>(lemmas));
+          curCandidates[i] = lemmas;
+          bool checkEach = false;
+          if (!checkCandidates())
+          {
+            checkEach = true;
+            outs() << "WARNING: Lemma file is not inductive.\n";
+          }
+          curCandidates[i] = NULL;
           for (int x = 0; x < lemmas->arity(); ++x)
           {
-            sf.learnedExprs.insert(lemmas->arg(x));
-            sf.assignPrioritiesForLearned(sf.exprToSampl(lemmas->arg(x)));
+            curCandidates[i] = lemmas->arg(x);
+            if (!checkEach || checkCandidates())
+            {
+              sf.learnedExprs.insert(lemmas->arg(x));
+              sf.assignPrioritiesForLearned(sf.exprToSampl(lemmas->arg(x)));
+            }
+            else
+              outs() << "WARNING: Discarding non-inductive expression:" <<
+                z3_to_smtlib<EZ3>(m_z3, lemmas->arg(x)) << "\n";
           }
+          curCandidates[i] = NULL;
         }
         catch (z3::exception e)
         {
@@ -924,34 +1052,10 @@ namespace ufo
         }
       }
 
-      checkReadLemmas();
-    }
-
-    void checkReadLemmas()
-    {
-      for (int i = 0; i < invNumber; ++i)
-      {
-        ExprSet &lemmas = sfs[i].back().learnedExprs;
-        if (lemmas.size() == 0)
-          continue;
-        for (auto itr = lemmas.begin(); itr != lemmas.end(); ++itr)
-        {
-          curCandidates[i] = *itr;
-          if (!checkCandidates())
-          {
-            outs() << "WARNING: Lemma file contains non-inductive expression: " << z3_to_smtlib<EZ3>(m_z3, *itr) << ". Discarding.\n";
-            for (int i = 0; i < invNumber; ++i)
-            {
-              itr = sfs[i].back().learnedExprs.erase(itr);
-            }
-          }
-          curCandidates[i] = NULL;
-        }
-      }
-
       if (checkReadLemmasSafety())
       {
         outs() << "Success after reading known lemmas from file\n";
+        saveLemmas = false;
         printSolution();
         exit(0);
       }
@@ -960,17 +1064,15 @@ namespace ufo
     // True == all safe
     virtual bool checkReadLemmasSafety()
     {
-      bool success = true;
       for (int i = 0; i < invNumber; ++i)
       {
         if (sfs[i].back().learnedExprs.size() == 0)
           return false;
         m_smt_solver.reset();
         curCandidates[i] = sfs[i].back().getAllLemmas();
-        assert(checkCandidates());
-        success &= checkSafety();
-        curCandidates[i] = NULL;
       }
+      assert(checkCandidates());
+      bool success = checkSafety();
       if (!success)
         for (int i = 0; i < invNumber; ++i)
           curCandidates[i] = NULL;

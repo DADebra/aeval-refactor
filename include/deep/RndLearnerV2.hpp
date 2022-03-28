@@ -275,7 +275,7 @@ namespace ufo
             continue;
           }
 
-          cand = getStrenOrWeak(cand, 0);
+          cand = getStrenOrWeak(cand, 0, strenOrWeak);
 
           iter++;
 
@@ -397,7 +397,7 @@ namespace ufo
       if (debug)
         if (success) outs () << "Total number of learned lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
 
-      if (success) outs () << "Success after sampling\n";
+      if (success) outs () << "Success after " << iters << " iterations \n";
       else         outs () << "No success after " << maxAttempts << " iterations\n";
     }
 
