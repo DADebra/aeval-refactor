@@ -157,7 +157,7 @@ namespace ufo
         boost::tribool res = m_smt_solver.solve ();
         if (res || indeterminate(res))    // SAT   == candidate failed
         {
-          if (!bool(strenOrWeak & 2))
+          if (strenOrWeak & 2)
           {
             m_smt_solver.pop();
             if (!isOpX<TRUE>(hr.srcRelation))
@@ -698,6 +698,8 @@ namespace ufo
 
     Expr getStrenOrWeak(Expr cand, int invind, int sw, bool isprime = false)
     {
+      if (sw == 0)
+        return cand;
       Expr rel = decls[invind];
       for (auto &chc : ruleManager.chcs)
       {
@@ -763,7 +765,7 @@ namespace ufo
             break;
           }
 
-          curCandidates[j] = getStrenOrWeak(cand, j, strenOrWeak);
+          curCandidates[j] = getStrenOrWeak(cand, j, strenOrWeak & 1);
         }
 
         if (alldone) break;
