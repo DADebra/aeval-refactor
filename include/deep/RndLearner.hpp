@@ -962,6 +962,7 @@ namespace ufo
       if (!saveLemmas)
         return;
       ExprSet lms = sfs[invNum].back().learnedExprs;
+      sfs[invNum].back().learnedExprs.clear();
       if (lms.size() == 0)
         return;
       if (simplify)
@@ -988,6 +989,7 @@ namespace ufo
           lemmaFile << "(assert ";
           u.print(*itr, lemmaFile);
           lemmaFile << ")\n";
+          sfs[invNum].back().learnedExprs.insert(*itr);
           itr = lemmasToGo.erase(itr);
           didRemove = true;
           if (lemmasToGo.size() == 0)
