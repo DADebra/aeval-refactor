@@ -52,6 +52,7 @@ namespace ufo
     bool statsInitialized;
     int printLog;
     string fileName;          // the name of the SMT input file
+    unsigned timeout;
 
     int strenOrWeak;          // 0 = none, 1 = weaken, 2 = strengthen, 3 = both; interpreted as bit field
     bool saveLemmas;          // false = don't save/restore lemmas from file
@@ -66,7 +67,7 @@ namespace ufo
       invNumber(0), numOfSMTChecks(0), oneInductiveProof(true), kind_succeeded (!k),
       densecode(b1), addepsilon(b2), aggressivepruning(b3),
       statsInitialized(false), printLog(debug), fileName(_fileName),
-      strenOrWeak(sw), saveLemmas(sl) {}
+      strenOrWeak(sw), saveLemmas(sl), timeout(to) {}
 
     bool isTautology (Expr a)     // adjusted for big disjunctions
     {
@@ -892,7 +893,7 @@ namespace ufo
         assert(!m_smt_solver.solve());
       }
       if (m_smt_safety_solvers.size() == 0)
-        setupSafetySolver(1000);
+        setupSafetySolver(timeout);
       resetSafetySolver();
       int num = 0;
       for (auto &hr: ruleManager.chcs)
