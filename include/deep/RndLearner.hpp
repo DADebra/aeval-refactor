@@ -933,14 +933,12 @@ namespace ufo
         u.print(res);
         outs () << ")\n";
         assert(hasOnlyVars(res, ruleManager.invVars[rel]));
-
-        writeLemmas(i, simplify);
       }
+      writeAllLemmas(simplify);
     }
 
-    string getLemmaFilename(int invNum)
+    string getLemmaFilename()
     {
-      assert(invNum >= 0 && invNum < invNumber);
       size_t nameStart, nameEnd, nameLen;
       nameStart = fileName.rfind('/');
       if (nameStart == string::npos)
@@ -955,104 +953,107 @@ namespace ufo
         nameLen = string::npos;
 
       // TODO: For now, in the current directory. Should be in input's dir?
-      return string("lemmas_") + fileName.substr(nameStart, nameLen) + 
-        "_" + lexical_cast<string>(decls[invNum]) + ".smt2";
-    }
-
-    void writeLemmas(int invNum, bool simplify = true)
-    {
-      if (!saveLemmas)
-        return;
-      ExprSet lms = sfs[invNum].back().learnedExprs;
-      sfs[invNum].back().learnedExprs.clear();
-      if (lms.size() == 0)
-        return;
-      if (simplify)
-      {
-        // TODO: I think this is good enough?
-        u.removeRedundantConjuncts(lms);
-      }
-
-      ofstream lemmaFile(getLemmaFilename(invNum));
-      for (auto &var : ruleManager.invVars[decls[invNum]])
-        lemmaFile << "(declare-fun " << m_z3.toSmtLib(var) << " () " <<
-          m_z3.toSmtLib(bind::typeOf(var)) << ")\n";
-
-      ExprSet lemmasToGo = lms;
-
-      while (lemmasToGo.size() != 0)
-      {
-        bool didRemove = false;
-        for (auto itr = lemmasToGo.begin(); itr != lemmasToGo.end(); ++itr)
-        {
-          curCandidates[invNum] = *itr;
-          if (!checkCandidates())
-            continue;
-          lemmaFile << "(assert ";
-          u.print(*itr, lemmaFile);
-          lemmaFile << ")\n";
-          sfs[invNum].back().learnedExprs.insert(*itr);
-          itr = lemmasToGo.erase(itr);
-          didRemove = true;
-          if (lemmasToGo.size() == 0)
-            break;
-        }
-        assert(didRemove);
-      }
-      curCandidates[invNum] = NULL;
+      return string("lemmas_") + fileName.substr(nameStart, nameLen) + ".smt2";
     }
 
     void writeAllLemmas(bool simplify = true)
     {
+      if (!saveLemmas)
+        return;
+      ofstream lemmaFile(getLemmaFilename());
+      if (!lemmaFile)
+      {
+        outs() << "WARNING: Couldn't open lemma file for writing in current directory. Skipping writing lemmas.";
+        outs() << endl;
+        return;
+      }
+      // Declare invariants and their variables
       for (int i = 0; i < invNumber; ++i)
-        writeLemmas(i, simplify);
+      {
+        Expr decl = decls[i];
+        lemmaFile << "(declare-fun " << lexical_cast<string>(decl) << " (";
+        for (auto &var : ruleManager.invVars[decl])
+          m_z3.toSmtLib(bind::typeOf(var));
+        lemmaFile << ") Bool)\n";
+        for (auto &var : ruleManager.invVars[decl])
+          lemmaFile << "(declare-fun " << m_z3.toSmtLib(var) << " () " <<
+            m_z3.toSmtLib(bind::typeOf(var)) << ")\n";
+      }
+      for (int i = 0; i < invNumber; ++i)
+      {
+        ExprSet lms = sfs[i].back().learnedExprs;
+        if (lms.size() == 0)
+          continue;
+        if (simplify)
+        {
+          // TODO: I think this is good enough?
+          u.removeRedundantConjuncts(lms);
+        }
+
+        lemmaFile << "(assert (= " << lexical_cast<string>(decls[i]) << " " <<
+          m_z3.toSmtLib(conjoin(lms, m_efac)) << "))\n";
+      }
+      lemmaFile << flush;
     }
 
     void readLemmas()
     {
       if (!saveLemmas)
         return;
+      string lemmaFilename = getLemmaFilename();
+      ifstream lemmaFile(lemmaFilename);
+      if (!lemmaFile)
+      {
+        outs() << "WARNING: Couldn't open lemma file \"" << lemmaFilename <<
+          "\" for reading in current directory.\n";
+        outs() << "Skipping reading lemmas." << endl;
+        return;
+      }
+      Expr lemmas;
+      try
+      {
+        lemmas = z3_from_smtlib_file<EZ3>(m_z3, lemmaFilename.c_str());
+      }
+      catch (z3::exception e)
+      {
+        outs() << "WARNING:\n";
+        outs() << "Couldn't parse lemma file \"" << lemmaFilename << "\":\n";
+        outs() << e.msg();
+        outs() << endl;
+        outs() << "Skipping reading lemmas." << endl;
+        return;
+      }
+      assert(isOpX<AND>(lemmas));
+      for (int i = 0; i < lemmas->arity(); ++i)
+      {
+        assert(isOpX<EQ>(lemmas->arg(i)));
+        Expr rel = lemmas->arg(i)->left()->left()->left();
+        int invNum = getVarIndex(rel, decls);
+        assert(invNum >= 0 && invNum < invNumber);
+        curCandidates[invNum] = lemmas->arg(i)->right();
+      }
+      bool isInd = checkCandidates();
+
+      if (!isInd)
+      {
+        outs() << "WARNING: Lemma file is not inductive. Ignoring.\n";
+        for (int i = 0; i < lemmas->arity(); ++i)
+          curCandidates[i] = NULL;
+        return;
+      }
+
+      // Add to learned lemmas
       for (int i = 0; i < invNumber; ++i)
       {
-        string lemmaFilename = getLemmaFilename(i);
-        { ifstream lemmaFile(lemmaFilename);
-          if (!lemmaFile)
-            continue;
-        }
+        if (!curCandidates[i])
+          continue;
         SamplFactory &sf = sfs[i].back();
-        string lemmaStr;
-        try
+        ExprSet &lms = sf.learnedExprs;
+        for (int x = 0; x < curCandidates[i]->arity(); ++x)
         {
-          Expr lemmas = z3_from_smtlib_file<EZ3>(m_z3, lemmaFilename.c_str());
-          assert(isOpX<AND>(lemmas));
-          curCandidates[i] = lemmas;
-          bool checkEach = false;
-          if (!checkCandidates())
-          {
-            checkEach = true;
-            outs() << "WARNING: Lemma file is not inductive.\n";
-          }
-          curCandidates[i] = NULL;
-          for (int x = 0; x < lemmas->arity(); ++x)
-          {
-            curCandidates[i] = lemmas->arg(x);
-            if (!checkEach || checkCandidates())
-            {
-              sf.learnedExprs.insert(lemmas->arg(x));
-              sf.assignPrioritiesForLearned(sf.exprToSampl(lemmas->arg(x)));
-            }
-            else
-              outs() << "WARNING: Discarding non-inductive expression:" <<
-                z3_to_smtlib<EZ3>(m_z3, lemmas->arg(x)) << "\n";
-          }
-          curCandidates[i] = NULL;
-        }
-        catch (z3::exception e)
-        {
-          outs() << "WARNING:\n";
-          outs() << "Couldn't parse lemma file \"" << lemmaFilename << "\":\n";
-          outs() << e.msg();
-          outs() << endl;
+          lms.insert(curCandidates[i]->arg(x));
+          sf.exprToSampl(curCandidates[i]->arg(x));
+          sf.assignPrioritiesForLearned();
         }
       }
 
@@ -1063,6 +1064,9 @@ namespace ufo
         printSolution();
         exit(0);
       }
+
+      for (int i = 0; i < lemmas->arity(); ++i)
+        curCandidates[i] = NULL;
     }
 
     // True == all safe
