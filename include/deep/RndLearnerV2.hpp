@@ -132,7 +132,8 @@ namespace ufo
         m_smt_solver.assertExpr (mk<NEG>(candPrime));
 
         numOfSMTChecks++;
-        if (m_smt_solver.solve ())
+        boost::tribool res = m_smt_solver.solve();
+        if (res || indeterminate(res))
         {
           modelsOfFailures[getModel(hr->srcVars)].insert(candSet[i]);
 
