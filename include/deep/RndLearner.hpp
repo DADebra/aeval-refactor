@@ -29,10 +29,13 @@ namespace ufo
     ExprVector decls;
     vector<vector<SamplFactory>> sfs;
     ExprVector curCandidates;
+    ExprVector noStrenCands;
     bool changedCandidates = false;
 
     vector<map<int, Expr>> invarVars;
     vector<ExprVector> invarVarsShort;
+
+    ExprVector preConds, postConds;
 
     // for arrays
     vector<ExprSet> arrCands;
@@ -133,10 +136,9 @@ namespace ufo
           cand1 = replaceAll(cand1, invarVarsShort[ind1], hr.srcVars);
 
           m_smt_solver.push();
+
           m_smt_solver.assertExpr(cand1);
         }
-        else
-          m_smt_solver.push();
 
         // pushing dst relation
         cand2 = curCandidates[ind2];
@@ -146,22 +148,32 @@ namespace ufo
 
         numOfSMTChecks++;
         boost::tribool res = m_smt_solver.solve ();
+        if (!isOpX<TRUE>(hr.srcRelation))
+          m_smt_solver.pop();
         if (res || indeterminate(res))    // SAT   == candidate failed
         {
           if (strenOrWeak & 2)
           {
-            m_smt_solver.pop();
             if (!isOpX<TRUE>(hr.srcRelation))
-              m_smt_solver.assertExpr(getStrenOrWeak(cand1, ind1, 2));
-            m_smt_solver.assertExpr(mk<NEG>(getStrenOrWeak(cand2, ind2, 2, true)));
+            {
+              if (ind1 == ind2)
+              {
+                cand1 = noStrenCands[ind1];
+                cand1 = replaceAll(cand1, invarVarsShort[ind1], hr.srcVars);
+                m_smt_solver.assertExpr(cand1);
+              }
+              else
+                m_smt_solver.assertExpr(cand1);
+            }
+
+            cand2 = noStrenCands[ind2];
+            cand2 = replaceAll(cand2, invarVarsShort[ind2], hr.dstVars);
+            m_smt_solver.assertExpr(mk<NEG>(cand2));
             res = m_smt_solver.solve();
-            numOfSMTChecks++;
             if (!res)
             {
               changedCandidates = true;
-              if (!isOpX<TRUE>(hr.srcRelation) && ind1 != ind2)
-                curCandidates[ind1] = getStrenOrWeak(curCandidates[ind1], ind1, 2);
-              curCandidates[ind2] = getStrenOrWeak(curCandidates[ind2], ind2, 2);
+              curCandidates[ind2] = noStrenCands[ind2];
             }
           }
           if (res || indeterminate(res))
@@ -677,24 +689,42 @@ namespace ufo
       }
     }
 
-    Expr getStrenOrWeak(Expr cand, int invind, int sw, bool isprime = false)
+    Expr getStrenOrWeak(Expr cand, int invind, int sw)
     {
       if (sw == 0)
         return cand;
+
+      assert(sw < 3);
+
+      if (preConds.size() != 0)
+      {
+        if ((sw & 1) && preConds[invind])
+          return mk<OR>(cand, preConds[invind]);
+        if ((sw & 2) && postConds[invind])
+          return mk<AND>(cand, postConds[invind]);
+      } else {
+        preConds.resize(invNumber);
+        postConds.resize(invNumber);
+      }
+
       Expr rel = decls[invind];
       for (auto &chc : ruleManager.chcs)
       {
         if (chc.isFact && chc.dstRelation == rel && (sw & 1))
         {
-          cand = mk<OR>(cand, chc.body); // Interpret as weakening of pre-condition
-          if (!isprime)
-            cand = replaceAll(cand, chc.dstVars, invarVarsShort[invind]);
+          preConds[invind] = replaceAll(chc.body,
+            chc.dstVars, invarVarsShort[invind]);
+          if (chc.locVars.size() != 0)
+            preConds[invind] = getExists(preConds[invind], chc.locVars);
+          return mk<OR>(cand, preConds[invind]); // Interpret as weakening of pre-condition
         }
         if (chc.isQuery && chc.srcRelation == rel && (sw & 2))
         {
-          cand = mk<AND>(cand, mk<NEG>(chc.body)); // Interpret as strengthening of post-condition
-          if (isprime)
-            cand = replaceAll(cand, invarVarsShort[invind], ruleManager.invVarsPrime[rel]);
+          if (chc.locVars.size() == 0)
+            postConds[invind] = mk<NEG>(chc.body);
+          else
+            postConds[invind] = mk<NEG>(getExists(chc.body, chc.locVars));
+          return mk<AND>(cand, postConds[invind]); // Interpret as strengthening of post-condition
         }
       }
       return cand;
@@ -705,6 +735,8 @@ namespace ufo
       if (printLog) outs () << "\nSAMPLING\n========\n";
       bool success = false;
       int iter = 1;
+
+      noStrenCands.resize(invNumber);
 
       for (int i = 0; i < maxAttempts; i++)
       {
@@ -740,7 +772,8 @@ namespace ufo
             break;
           }
 
-          curCandidates[j] = getStrenOrWeak(cand, j, strenOrWeak & 1);
+          noStrenCands[j] = getStrenOrWeak(cand, j, strenOrWeak & 1);
+          curCandidates[j] = getStrenOrWeak(noStrenCands[j], j, strenOrWeak & 2);
         }
 
         if (alldone) break;
@@ -759,9 +792,6 @@ namespace ufo
         // check all the candidates at once for all CHCs :
 
         int isInductive = checkCandidates();
-        if (changedCandidates)
-          isInductive = checkCandidates();
-        changedCandidates = false;
         if (isInductive) success = checkSafety();       // query is checked here
 
         reportCheckingResults();

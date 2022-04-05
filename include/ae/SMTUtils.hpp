@@ -783,6 +783,15 @@ namespace ufo
     return getItp(A, B, sharedVars);
   };
 
+  // Existentially quantifies e with the given variables
+  Expr getExists(Expr e, ExprVector vars)
+  {
+    for (Expr &var : vars)
+      if (isOpX<FAPP>(var))
+        var = var->left();
+    vars.push_back(e);
+    return mknary<EXISTS>(vars);
+  }
 }
 
 #endif
