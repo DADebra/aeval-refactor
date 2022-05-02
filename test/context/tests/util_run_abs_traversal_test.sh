@@ -25,7 +25,7 @@ dotravabstest() {
     old="$(mktemp)"
     rm "$old"
     mkfifo "$old"
-    timeout 5s freqhorn --v1 --attempts 100 --b4simpl --gen_method $method $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" > "$old" &
+    timeout 5s freqhorn --v1 --no-save-lemmas --attempts 100 --b4simpl --gen_method $method $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" > "$old" 2>&1 &
     pid=$!
     diffout="$(mktemp)"
     echo "Good output | Program output" > "$diffout"

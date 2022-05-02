@@ -32,12 +32,12 @@ dotravcomptest() {
     new="$(mktemp)"
     rm "$old" "$new"
     mkfifo "$old" "$new"
-    freqhorn --v1 --b4simpl --gen_method traverse $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" | head -n "$comp_lines" > "$old" &
+    freqhorn --v1 --no-save-lemmas --b4simpl --gen_method coro $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" | head -n "$comp_lines" > "$old" &
     pid1=$!
-    freqhorn --v1 --b4simpl --gen_method newtrav $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" | head -n "$comp_lines" > "$new" &
+    freqhorn --v1 --no-save-lemmas --b4simpl --gen_method newtrav $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" | head -n "$comp_lines" > "$new" &
     pid2=$!
     diffout="$(mktemp)"
-    echo "Traverse output | Newtrav output" > "$diffout"
+    echo "Coro output | Newtrav output" > "$diffout"
     diff -W 200 -w -y "$old" "$new" >> "$diffout"
     ret3=$?
     rm "$old" "$new"

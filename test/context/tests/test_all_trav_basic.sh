@@ -3,7 +3,7 @@
 # Runs each of the traversal methods, seeing if the output matches the expected.
 # Uses trav_cfg.smt2 (i.e. NOT A COMPLETE TEST OF CORRECTNESS!)
 
-for method in traverse newtrav
+for method in coro newtrav
 do
     for type in striped ordered
     do

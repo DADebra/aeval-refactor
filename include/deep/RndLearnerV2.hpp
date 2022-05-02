@@ -335,7 +335,7 @@ namespace ufo
   };
   
   inline void learnInvariants2(string smt, unsigned to, int maxAttempts,
-                               int itp, int batch, int retry, bool freqs, bool aggp, int debug, bool dBoot, int sw, bool sl, vector<string> grammars, GramParams gramps)
+                               int itp, int batch, int retry, bool freqs, bool aggp, int debug, bool dBoot, int sw, bool sl, vector<string> grammars, TravParams gramps, bool b4simpl)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -358,7 +358,8 @@ namespace ufo
       return;
     }
 
-    for (auto& dcl: ruleManager.decls) ds.initializeDecl(dcl->left(), gramps);
+    for (auto& dcl: ruleManager.decls)
+      ds.initializeDecl(dcl->left(), gramps, b4simpl);
 
     ExprSet cands;
 

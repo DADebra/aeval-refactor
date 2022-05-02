@@ -133,9 +133,9 @@ int main (int argc, char ** argv)
         " " << OPT_BATCH << "                         threshold for how many candidates to check at once\n" <<
         " " << OPT_RETRY << "                         threshold for how many lemmas to wait before giving failures a second chance\n\n" <<
         "Grammar options only:\n" <<
-        " " << OPT_GRAM_GEN << " <rnd, traverse, newtrav>    use specified method to generate candidates from grammar\n" <<
+        " " << OPT_GRAM_GEN << " <rnd, coro, newtrav>    use specified method to generate candidates from grammar\n" <<
         "                                 'rnd' is completely random, 'traverse' will traverse the CFG\n" <<
-        " " << OPT_GRAM_MAXREC << " <n>               maximum recursion depth\n" <<
+        " " << OPT_GRAM_MAXREC << " <n>               maximum recursion depth (default 1)\n" <<
         " " << OPT_GRAM_TRAV_TYPE << " <ordered, striped>  parameter for " << OPT_GRAM_GEN << " traverse\n" <<
         " " << OPT_GRAM_TRAV_PRIO << " <sfs, bfs, dfs> parameter for " << OPT_GRAM_GEN << " traverse and " << OPT_GRAM_TRAV_TYPE << " striped\n" <<
         " " << OPT_GRAM_TRAV_DIR << " <ltr, rtl>     parameter for " << OPT_GRAM_GEN << " traverse\n" <<
@@ -236,6 +236,7 @@ int main (int argc, char ** argv)
   getStrValues(OPT_GRAMMAR, grammars, argc, argv);
   const char* gram_trav_type = getStrValue(OPT_GRAM_TRAV_TYPE, "striped", argc, argv);
   const char* gram_trav_prio = getStrValue(OPT_GRAM_TRAV_PRIO, NULL, argc, argv);
+  bool b4simpl = getBoolValue(OPT_GRAM_B4SIMPL, false, argc, argv);
 
   if (gram_trav_prio != NULL && strcmp(gram_trav_type, "ordered") == 0)
   {
@@ -246,29 +247,27 @@ int main (int argc, char ** argv)
   // Gets ignored if --trav_type ordered
   if (gram_trav_prio == NULL) gram_trav_prio = "sfs";
 
-  GramParams gramparams = make_tuple(
+  TravParams gramparams = {
     CFGUtils::strtogenmethod(getStrValue(OPT_GRAM_GEN, "newtrav", argc, argv)),
-    getIntValue(OPT_GRAM_MAXREC, 3, argc, argv),
     CFGUtils::strtotravdir(getStrValue(OPT_GRAM_TRAV_DIR, "ltr", argc, argv)),
     CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "forward", argc, argv)),
     CFGUtils::strtotravtype(gram_trav_type),
     CFGUtils::strtotravprio(gram_trav_prio),
-    getBoolValue(OPT_GRAM_B4SIMPL, false, argc, argv),
-    getIntValue(OPT_TO, 1000, argc, argv));
+    getIntValue(OPT_GRAM_MAXREC, 1, argc, argv)};
 
  
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
                      do_dl, do_mu, do_elim, do_arithm, do_disj, do_prop, mbp_eqs,
                      d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot, templ, saveLemmas, printSygus,
-                     grammars, gramparams);
+                     grammars, gramparams, b4simpl);
   else if (vers2) // run the TACAS'18 algorithm
     learnInvariants2(string(argv[argc-1]), to, max_attempts,
                   itp, batch, retry, densecode, aggressivepruning, debug, do_boot, templ, saveLemmas,
-                  grammars, gramparams);
+                  grammars, gramparams, b4simpl);
   else            // run the FMCAD'17 algorithm
     learnInvariants(string(argv[argc-1]), to, max_attempts,
                   kinduction, itp, densecode, addepsilon, aggressivepruning, debug, templ, saveLemmas,
-                  grammars, gramparams);
+                  grammars, gramparams, b4simpl);
   return 0;
 }

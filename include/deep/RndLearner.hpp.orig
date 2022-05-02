@@ -6,7 +6,7 @@
 #include "ae/SMTUtils.hpp"
 #include "sampl/SeedMiner.hpp"
 #include "sampl/Sampl.hpp"
-#include "gram/CFGUtils.h"
+#include "sampl/GramFac.hpp"
 
 #include <boost/optional.hpp>
 
@@ -499,8 +499,8 @@ namespace ufo
               sf_after.addOtherVar(var.second);
         sf_after.lf.nonlinVars = sf_before.lf.nonlinVars;
 
+        sf_after.initialize_gram(grams[lexical_cast<string>(decls[ind])], lexical_cast<string>(decls[ind]));
         sf_after.gf.setParams(sf_before.gf.getParams());
-        sf_after.initialize_gram(grams[lexical_cast<string>(decls[ind])], lexical_cast<string>(decls[ind]), sf_before.gf.b4simpl);
 
         set<cpp_int> progConsts, intCoefs;
         ExprSet cands;
@@ -517,7 +517,7 @@ namespace ufo
       }
     }
 
-    void initializeDecl(Expr invDecl, TravParams gramparams, bool b4simpl)
+    void initializeDecl(Expr invDecl, optional<GramParams> gramparams=none)
     {
       if (printLog) outs () << "\nINITIALIZE PREDICATE " << invDecl << "\n====================\n";
 //      assert (invDecl->arity() > 2);
@@ -582,8 +582,9 @@ namespace ufo
       arrAccessVars.push_back(ExprVector());
       arrIterRanges.push_back(ExprSet());
 
-      sf.gf.setParams(gramparams);
-      sf.initialize_gram(grams[lexical_cast<string>(invDecl)], lexical_cast<string>(invDecl), b4simpl);
+      sf.initialize_gram(grams[lexical_cast<string>(invDecl)], lexical_cast<string>(invDecl));
+      if (gramparams)
+        sf.gf.setParams(*gramparams);
 
       invNumber++;
     }
@@ -1150,7 +1151,7 @@ namespace ufo
   };
 
   inline void learnInvariants(string smt, unsigned to, int maxAttempts,
-                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, bool sl, vector<string> grammars, TravParams gramparams, bool b4simpl)
+                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, bool sl, vector<string> grammars, GramParams gramparams)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -1182,7 +1183,7 @@ namespace ufo
     for (auto& dcl: ruleManager.decls)
     {
       //ds.initializeDecl(dcl, gramparams);
-      ds.initializeDecl(dcl->left(), gramparams, b4simpl);
+      ds.initializeDecl(dcl->left(), gramparams);
       ds.prepareSeeds(dcl->left(), itpCands); // itpCands isn't used
     }
 

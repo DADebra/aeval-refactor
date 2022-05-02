@@ -6,7 +6,7 @@
 #include "LinCom.hpp"
 #include "BoolCom.hpp"
 #include "ArrCom.hpp"
-#include "GramFac.hpp"
+#include "gram/GramFac.hpp"
 
 using namespace std;
 using namespace boost;
@@ -88,7 +88,7 @@ namespace ufo
         hasArrays = true;
       }
 
-      gf.addVar(var);
+      gf.addUnknownVar(var);
       added = true;
 
       return added;
@@ -147,9 +147,9 @@ namespace ufo
     }
 
     // GRAMfactory requires two-stage initialization. This is the first part.
-    void initialize_gram(string gramFile, string invFname)
+    void initialize_gram(string gramFile, string invFname, bool b4simpl)
     {
-      gf.initialize(gramFile, invFname);
+      gf.initialize(gramFile, invFname, b4simpl);
     }
 
     Sampl& exprToSampl(Expr ex)

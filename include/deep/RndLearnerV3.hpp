@@ -2061,7 +2061,7 @@ namespace ufo
   inline void learnInvariants3(string smt, unsigned maxAttempts, unsigned to,
        bool freqs, bool aggp, int dat, int mut, bool doElim, bool doArithm,
        bool doDisj, int doProp, int mbpEqs, bool dAllMbp, bool dAddProp, bool dAddDat,
-       bool dStrenMbp, int dFwd, bool dRec, bool dGenerous, bool dSee, bool ser, int debug, bool dBoot, int sw, bool sl, bool printSygus, vector<string> grammars, GramParams gramps)
+       bool dStrenMbp, int dFwd, bool dRec, bool dGenerous, bool dSee, bool ser, int debug, bool dBoot, int sw, bool sl, bool printSygus, vector<string> grammars, TravParams gramps, bool b4simpl)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -2099,7 +2099,7 @@ namespace ufo
     {
       Expr dcl = ruleManager.chcs[ruleManager.cycles[i][0]].srcRelation;
       if (ds.initializedDecl(dcl)) continue;
-      ds.initializeDecl(dcl, gramps);
+      ds.initializeDecl(dcl, gramps, b4simpl);
       if (!dSee) continue;
 
       Expr pref = bnd.compactPrefix(i);
