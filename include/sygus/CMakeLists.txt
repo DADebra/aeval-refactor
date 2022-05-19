@@ -1,0 +1,8 @@
+#if (BISON_FOUND)
+  message(STATUS "Using Bison to generate SyGuS parser")
+  BISON_TARGET(SyGuSParser SyGuSParser.yy ${CMAKE_CURRENT_BINARY_DIR}/SyGuSParser.bison.cpp)
+  if (NOT ${BISON_SyGuSParser_DEFINED})
+    message(FATAL_ERROR "Bison found but macro failed!")
+  endif()
+  add_custom_target(SyGuSParserBison DEPENDS ${BISON_SyGuSParser_OUTPUT_SOURCE})
+#endif()

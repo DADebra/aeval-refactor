@@ -1,0 +1,6 @@
+add_executable(sygustestparser testparser.cpp)
+target_link_libraries(sygustestparser ${Z3_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${GMPXX_LIB} ${GMP_LIB})
+#if (BISON_FOUND)
+add_dependencies(sygustestparser SyGuSParserBison)
+#endif()
+install(TARGETS sygustestparser RUNTIME DESTINATION bin)
