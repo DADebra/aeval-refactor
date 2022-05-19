@@ -28,19 +28,30 @@ class SyGuSSolver
   private:
   tribool solveSingleApps()
   {
-    assert(prob.synthfuncs.size() == 1);
-
-    Expr funcdecl = prob.synthfuncs[0].decl;
-
     Expr allcons = conjoin(prob.constraints, efac);
-    Expr funcsort = funcdecl->last();
-    Expr funcout = mkConst(mkTerm<string>(getTerm<string>(funcdecl->first()) + "_out", efac), funcsort);
-    Expr singlefapp = prob.singleapps.at(funcdecl);
-    allcons = replaceAll(allcons, singlefapp, funcout);
-    vector<Expr> faArgs;
-    for (const Expr &var : prob.synthfuncs[0].vars)
-      faArgs.push_back(var);
-    vector<Expr> exArgs({ funcout->first(), allcons });
+    vector<Expr> from, to;
+
+    unordered_map<Expr,const SynthFunc*> varToFunc; // K: funcvar (below)
+
+    vector<Expr> faArgs, exArgs;
+    ExprSet exVars;
+    for (const SynthFunc& func : prob.synthfuncs)
+    {
+      Expr funcsort = func.decl->last();
+      Expr funcvar = mkConst(mkTerm<string>(getTerm<string>(func.decl->first()) + "_out", efac), funcsort);
+      Expr singlefapp = prob.singleapps.at(func.decl);
+      from.push_back(singlefapp);
+      to.push_back(funcvar);
+      exArgs.push_back(funcvar->first());
+      exVars.insert(funcvar);
+      varToFunc[funcvar] = &func;
+    }
+    allcons = replaceAll(allcons, from, to);
+
+    for (const auto& kv : prob.singleapps)
+      for (int i = 1; i < kv.second->arity(); ++i)
+        faArgs.push_back(kv.second->arg(i));
+    exArgs.push_back(allcons);
     faArgs.push_back(mknary<EXISTS>(exArgs));
     Expr aeProb = mknary<FORALL>(faArgs);
     aeProb = regularizeQF(aeProb);
@@ -48,7 +59,6 @@ class SyGuSSolver
     if (debug > 1)
       { outs() << "Sending to aeval: " << z3.toSmtLib(aeProb) << endl; }
 
-    ExprSet exVars({fapp(funcout->first())});
     AeValSolver ae(mk<TRUE>(efac), aeProb->last()->last(), exVars, debug, true);
 
     tribool aeret = ae.solve();
@@ -68,9 +78,18 @@ class SyGuSSolver
     else
     {
       // AE-VAL returns (= fname def)
-      Expr func = ae.getSkolemFunction(true)->right();
-      func = simplifyBool(simplifyArithm(func));
-      _foundfuncs[&prob.synthfuncs[0]] = func;
+      Expr funcs_conj = ae.getSkolemFunction(true);
+      if (isOpX<EQ>(funcs_conj))
+        // Just for ease of use; WON'T MARSHAL
+        funcs_conj = mk<AND>(funcs_conj);
+      assert(isOpX<AND>(funcs_conj));
+      for (int i = 0; i < funcs_conj->arity(); ++i)
+      {
+        Expr func = funcs_conj->arg(i)->right();
+        func = replaceAll(func, to, from); // Convert variables back to FAPPs
+        func = simplifyBool(simplifyArithm(func));
+        _foundfuncs[varToFunc.at(funcs_conj->arg(i)->left())] = func;
+      }
       return true;
     }
   }
@@ -83,12 +102,6 @@ class SyGuSSolver
   tribool Solve()
   {
     prob.Analyze();
-
-    if (prob.synthfuncs.size() != 1)
-    {
-      _errmsg = "Solver currently doesn't support synthesizing multiple functions";
-      return indeterminate;
-    }
 
     if (prob.singleapps.size() != prob.synthfuncs.size())
     {
