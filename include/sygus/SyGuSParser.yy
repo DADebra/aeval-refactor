@@ -119,6 +119,33 @@ void parser::error(const yy::location &loc, const std::string &s)
 {
   std::cerr << s << ": " << loc << std::endl;
 }
+
+// `vardecls` should include sort at end, and be fdecl's of variable names.
+ufo::SynthFunc addFunc(ufo::EZ3& z3, std::string name,
+  const std::vector<expr::Expr>& vardecls, expr::Expr sort, ufo::SynthFuncType type)
+{
+  std::vector<expr::Expr> declArgs;
+  for (const expr::Expr& v : vardecls)
+  {
+    /* FDECL only takes vector of sorts as argument */
+    declArgs.push_back(v->right());
+  }
+  declArgs.push_back(sort);
+  /* Z3 needs to know the function exists */
+  toparse += "\n(declare-fun " + name + " (";
+  for (int i = 0; i < declArgs.size() - 1; ++i)
+  {
+    expr::Expr vsort = declArgs[i];
+    if (i != 0) toparse += " ";
+    toparse += z3.toSmtLib(vsort);
+  }
+  toparse += ") " + z3.toSmtLib(sort) + ")";
+  yy::funcs.insert(name);
+  return ufo::SynthFunc( type,
+    expr::bind::fdecl(expr::mkTerm<std::string>(name, sort->efac()),
+    declArgs), vardecls);
+}
+
 }
 }
 
@@ -180,6 +207,7 @@ vardecls:
          LPAR ID sort RPAR vardecls
            {
               std::swap($$, $5);
+              // Note: this can be used directly for quantifiers, NOT for fdecls
               $$.insert($$.begin(), expr::bind::constDecl(
                 ufo::mkTerm<std::string>($2, efac), $3));
            }
@@ -232,42 +260,19 @@ topvardecl:
 
 topcommand:
            COMMENT
-           | LPAR SETLOGIC ID RPAR { prob.logic = $2; }
+           | LPAR SETLOGIC ID RPAR { prob._logic = $2; }
            | LPAR SYNTHFUN ID LPAR vardecls RPAR sort grammar RPAR
                {
-                  $5.push_back($7);
                   /* TODO: Ignoring grammar for now */
-                  prob.synthfuncs.push_back(ufo::SynthFunc(
-                    ufo::SynthFuncType::SYNTH,
-                    expr::bind::fdecl(expr::mkTerm<std::string>($3, efac), $5)));
-                  /* Z3 needs to know the function exists */
-                  toparse += "\n(declare-fun " + $3 + " (";
-                  for (int i = 0; i < $5.size() - 1; ++i)
-                  {
-                    expr::Expr v = $5[i];
-                    if (i != 0) toparse += " ";
-                    toparse += z3.toSmtLib(v->right());
-                  }
-                  toparse += ") " + z3.toSmtLib($7) + ")";
-                  yy::funcs.insert($3);
+                  prob._synthfuncs.push_back(std::move(
+                    addFunc(z3, $3, $5, $7, ufo::SynthFuncType::SYNTH)));
                }
            | LPAR SYNTHINV ID LPAR vardecls RPAR grammar RPAR
                {
-                  $5.push_back(expr::op::sort::boolTy(efac));
                   /* TODO: Ignoring grammar for now */
-                  prob.synthfuncs.push_back(ufo::SynthFunc(
-                    ufo::SynthFuncType::INV,
-                    expr::bind::fdecl(expr::mkTerm<std::string>($3, efac), $5)));
-                  /* Z3 needs to know the function exists */
-                  toparse += "\n(declare-fun " + $3 + " (";
-                  for (int i = 0; i < $5.size() - 1; ++i)
-                  {
-                    expr::Expr v = $5[i];
-                    if (i != 0) toparse += " ";
-                    toparse += z3.toSmtLib(v->right());
-                  }
-                  toparse += ") Bool)";
-                  yy::funcs.insert($3);
+                  prob._synthfuncs.push_back(std::move(
+                    addFunc(z3, $3, $5, expr::op::sort::boolTy(efac),
+                      ufo::SynthFuncType::INV)));
                }
            | LPAR DEFFUN ID LPAR vardecls RPAR sort expr RPAR
                {
@@ -313,9 +318,9 @@ topcommand:
                     throw 0;
                   }
                   assert(ufo::isOpX<expr::op::AND>(e));
-                  prob.constraints.reserve(e->arity() - 1);
+                  prob._constraints.reserve(e->arity() - 1);
                   for (int i = 0; i < e->arity() - 1; ++i)
-                    prob.constraints.push_back(e->arg(i));
+                    prob._constraints.push_back(e->arg(i));
                   return 0;
                }
            ;
