@@ -271,20 +271,20 @@ namespace ufo
     /**
      * Model of S /\ \neg T (if AE-formula is invalid)
      */
-    void printModelNeg()
+    void printModelNeg(ostream& out)
     {
-      outs () << "(model\n";
+      out << "(model\n";
       Expr witn = mk<IMPL>(s, t);
       for (auto &var : sVars){
         Expr assnmt = var == modelInvalid[var] ? getDefaultAssignment(var) : modelInvalid[var];
         if (debug)
           witn = replaceAll(witn, var, assnmt);
 
-        outs () << "  (define-fun " << *var << " () " <<
+        out << "  (define-fun " << *var << " () " <<
           (bind::isBoolConst(var) ? "Bool" : (bind::isIntConst(var) ? "Int" : "Real"))
                 << "\n    " << *assnmt << ")\n";
       }
-      outs () << ")\n";
+      out << ")\n";
 
       if (debug){
         outs () << "Sanity check [model]: " << (bool)u.isFalse(witn) << "\n";
@@ -1365,7 +1365,7 @@ namespace ufo
 
     if (ae.solve()){
       outs () << "Iter: " << ae.getPartitioningSize() << "; Result: invalid\n";
-      ae.printModelNeg();
+      ae.printModelNeg(outs());
       outs() << "\nvalid subset:\n";
       u.serialize_formula(simplifyBool(simplifyArithm(ae.getValidSubset(compact))));
     } else {
