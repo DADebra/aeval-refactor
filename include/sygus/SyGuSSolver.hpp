@@ -170,6 +170,20 @@ class SyGuSSolver
     return bool(!ret);
   }
 
+  // Sometimes AE-VAL returns an ITE tree with func=val nodes instead of the
+  //   other way around. Rewrite so its func=ITE instead.
+  Expr flattenITEDef(Expr ite)
+  {
+    if (isOpX<EQ>(ite))
+      return ite;
+    assert(isOpX<ITE>(ite));
+    Expr newt = flattenITEDef(ite->right()), newe = flattenITEDef(ite->last());
+    assert(isOpX<EQ>(newt) && isOpX<EQ>(newe));
+    assert(newt->left() == newe->left());
+    vector<Expr> newargs({ ite->left(), newt->right(), newe->right() });
+    return mk<EQ>(newt->left(), mknary<ITE>(newargs));
+  }
+
   tribool solveSingleApps()
   {
     Expr allcons = conjoin(prob.constraints, efac);
@@ -226,6 +240,9 @@ class SyGuSSolver
       if (isOpX<EQ>(funcs_conj))
         // Just for ease of use; WON'T MARSHAL
         funcs_conj = mk<AND>(funcs_conj);
+      else if (isOpX<ITE>(funcs_conj))
+        // Just for ease of use; WON'T MARSHAL
+        funcs_conj = mk<AND>(flattenITEDef(funcs_conj));
       assert(isOpX<AND>(funcs_conj));
       for (int i = 0; i < funcs_conj->arity(); ++i)
       {
