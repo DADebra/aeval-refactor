@@ -68,18 +68,9 @@ int main(int argc, char** argv)
   tribool tret = solver.Solve();
   if (tret)
   {
-    for (const auto &kv : solver.foundfuncs)
+    for (const auto &f : solver.foundfuncsorder)
     {
-      outs() << "(define-fun " << kv.first->decl->first() << " (";
-      for (int i = 0; i < kv.first->vars.size(); ++i)
-      {
-        const Expr& var = kv.first->vars[i];
-        if (i != 0) outs() << " ";
-        outs() << "(" << var->first() << " " << z3.toSmtLib(var->last()) << ")";
-      }
-      outs() << ") " << z3.toSmtLib(kv.first->decl->last()) << "\n  ";
-      u.print(kv.second);
-      outs() << "\n)" << endl;
+      outs() << f->GetDefFun(solver.foundfuncs.at(f), u, true) << endl;
     }
     return 0;
   }

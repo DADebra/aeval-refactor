@@ -3,6 +3,7 @@
 
 #include <string>
 #include "ufo/Expr.hpp"
+#include "ae/SMTUtils.hpp"
 
 namespace yy { class parser; }
 
@@ -24,6 +25,27 @@ class SynthFunc
     type(_type), decl(_decl), vars(_vars) {}
   SynthFunc(SynthFuncType _type, Expr _decl, vector<Expr>&& _vars) :
     type(_type), decl(_decl), vars(_vars) {}
+
+  // Convert to (define-fun ...)
+  string GetDefFun(Expr def, SMTUtils& u, bool newlines = false) const
+  {
+    ostringstream os;
+    os << "(define-fun " << decl->first() << " (";
+    for (int i = 0; i < vars.size(); ++i)
+    {
+      const Expr& var = vars[i];
+      if (i != 0) os << " ";
+      os << "(" << var->first() << " "; u.print(var->last(), os); os << ")";
+    }
+    os << ") "; u.print(decl->last(), os);
+    if (newlines) os << "\n";
+    os << "  ";
+    u.print(def, os);
+    if (newlines) os << "\n";
+    os << ")";
+    os.flush();
+    return os.str();
+  }
 };
 
 class SynthProblem
