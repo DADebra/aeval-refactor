@@ -50,14 +50,14 @@ class SyGuSSolver
 
     for (const auto& kv : prob.singleapps)
       for (int i = 1; i < kv.second->arity(); ++i)
-        faArgs.push_back(kv.second->arg(i));
+        faArgs.push_back(kv.second->arg(i)->left());
     exArgs.push_back(allcons);
     faArgs.push_back(mknary<EXISTS>(exArgs));
     Expr aeProb = mknary<FORALL>(faArgs);
     aeProb = regularizeQF(aeProb);
     aeProb = convertIntsToReals<DIV>(aeProb);
     if (debug > 1)
-      { outs() << "Sending to aeval: " << z3.toSmtLib(aeProb) << endl; }
+      { outs() << "Sending to aeval: "; u.print(aeProb); outs() << endl; }
 
     AeValSolver ae(mk<TRUE>(efac), aeProb->last()->last(), exVars, debug, true);
 
