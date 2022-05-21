@@ -1182,13 +1182,22 @@ namespace ufo
     }
   };
 
+  inline static bool qeUnsupported (Expr e)
+  {
+    if (containsOp<ARRAY_TY>(e)) return true;
+    if (containsOp<MOD>(e)) return true;
+    if (containsOp<DIV>(e)) return true;
+    if (containsOp<BVSORT>(e)) return true;
+    return isNonlinear(e);
+  }
+
   inline static Expr coreQE(Expr fla, ExprSet& vars)
   {
     if (!emptyIntersect(fla, vars) &&
         !containsOp<FORALL>(fla) && !containsOp<EXISTS>(fla) && !qeUnsupported(fla))
     {
-      AeValSolver ae(mk<TRUE>(fla->getFactory()), fla, vars); // exists quantified . formula
-      if (ae.solve()) return ae.getValidSubset();
+      AeValSolver ae(mk<TRUE>(fla->getFactory()), fla, vars, 0, false); // exists quantified . formula
+      if (ae.solve()) return ae.getValidSubset(false);
       else return mk<TRUE>(fla->getFactory());
     }
     return fla;
@@ -1297,15 +1306,6 @@ namespace ufo
       return NULL;
     }
     return tmp;
-  }
-
-  inline static bool qeUnsupported (Expr e)
-  {
-    if (containsOp<ARRAY_TY>(e)) return true;
-    if (containsOp<MOD>(e)) return true;
-    if (containsOp<DIV>(e)) return true;
-    if (containsOp<BVSORT>(e)) return true;
-    return isNonlinear(e);
   }
 
   /**
