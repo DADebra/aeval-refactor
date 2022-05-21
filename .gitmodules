@@ -1,0 +1,12 @@
+[submodule "expr"]
+	path = expr
+	url = ./
+	branch = expr
+[submodule "aeval"]
+	path = aeval
+	url = ./
+	branch = aeval
+[submodule "rnd"]
+	path = rnd
+	url = ./
+	branch = rnd

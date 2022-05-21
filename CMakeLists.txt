@@ -160,15 +160,17 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
   add_definitions( -Wno-unused-local-typedefs)
 endif ()
 
-# add the include directory from the build tree
-include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/include)
+add_library(global STATIC global.cpp)
 
 ### add our include directories to the front, overriding directories
 ### specified by external packages.
-include_directories(BEFORE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_include_directories(global BEFORE PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-#add_subdirectory(expr)
-#add_subdirectory(aeval)
-#add_subdirectory(rnd)
+# add the include directory from the build tree
+target_include_directories(global BEFORE PUBLIC
+    ${CMAKE_CURRENT_BINARY_DIR}/include)
+
+add_subdirectory(expr)
+add_subdirectory(aeval)
+add_subdirectory(rnd)
