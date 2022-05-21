@@ -498,10 +498,10 @@ namespace ufo
           for (auto & tmpVar : tmpVars) postVars.erase(tmpVar);
           if (postVars.size() > 0)
           {
-            AeValSolver ae(mk<TRUE>(m_efac), mk<AND>(postReplaced, mk<EQ>(tmpIt, se[0]->right())), postVars);
+            AeValSolver ae(mk<TRUE>(m_efac), mk<AND>(postReplaced, mk<EQ>(tmpIt, se[0]->right())), postVars, 0, false);
             if (ae.solve())
             {
-              Expr pr = ae.getValidSubset();
+              Expr pr = ae.getValidSubset(false);
               ExprSet conjs;
               getConj(pr, conjs);
               if (conjs.size() > 1)
@@ -546,13 +546,13 @@ namespace ufo
               elementaryIts.erase(tmpIt);
               if (elementaryIts.size() == 1)
               {
-                AeValSolver ae(mk<TRUE>(m_efac), mk<AND>(disjIts, a.first->left()), elementaryIts);
+                AeValSolver ae(mk<TRUE>(m_efac), mk<AND>(disjIts, a.first->left()), elementaryIts, 0, false);
                 if (ae.solve())
                 {
                   ExprVector args;
                   Expr it = *elementaryIts.begin();
                   args.push_back(it->left());
-                  Expr newPre = replaceAll(ae.getValidSubset(), tmpIt, it);
+                  Expr newPre = replaceAll(ae.getValidSubset(false), tmpIt, it);
                   Expr newPost = replaceAll(a.first->right(), tmpIt, it);
                   for (int index = 0; index < tmpVars.size() && index < arrVars.size(); index++)
                   newPost = replaceAll(newPost, tmpVars[index], mk<SELECT>(arrVars[index], it));
@@ -1866,9 +1866,9 @@ namespace ufo
       ar->mbp = extMbp;
 
       ExprSet itersCur = {a};
-      AeValSolver ae(mk<TRUE>(m_efac), extPref, itersCur);
+      AeValSolver ae(mk<TRUE>(m_efac), extPref, itersCur, 0, true);
       ae.solve();
-      Expr skol = u.simplifyITE(ae.getSimpleSkolemFunction(), ae.getValidSubset());
+      Expr skol = u.simplifyITE(ae.getSkolemFunction(false), ae.getValidSubset(false));
       if (isOpX<TRUE>(skol))
       {
         if (printLog >= 3) outs() << "Preprocessing of counter " << a << " of relation " << rel << " fails  🔥\n";
