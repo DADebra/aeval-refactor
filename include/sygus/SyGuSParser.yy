@@ -50,13 +50,15 @@ FILE *infile;
 yy::parser::symbol_type yylex()
 {
   bool isComment = false;
-  char c;
+  char c, nextc;
   std::string s;
 
   loc.step();
 
   c = fgetc(infile);
   loc.columns();
+  nextc = fgetc(infile);
+  ungetc(nextc, infile);
 
   switch (c)
   {
@@ -72,6 +74,8 @@ yy::parser::symbol_type yylex()
     case ')':
       return yy::parser::make_RPAR(')', loc);
     case '_':
+      if (nextc != ' ' && nextc != '\t' && nextc != '\n')
+        break; // Only recognize an independent _ as USCORE
       return yy::parser::make_USCORE('_', loc);
     case ';':
       isComment = true;
