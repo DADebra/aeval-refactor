@@ -8,14 +8,14 @@ namespace ufo
 
 typedef Expr NT;
 
-enum class VarType { UNK, INC, DEC, CONST };
+enum class VarType { NONE, UNK, INC, DEC, CONST };
 
 struct Var {
   VarType type;
   Expr expr;
 
   Var(Expr e) : expr(e), type(VarType::UNK) {}
-  Var(Expr e, VarType ty) : expr(e), type(ty) {}
+  Var(Expr e, VarType ty) : expr(e), type(ty) { assert(ty != VarType::NONE); }
 
   operator Expr() const
   {
@@ -33,57 +33,134 @@ struct varless
   }
 };
 
+struct constless
+{
+  bool operator()(const Expr& l, const Expr& r) const
+  {
+    if (isOpX<MPQ>(l) && isOpX<MPQ>(r))
+      return getTerm<mpq_class>(l) < getTerm<mpq_class>(r);
+    else if (isOpX<MPZ>(l) && isOpX<MPZ>(r))
+      return getTerm<mpz_class>(l) < getTerm<mpz_class>(r);
+    else if (is_bvnum(l) && is_bvnum(r))
+      return toMpz(l) < toMpz(r);
+    else
+      assert(0 && "Unknown constant type or non-matching types");
+    return false;
+  }
+};
+
 typedef unordered_map<Expr, set<Var, varless>> VarMap;
-typedef unordered_map<Expr, vector<Expr>> ConstMap;
+typedef unordered_map<Expr, set<Expr, constless>> ConstMap;
+
+// Class of modification made to the grammar
+enum class ModClass { NONE, PROD, CONSTRAINT, VAR, CONST, PRIO };
+// Type of modification made
+enum class ModType  { NONE, ADD, DEL, MOD };
+
+typedef function<void(ModClass,ModType)> ModListener;
 
 class Grammar
 {
-  //private:
-  public:
+  private:
 
-  NT root;
-  ExprUMap defs;
-  vector<Constraint> constraints;
-  unordered_map<std::pair<Expr,Expr>, cpp_rational> priomap;
-  inline cpp_rational priomapat(const std::pair<Expr,Expr> &prod)
-  {
-    if (priomap.count(prod) == 0)
-      priomap.emplace(prod, 1);
-    return priomap[prod];
-  }
-
-  // priomap, but for getRandCand
-  // Key: Either Expr, Value: Distribution, in order given by CFG
-  unordered_map<Expr, discrete_distribution<int>> distmap;
+  NT _root;
+  set<NT> _nts;
+  unordered_map<NT, vector<Expr>> _prods;
+  vector<Constraint> _constraints;
+  unordered_map<NT, unordered_map<Expr, mpq_class>> _priomap;
 
   // Key: Sort, Value: Variables
-  VarMap vars;
+  VarMap _vars;
 
-  ConstMap consts;
+  ConstMap _consts;
+
+  // Functions called when the grammar is modified.
+  // TODO: Also tell listener what changed (which production, etc.)
+  unordered_set<std::shared_ptr<ModListener>> modListeners;
+
+  void notifyListeners(ModClass cl, ModType ty);
 
   public:
   
-  Grammar() : root(NULL) {}
+  /*** GETTERS ***/
 
-  // Add a non-terminal with the given name, sort, and productions.
-  // 'prods' is an ordered vector of productions; the float is used to specify
-  //   priorities with each production.
+  const decltype(_root)& root = _root;
+  const decltype(_nts)& nts = _nts;
+  const decltype(_prods)& prods = _prods;
+  const decltype(_constraints)& constraints = _constraints;
+  const decltype(_priomap)& priomap = _priomap;
+  const decltype(_vars)& vars = _vars;
+  const decltype(_consts)& consts = _consts;
+
+  /*** MODIFIERS ***/
+
+  void setRoot(NT root) { _root = root; }
+
+  // Add a non-terminal with the given name and sort.
   template <typename Sort>
-  NT addNt(string name, vector<pair<NT,float>> prods);
+  NT addNt(string name, ExprFactory& efac);
+  NT addNt(string name, Expr sort);
 
-  // Add a non-terminal with the given name, sort, and productions.
-  // 'prods' is an ordered vector of productions.
-  template <typename Sort>
-  NT addNt(string name, vector<NT> prods);
+  bool addProd(NT nt, Expr prod, mpq_class prio = 1);
 
-  void addConstraint(Expr constraint, bool any = false);
+  bool delProd(NT nt, Expr prod);
+  vector<Expr>::iterator delProd(unordered_map<Expr,vector<Expr>>::iterator itr1,
+    vector<Expr>::const_iterator itr2);
 
-  template <typename Sort>
-  void addConstants(ExprVector consts);
+  void changePrio(NT nt, Expr prod, mpq_class prio);
 
-  void addVars(Expr sort, ExprVector vars);
+  bool addConstraint(Expr cons, bool any = false);
+  bool delConstraint(Expr cons);
+  vector<Constraint>::iterator delConstraint(vector<Constraint>::const_iterator itr);
 
-  bool satsConstraints(const ParseTree& pt);
+  // Add a constant
+  bool addConst(Expr c, mpq_class prio = 1);
+  bool delConst(Expr c);
+  ConstMap::mapped_type::iterator delConst(ConstMap::iterator itr1,
+    ConstMap::mapped_type::const_iterator itr2);
+
+  bool addVar(Var var, mpq_class prio = 1);
+  bool delVar(Var var);
+  VarMap::mapped_type::iterator delVar(VarMap::iterator itr1,
+    VarMap::mapped_type::const_iterator itr2);
+
+  bool addModListener(std::shared_ptr<ModListener> listener);
+  bool delModListener(std::shared_ptr<ModListener> listener);
+
+  /*** UTILITIES ***/
+  bool satsConstraints(const ParseTree& pt) const;
+
+  bool isNt(Expr e) const { return isOpX<FAPP>(e) && _prods.count(e) != 0; }
+  bool isVar(Expr e) const
+  {
+    return isOpX<FAPP>(e) &&
+      _vars.count(typeOf(e)) != 0 && _vars.at(typeOf(e)).count(e) != 0;
+  }
+  bool isConst(Expr e) const
+  {
+    return (isOpX<MPZ>(e) || isOpX<MPQ>(e) || is_bvnum(e)) &&
+      _consts.count(typeOf(e)) != 0 && _consts.at(typeOf(e)).count(e) != 0;
+  }
+
+  /*** C-TORS, ETC. ***/
+  Grammar() {}
+  Grammar(const Grammar& g) :
+    _root(g._root),_nts(g._nts),_prods(g._prods),_constraints(g._constraints),
+    _priomap(g._priomap),_vars(g._vars),_consts(g._consts),
+    root(_root),nts(_nts),prods(_prods),constraints(_constraints),
+    vars(_vars),consts(_consts),priomap(_priomap) {}
+  Grammar(Grammar&& g) :
+    _root(std::move(g._root)),_nts(std::move(g._nts)),
+    _prods(std::move(g._prods)),_constraints(std::move(g._constraints)),
+    _priomap(std::move(g._priomap)),
+    _vars(std::move(g._vars)),_consts(std::move(g._consts)),
+    root(_root),nts(_nts),prods(_prods),constraints(_constraints),
+    vars(_vars),consts(_consts),priomap(_priomap) {}
+  
+  Grammar& operator=(const Grammar& g)
+  { this->~Grammar(); new (this) Grammar(g); return *this; }
+  Grammar& operator=(Grammar&& g)
+  { this->~Grammar(); new (this) Grammar(std::move(g)); return *this; }
 
   friend class CFGUtils;
 };

@@ -21,69 +21,90 @@ class RndTrav : public Traversal
   ParseTree lastcand;
 
   default_random_engine randgenerator;
+  // K: NT, V: Distribution of priorities, same order as prods[NT]
+  unordered_map<NT, discrete_distribution<int>> distmap;
+
+  void regendistmap()
+  {
+    distmap.clear();
+    for (const auto &nt_prods : gram.prods)
+    {
+      // each NT
+      NT nt = nt_prods.first;
+      vector<mpq_class> rweights;
+      for (const Expr &p : nt_prods.second)
+        // each prod
+        rweights.push_back(gram.priomap.at(nt).at(p));
+
+      // Simple GCD, to make sure all priorities convert to integers
+      mpz_class gcd = 1;
+      for (auto &rw : rweights)
+        gcd *= rw.get_den();
+
+      vector<int> iweights;
+      for (auto &rw : rweights)
+      {
+        mpq_class res = rw * gcd;
+        assert(res.get_den() == 1);
+        mpz_class ires = res.get_num();
+        assert(ires.fits_sint_p());
+        iweights.push_back(ires.get_si());
+      }
+
+      distmap.emplace(nt,
+        std::move(discrete_distribution<int>(iweights.begin(),
+        iweights.end())));
+    }
+  }
 
   // qvars is set of quantifier variables for this expression.
   // Using pointer because we need it to be nullable.
   ParseTree getRandCand(const Expr& root, int currdepth,
       std::shared_ptr<ExprUSet> qvars, Expr currnt)
   {
-    if (isOpX<FAPP>(root))
-    {
-      string fname = lexical_cast<string>(bind::fname(root)->left());
-      if (gram.vars[bind::typeOf(root)].count(root) != 0)
-      {
-        // Root is a symbolic variable; don't expand.
+    if (gram.isVar(root) || gram.isConst(root) || root->arity() == 0)
+        // Root is a symbolic variable or constant; don't expand.
         return ParseTree(root);
-      }
-
-      // Else, root is a user-defined non-terminal or *either*
-
-      if (fname == "either")
+    else if (gram.isNt(root))
+    {
+      if (root != currnt)
+        currdepth = 0;
+      currnt = root;
+      if (gram.prods.at(root).size() == 0)
       {
-        ParseTree cand = NULL;
-        while (!cand)
-        {
-          // Randomly select from the available productions.
-          // Offset by 1 because arg(0) is the fdecl.
-          //int randindex = (rand() % (root->arity() - 1)) + 1;
-          int randindex = gram.distmap[root](randgenerator) + 1;
-          if (CFGUtils::isRecursive(root->arg(randindex), currnt) &&
-              currdepth == params.maxrecdepth)
-            continue;
-          int newdepth = CFGUtils::isRecursive(root->arg(randindex), currnt) ?
-                          currdepth + 1 : currdepth;
-
-          cand = getRandCand(root->arg(randindex), newdepth, qvars, currnt);
-        }
-        return cand;
+        CFGUtils::noNtDefError(root, gram.root);
+        return NULL; // Unreachable
       }
+      ParseTree cand = NULL;
+      while (!cand)
+      {
+        // Randomly select from the available productions.
+        // Offset by 1 because arg(0) is the fdecl.
+        //int randindex = (rand() % (root->arity() - 1)) + 1;
+        int randindex = distmap[root](randgenerator);
+        Expr prod = gram.prods.at(root)[randindex];
+        if (CFGUtils::isRecursive(prod, root) &&
+            currdepth == params.maxrecdepth)
+          continue;
+        int newdepth = CFGUtils::isRecursive(prod, root) ?
+                        currdepth + 1 : currdepth;
+
+        cand = getRandCand(prod, newdepth, qvars, currnt);
+      }
+      return ParseTree(root, vector<ParseTree>{cand}, true);
+    }
+    else if (isOpX<FAPP>(root))
+    {
+      if (qvars != NULL && qvars->count(root->first()) != 0)
+        // Root is a variable for a surrounding quantifier
+        return ParseTree(root);
       else
       {
-        // Root is user-defined non-terminal
-        if (gram.defs.count(root) != 0)
-          return ParseTree(root, vector<ParseTree>{
-            getRandCand(gram.defs.at(root), root == currnt ? currdepth : 0, qvars,
-            root)}, true);
-        else if (qvars != NULL &&
-         qvars->count(root->first()) != 0)
-          // Root is a variable for a surrounding quantifier
-          return ParseTree(root);
-        else
-        {
-          // There's no definition, we're expanding an empty *_VARS
-          outs() << "ERROR: There is no definition for user-defined " <<
-            "non-terminal " << root << " in the CFG for " << gram.root <<
-            ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
-          assert(0);
-          // We never get here
-          return NULL;
-        }
+        // There's no definition, we're expanding an empty *_VARS
+        CFGUtils::noNtDefError(root, gram.root);
+        // We never get here
+        return NULL;
       }
-    }
-    else if (root->arity() == 0)
-    {
-      // Root is a Z3 terminal, e.g. Int constant, e.g. 3
-      return ParseTree(root);
     }
 
     // Root is Z3-defined non-terminal
@@ -106,17 +127,35 @@ class RndTrav : public Traversal
 
     for (auto itr = root->args_begin();
          itr != root->args_end(); ++itr)
-      expanded_args.push_back(getRandCand(*itr, currdepth, localqvars,currnt));
+    {
+      expanded_args.push_back(getRandCand(*itr, currdepth, localqvars, currnt));
+    }
 
-    //return mknary(root->op(), expanded_args.begin(), expanded_args.end());
     return ParseTree(root, expanded_args, false);
   }
 
+  void onGramMod(ModClass cl, ModType ty)
+  {
+    if (cl == ModClass::PRIO)
+      regendistmap();
+  }
+  ModListener ml; std::shared_ptr<ModListener> mlp;
+
   public:
 
-  RndTrav(Grammar &_gram, const TravParams& tp) : gram(_gram), params(tp)
+  RndTrav(Grammar &_gram, const TravParams& tp) : gram(_gram), params(tp), mlp(&ml)
   {
+    ml = [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); };
+    bool ret = gram.addModListener(mlp);
+    assert(ret);
+    regendistmap();
     Increment();
+  }
+
+  ~RndTrav()
+  {
+    bool ret = gram.delModListener(mlp);
+    assert(ret);
   }
 
   virtual bool IsDone() { return false; }
@@ -126,7 +165,7 @@ class RndTrav : public Traversal
   virtual ParseTree Increment()
   {
     ParseTree ret = lastcand;
-    lastcand = getRandCand(gram.root, 0, NULL, NULL);
+    lastcand = getRandCand(gram.root, 0, NULL, gram.root);
     lastcand.fixchildren();
     return ret;
   }

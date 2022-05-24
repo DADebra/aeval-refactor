@@ -139,8 +139,7 @@ PTCoroCacheIter PTCoroCache::end()
 class tuplehash
 {
   public:
-  size_t operator()(const std::tuple<Expr,int,std::shared_ptr<ExprUSet>,
-  Expr>& tup) const
+  size_t operator()(const std::tuple<Expr,int,std::shared_ptr<ExprUSet>,Expr>& tup) const
   {
     return std::hash<Expr>()(std::get<0>(tup)) *
       std::hash<int>()(std::get<1>(tup)) *
@@ -165,6 +164,12 @@ class CoroTrav : public Traversal
 
   ParseTree lastcand; // Coroutines will destroy last cand once generated.
 
+  // Helper function to convert from our format to Grammar's
+  inline double grampriomapat(const pair<Expr,Expr> prod)
+  {
+    return gram.priomap.at(prod.first).at(prod.second).get_d();
+  }
+
   void getNextCandTrav_fn(coroutine<ParseTree>::push_type &sink,
       Expr root = NULL, int currdepth = 0,
       std::shared_ptr<ExprUSet> qvars = NULL, Expr currnt = NULL)
@@ -180,263 +185,248 @@ class CoroTrav : public Traversal
       outs() << "NULL";
     outs() << ", " << currnt << ")" << endl;*/
 
-    if (isOpX<FAPP>(root))
+    if (gram.isVar(root) || gram.isConst(root) || root->arity() == 0)
     {
-      string fname = lexical_cast<string>(bind::fname(root)->left());
-      if (gram.vars[bind::typeOf(root)].count(root) != 0)
+      // Root is a symbolic variable; don't expand.
+      sink(ParseTree(root));
+      //currnumcandcoros--;
+      return;
+    }
+    else if (gram.isNt(root))
+    {
+      if (root != currnt)
+        currdepth = 0;
+      currnt = root;
+      vector<int> order;
+
+      auto &prods = gram.prods.at(root);
+      if (prods.size() == 0)
       {
-        // Root is a symbolic variable; don't expand.
-        sink(ParseTree(root));
-        //currnumcandcoros--;
+        CFGUtils::noNtDefError(root, gram.root);
+        sink(NULL); // Unreachable
         return;
       }
 
-      // Else, root is a user-defined non-terminal or *either*
-
-      if (fname == "either")
+      if (params.order == TPOrder::FOR)
+        for (int i = 0; i < prods.size(); ++i)
+        {
+          if (!CFGUtils::isRecursive(prods[i], currnt) ||
+          currdepth + 1 <= params.maxrecdepth)
+            order.push_back(i);
+        }
+      else if (params.order == TPOrder::REV)
+        for (int i = prods.size() - 1; i >= 0; --i)
+        {
+          if (!CFGUtils::isRecursive(prods[i], currnt) ||
+          currdepth + 1 <= params.maxrecdepth)
+            order.push_back(i);
+        }
+      else if (params.order == TPOrder::RND)
       {
-        vector<int> order;
-
-        if (params.order == TPOrder::FOR)
-          for (int i = 1; i < root->arity(); ++i)
-          {
-            if (!CFGUtils::isRecursive(root->arg(i), currnt) ||
-            currdepth + 1 <= params.maxrecdepth)
-              order.push_back(i);
-          }
-        else if (params.order == TPOrder::REV)
-          for (int i = root->arity() - 1; i >= 1; --i)
-          {
-            if (!CFGUtils::isRecursive(root->arg(i), currnt) ||
-            currdepth + 1 <= params.maxrecdepth)
-              order.push_back(i);
-          }
-        else if (params.order == TPOrder::RND)
+        set<int> done;
+        while (done.size() < prods.size())
         {
-          set<int> done;
-          while (done.size() < root->arity() - 1)
-          {
-            // Offset by 1 because arg(0) is the fdecl.
-            int randnum = (rand() % (root->arity() - 1)) + 1;
+          // Offset by 1 because arg(0) is the fdecl.
+          int randnum = (rand() % (prods.size()));
 
-            if (!done.insert(randnum).second)
-              continue;
+          if (!done.insert(randnum).second)
+            continue;
 
-            // Don't traverse past maximum depth
-            if (!CFGUtils::isRecursive(root->arg(randnum), currnt) ||
-            currdepth + 1 <= params.maxrecdepth)
-              order.push_back(randnum);
-          }
+          // Don't traverse past maximum depth
+          if (!CFGUtils::isRecursive(prods[randnum], root) ||
+          currdepth + 1 <= params.maxrecdepth)
+            order.push_back(randnum);
         }
+      }
 
-        if (order.size() == 0)
+      if (order.size() == 0)
+      {
+        sink(NULL);
+        return;
+      }
+
+      // First: Production, Second: Coroutine
+      list<std::pair<std::pair<NT,Expr>,PTCoroCacheIter>> coros;
+      for (int i : order)
+      {
+        Expr prod = prods[i];
+        int newdepth;
+        if (CFGUtils::isRecursive(prod, root))
+          newdepth = currdepth + 1;
+        else
+          newdepth = currdepth;
+
+        coros.push_back(std::move(make_pair(make_pair(root, prod),
+          getCandCoro(prod, newdepth, qvars, currnt))));
+        if (!*coros.back().second)
+          coros.pop_back();
+        else if (params.type == TPType::STRIPED)
         {
-          sink(NULL);
-          return;
-        }
-
-        // First: Production, Second: Coroutine
-        list<std::pair<std::pair<Expr,Expr>,PTCoroCacheIter>> coros;
-        for (int i : order)
-        {
-          int newdepth;
-          if (CFGUtils::isRecursive(root->arg(i), currnt))
-            newdepth = currdepth + 1;
-          else
-            newdepth = currdepth;
-
-          coros.push_back(std::move(make_pair(make_pair(root, root->arg(i)),
-            getCandCoro(root->arg(i), newdepth, qvars, currnt))));
-          if (!*coros.back().second)
+          sink(ParseTree(root, vector<ParseTree>{*coros.back().second}, true));
+          ++coros.back().second;
+          if (!coros.back().second)
             coros.pop_back();
-          else if (params.type == TPType::STRIPED)
-          {
-            sink(*coros.back().second);
-            ++coros.back().second;
-            if (!coros.back().second)
-              coros.pop_back();
-          }
         }
+      }
 
-        // Without in-coro priorities
-        /*bool notdone = true;
-        while (notdone)
+      // Without in-coro priorities
+      /*bool notdone = true;
+      while (notdone)
+      {
+        notdone = false;
+        for (auto &coro : coros)
         {
-          notdone = false;
-          for (auto &coro : coros)
-          {
-            if (!coro.second)
-              continue;
-            notdone = true;
-            sink(*coro.second);
-            ++coro.second;
-          }
+          if (!coro.second)
+            continue;
+          notdone = true;
+          sink(*coro.second);
+          ++coro.second;
         }
-        return;*/
+      }
+      return;*/
 
-        // With in-coro priorities
-        auto lastbest = coros.begin();
+      // With in-coro priorities
+      auto lastbest = coros.begin();
 
-        // Key: <Either Expr, Non-terminal>,
-        // Value: number of cands generated with Production
-        unordered_map<std::pair<Expr, Expr>, int> candnum;
-        int totalcandnum = 0;
+      // Key: <Either Expr, Non-terminal>,
+      // Value: number of cands generated with Production
+      unordered_map<std::pair<NT, Expr>, int> candnum;
+      int totalcandnum = 0;
 
-        // prod has same format as Key of candnum
-        auto shoulddefer = [&] (const std::pair<Expr,Expr>& prod) -> bool
+      // prod has same format as Key of candnum
+      auto shoulddefer = [&] (const std::pair<NT,Expr>& prod) -> bool
+      {
+        if (candnum[prod] == 0 ||
+          grampriomapat(prod) == 1)
+          return false;
+        return candnum[prod] > (int)(grampriomapat(prod)*totalcandnum);
+      };
+
+      for (auto &kv : coros)
+      {
+        candnum[kv.first] = 0;
+      }
+
+      while (coros.size() != 0)
+      {
+        bool didsink = false;
+
+        if (params.type == TPType::ORDERED)
         {
-          if (candnum[prod] == 0 || gram.priomapat(prod) == 1)
-            return false;
-          return candnum[prod] > (int)(gram.priomapat(prod)*totalcandnum);
-        };
-
-        for (auto &kv : coros)
-        {
-          candnum[kv.first] = 0;
-        }
-
-        while (coros.size() != 0)
-        {
-          bool didsink = false;
-
-          if (params.type == TPType::ORDERED)
+          auto itr = coros.begin();
+          if (coros.size() != 0 && itr != coros.end())
           {
-            auto itr = coros.begin();
-            if (coros.size() != 0 && itr != coros.end())
+            while (itr != coros.end() && shoulddefer(itr->first))
+              ++itr;
+
+            if (itr != coros.end())
             {
-              while (itr != coros.end() && shoulddefer(itr->first))
-                ++itr;
-
-              if (itr != coros.end())
-              {
-                sink(*itr->second);
-                candnum[itr->first]++;
-                ++totalcandnum;
-                ++itr->second;
-                if (!itr->second)
-                {
-                  itr = coros.erase(itr);
-                  lastbest = coros.begin();
-                }
-                didsink = true;
-              }
-            }
-          }
-          else if (params.type == TPType::STRIPED)
-          {
-            for (auto itr = coros.begin(); itr != coros.end();)
-            {
-              if (shoulddefer(itr->first))
-              {
-                ++itr;
-                continue;
-              }
-
-              sink(*itr->second);
-              didsink = true;
+              sink(ParseTree(root, vector<ParseTree>{*itr->second}, true));
               candnum[itr->first]++;
               ++totalcandnum;
               ++itr->second;
               if (!itr->second)
               {
-                auto olditr = itr;
                 itr = coros.erase(itr);
-                if (lastbest == olditr)
-                  lastbest = coros.begin();
-                continue;
+                lastbest = coros.begin();
               }
-              ++itr;
+              didsink = true;
             }
           }
-
-          if (coros.size() != 0 && !didsink)
+        }
+        else if (params.type == TPType::STRIPED)
+        {
+          for (auto itr = coros.begin(); itr != coros.end();)
           {
-            // No coroutines available, pick best option.
-            if (!lastbest->second)
-              lastbest = coros.begin();
-            auto bestcoro = lastbest;
-            bool setbestcoro = false;
-            for (auto itr = coros.begin(); itr != lastbest; ++itr)
+            if (shoulddefer(itr->first))
             {
-              if (gram.priomapat(itr->first) > gram.priomapat(bestcoro->first))
-              {
-                bestcoro = itr;
-                setbestcoro = true;
-              }
+              ++itr;
+              continue;
             }
 
-            if (!setbestcoro)
-            {
-              auto itr = lastbest;
-              if (params.type == TPType::STRIPED)
-                ++itr;
-              for (; itr != coros.end(); ++itr)
-              {
-                if (gram.priomapat(itr->first) >= gram.priomapat(bestcoro->first))
-                {
-                  bestcoro = itr;
-                  setbestcoro = true;
-                  break;
-                }
-              }
-            }
-
-            sink(*bestcoro->second);
-            candnum[bestcoro->first]++;
+            sink(ParseTree(root, vector<ParseTree>{*itr->second}, true));
+            didsink = true;
+            candnum[itr->first]++;
             ++totalcandnum;
-            ++bestcoro->second;
-            if (!bestcoro->second)
+            ++itr->second;
+            if (!itr->second)
             {
-              auto oldbestcoro = bestcoro;
-              bestcoro = coros.erase(bestcoro);
-              if (lastbest == oldbestcoro)
+              auto olditr = itr;
+              itr = coros.erase(itr);
+              if (lastbest == olditr)
                 lastbest = coros.begin();
               continue;
             }
+            ++itr;
           }
         }
 
-        //currnumcandcoros--;
-        return;
+        if (coros.size() != 0 && !didsink)
+        {
+          // No coroutines available, pick best option.
+          if (!lastbest->second)
+            lastbest = coros.begin();
+          auto bestcoro = lastbest;
+          bool setbestcoro = false;
+          for (auto itr = coros.begin(); itr != lastbest; ++itr)
+          {
+            if (grampriomapat(itr->first) > grampriomapat(bestcoro->first))
+            {
+              bestcoro = itr;
+              setbestcoro = true;
+            }
+          }
+
+          if (!setbestcoro)
+          {
+            auto itr = lastbest;
+            if (params.type == TPType::STRIPED)
+              ++itr;
+            for (; itr != coros.end(); ++itr)
+            {
+              if (grampriomapat(itr->first) >= grampriomapat(bestcoro->first))
+              {
+                bestcoro = itr;
+                setbestcoro = true;
+                break;
+              }
+            }
+          }
+
+          sink(ParseTree(root, vector<ParseTree>{*bestcoro->second}, true));
+          candnum[bestcoro->first]++;
+          ++totalcandnum;
+          ++bestcoro->second;
+          if (!bestcoro->second)
+          {
+            auto oldbestcoro = bestcoro;
+            bestcoro = coros.erase(bestcoro);
+            if (lastbest == oldbestcoro)
+              lastbest = coros.begin();
+            continue;
+          }
+        }
+      }
+
+      //currnumcandcoros--;
+      return;
+    }
+    else if (isOpX<FAPP>(root))
+    {
+      if (qvars != NULL &&
+        qvars->find(root->first()) != qvars->end())
+      {
+          // Root is a variable for a surrounding quantifier
+          sink(ParseTree(root));
+          //currnumcandcoros--;
+          return;
       }
       else
       {
-        // Root is user-defined non-terminal
-        if (gram.defs.count(root) != 0)
-        {
-          //currnumcandcoros--;
-          PTCoroCacheIter newcoro = getCandCoro(gram.defs.at(root), root == currnt ?
-            currdepth : 0, qvars, root);
-          for (ParseTree pt : newcoro)
-          {
-            sink(ParseTree(root, vector<ParseTree>{pt}, true));
-          }
-          return;
-        }
-        else if (qvars != NULL &&
-        qvars->find(root->first()) != qvars->end())
-        {
-            // Root is a variable for a surrounding quantifier
-            sink(ParseTree(root));
-            //currnumcandcoros--;
-            return;
-        }
-        else
-        {
-          // There's no definition, we're expanding an empty *_VARS
-          outs() << "ERROR: There is no definition for user-defined " <<
-            "non-terminal " << root << " in the CFG for " << gram.root <<
-            ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
-          assert(0);
-        }
+        CFGUtils::noNtDefError(root, gram.root);
+        sink(NULL); // Unreachable
+        return;
       }
-    }
-    else if (root->arity() == 0)
-    {
-      // Root is a Z3 terminal, e.g. Int constant, e.g. 3
-      sink(ParseTree(root));
-      //currnumcandcoros--;
-      return;
     }
 
     // Root is Z3-defined non-terminal
@@ -473,7 +463,7 @@ class CoroTrav : public Traversal
       }
       else
       {
-        argcoros.push_back(getCandCoro(*itr,currdepth,localqvars,currnt));
+        argcoros.push_back(getCandCoro(*itr, currdepth, localqvars, currnt));
         expanded_args.push_back(argcoros.back()->get());
         (*argcoros.back())();
       }
@@ -635,8 +625,7 @@ class CoroTrav : public Traversal
           }
 
           methcoros.push_back(getTravCoro(std::move(newcoros),
-            std::move(newcand), std::move(newstuck), root, currdepth, qvars,
-            currnt));
+           std::move(newcand),std::move(newstuck),root,currdepth,qvars,currnt));
           sink(methcoros.back().get());
           methcoros.back()();
         }
@@ -729,10 +718,20 @@ class CoroTrav : public Traversal
         std::move(stuck), root, currdepth, qvars, currnt); }));
   }
 
+  void onGramMod(ModClass cl, ModType ty)
+  {
+    if (cl != ModClass::CONSTRAINT)
+      assert(0 && "Coroutine traversal does not support modifying Grammar mid-traversal!");
+  }
+  ModListener ml; std::shared_ptr<ModListener> mlp;
+
   public:
 
-  CoroTrav(Grammar &_gram,const TravParams &tp) : gram(_gram), params(tp)
+  CoroTrav(Grammar &_gram,const TravParams &tp) : gram(_gram), params(tp), mlp(&ml)
   {
+    ml = [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); };
+    bool ret = gram.addModListener(mlp);
+    assert(ret);
     std::shared_ptr<ExprUSet> qvars = NULL;
     int currdepth = 0;
     Expr currnt = NULL;
@@ -743,6 +742,12 @@ class CoroTrav : public Traversal
     lastcand = getNextCandTrav->get();
     (*getNextCandTrav)();
     lastcand.fixchildren();
+  }
+
+  ~CoroTrav()
+  {
+    bool ret = gram.delModListener(mlp);
+    assert(ret);
   }
 
   virtual bool IsDone()

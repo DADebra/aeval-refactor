@@ -2129,7 +2129,7 @@ namespace ufo
     }
 
     if (dBoot)
-      if (ds.bootstrap()) return;
+      if (ds.bootstrap()) exit(0);
 
     ds.calculateStatistics();
     ds.deferredPriorities();

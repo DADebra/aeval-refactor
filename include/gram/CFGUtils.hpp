@@ -5,6 +5,68 @@
 
 using namespace ufo;
 
+void CFGUtils::noNtDefError(NT nt, NT root)
+{
+  outs() << "ERROR: There is no definition for user-defined " <<
+    "non-terminal " << nt << " in the CFG for " << root <<
+    ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
+  exit(2);
+}
+
+decltype(CFGUtils::varsNtNameCache) CFGUtils::varsNtNameCache;
+decltype(CFGUtils::constsNtNameCache) CFGUtils::constsNtNameCache;
+string CFGUtils::sortName(Expr sort)
+{
+  EZ3 z3(sort->efac());
+  string sort_name(z3.toSmtLib(sort));
+
+  // We have a parameterized sort (e.g. Array)
+  for (auto&c : sort_name)
+  {
+    if (c == '(' || c == ')')
+      c = '$';
+    else if (c == ' ')
+      c = '_';
+    else
+      c = toupper(c);
+  }
+  return std::move(sort_name);
+}
+
+Expr CFGUtils::varsNtName(Expr sort, VarType type)
+{
+  auto key = make_pair(sort, type);
+  if (varsNtNameCache.count(key) == 0)
+  {
+    string vars_name(sortName(sort));
+    vars_name += "_VARS";
+    switch (type)
+    {
+      case VarType::NONE:
+        break;
+      case VarType::UNK:
+        vars_name += "_UNK"; break;
+      case VarType::INC:
+        vars_name += "_INC"; break;
+      case VarType::DEC:
+        vars_name += "_DEC"; break;
+      case VarType::CONST:
+        vars_name += "_CONST"; break;
+    }
+    Expr nt = mkConst(mkTerm(vars_name, sort->efac()), sort);
+    return varsNtNameCache.emplace(key, nt).first->second;
+  }
+  return varsNtNameCache.at(key);
+}
+
+Expr CFGUtils::constsNtName(Expr sort)
+{
+  if (constsNtNameCache.count(sort) == 0)
+    return constsNtNameCache.emplace(sort,
+      mkConst(mkTerm(sortName(sort) + "_CONSTS", sort->efac()), sort)).first->second;
+  return constsNtNameCache.at(sort);
+}
+
 bool CFGUtils::isEither(const Expr& exp)
 {
   if (!isOpX<FAPP>(exp))
@@ -55,102 +117,73 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
     //   variables that we define.
     ostringstream aug_gram;
 
-    auto generate_sort_decls = [&] (const string& sort_name,
-    const string& sort_smt, const string& vars_name)
+    // Which sorts we've already generated eithers and *_VARS for.
+    ExprSet donesorts;
+    auto generate_sort_decls = [&] (Expr sort)
     {
-        // Generate either functions for given sort
-        for (int i = 1; i <= NUMEITHERS; ++i)
+      if (donesorts.count(sort) != 0)
+        return;
+      string sort_smt = z3.toSmtLib(sort);
+      // Generate either functions for given sort
+      for (int i = 1; i <= NUMEITHERS; ++i)
+      {
+        auto gensorts = [&] ()
         {
-          auto gensorts = [&] ()
+          for (int x = 1; x <= i; ++x)
           {
-            for (int x = 1; x <= i; ++x)
-            {
-              aug_gram << sort_smt << " ";
-            }
-          };
-          aug_gram << "(declare-fun either ( ";
-          gensorts();
-          aug_gram << ") " << sort_smt << ")\n";
+            aug_gram << sort_smt << " ";
+          }
+        };
+        aug_gram << "(declare-fun either ( ";
+        gensorts();
+        aug_gram << ") " << sort_smt << ")\n";
 
-          // Generate n-ary `equal` constraint declarations
-          aug_gram << "(declare-fun equal (";
-          gensorts();
-          aug_gram << ") Bool)\n";
+        // Generate n-ary `equal` constraint declarations
+        aug_gram << "(declare-fun equal (";
+        gensorts();
+        aug_gram << ") Bool)\n";
 
-          // Generate n-ary `equal_under` constraint declarations
-          aug_gram << "(declare-fun equal_under ( String ";
-          gensorts();
-          aug_gram << ") Bool)\n";
+        // Generate n-ary `equal_under` constraint declarations
+        aug_gram << "(declare-fun equal_under ( String ";
+        gensorts();
+        aug_gram << ") Bool)\n";
 
-          // Generate n-ary `distinct_under` constraint declarations
-          aug_gram << "(declare-fun distinct_under ( String ";
-          gensorts();
-          aug_gram << ") Bool)\n";
-        }
+        // Generate n-ary `distinct_under` constraint declarations
+        aug_gram << "(declare-fun distinct_under ( String ";
+        gensorts();
+        aug_gram << ") Bool)\n";
+      }
 
-        // Special *_VARS variable
-        aug_gram << "(declare-fun " << vars_name << " () " <<
-          sort_smt << ")\n";
+      // Generate *_VARS_* declarations
+      for (VarType ty : { VarType::NONE, VarType::UNK, VarType::INC,
+      VarType::DEC, VarType::CONST })
+        aug_gram << z3.toSmtLib(bind::fname(varsNtName(sort, ty))) << "\n";
 
-        // Special *_INC, *_DEC, *_CONST, *_UNKN variables
-        for (auto& str : {"_INC", "_DEC", "_CONST", "_UNKN"} )
-          aug_gram << "(declare-fun " << vars_name << str << " () " <<
-            sort_smt << ")\n";
-        // Generate *_prio declarations
-        aug_gram << "(declare-fun prio (" <<
-          sort_smt << " Real) " << sort_smt << ")\n";
+      // Generate *_prio declarations
+      aug_gram << "(declare-fun prio (" <<
+        sort_smt << " Real) " << sort_smt << ")\n";
 
-        // Generate binary `expands` constraint declarations
-        aug_gram << "(declare-fun expands ("<<sort_smt<<" String) Bool)\n";
+      // Generate binary `expands` constraint declarations
+      aug_gram << "(declare-fun expands ("<<sort_smt<<" String) Bool)\n";
 
-        // Generate binary `under` constraint declarations
-        aug_gram << "(declare-fun under (String "<<sort_smt<<") Bool)\n";
+      // Generate binary `under` constraint declarations
+      aug_gram << "(declare-fun under (String "<<sort_smt<<") Bool)\n";
     };
 
     // We need the Bool eithers for the inv definition (rel is Bool)
-    generate_sort_decls("Bool", "Bool", "BOOL_VARS");
-
-    // Which sorts we've already generated eithers and *_VARS for.
-    ExprSet donesorts;
-    donesorts.insert(mk<BOOL_TY>(m_efac));
+    generate_sort_decls(mk<BOOL_TY>(m_efac));
 
     // Which variables we've already declared.
     ExprUSet donevars;
 
     // Easiest way to handle all_inv_vars and inv_vars
-    auto generate_all = [&] (VarMap vars,
-        const char* suffix, bool thisinv)
+    auto generate_all = [&] (VarMap vars)
     {
       for (auto& pair : vars)
       {
         string sort_smt = z3_to_smtlib<EZ3>(z3, pair.first);
 
-        string sort_name(sort_smt);
-
-        if (sort_name.find("(") != string::npos)
-        {
-          // We have a parameterized sort (e.g. Array)
-          for (auto&c : sort_name)
-          {
-            if (c == '(' || c == ')')
-              c = '$';
-            else if (c == ' ')
-              c = '_';
-          }
-        }
-
-        string vars_name(sort_name);
-        vars_name += "_VARS";
-        vars_name += suffix;
-        for (auto& c : vars_name)
-          c = (char)toupper(c);
-
-        // If we haven't already generated an either
-        if (donesorts.find(pair.first) == donesorts.end())
-        {
-          generate_sort_decls(sort_name, sort_smt, vars_name);
-          donesorts.insert(pair.first);
-        }
+        generate_sort_decls(pair.first);
 
         // Generate _FH_* decls for this sort
         for (auto& var : pair.second)
@@ -158,43 +191,16 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
           // var is a FAPP
           if (!donevars.insert(var).second)
             continue;
-          aug_gram << z3_to_smtlib(z3, bind::fname(var)) << endl;
-        }
-
-        // Only generate definitions for variables of this SamplFactory's invariant
-        if (thisinv)
-        {
-          // Generate definition (i.e. productions) for this sort's *_VARS
-          if (pair.second.size() >= 1)
-          {
-            aug_gram << "(assert (= " << vars_name <<
-              " (either";
-
-            for (auto& var : pair.second)
-            {
-              aug_gram << " " << (Expr)var;
-            }
-
-            aug_gram << ")))" << endl;
-          }
-          else if (pair.second.size() == 1)
-          {
-            aug_gram << "(assert (= " << vars_name << " " <<
-              (Expr)*pair.second.begin() << "))" << endl;
-          }
+          aug_gram << z3_to_smtlib(z3, bind::fname(var)) << "\n";
         }
       }
     };
 
-    generate_all(vars, "", true);
-    /*generate_all(inv_vars_inc, "_INC", true);
-    generate_all(inv_vars_dec, "_DEC", true);
-    generate_all(inv_vars_const, "_CONST", true);
-    generate_all(inv_vars_unknown, "_UNKN", true);*/
-    generate_all(othervars, "", false);
+    generate_all(vars);
+    generate_all(othervars);
 
     // Generate INT_CONSTS declaration
-    aug_gram << "(declare-fun " << INT_CONSTS << " () Int)\n";
+    aug_gram << z3.toSmtLib(constsNtName(mk<INT_TY>(m_efac))->left()) << "\n";
 
     aug_gram << "(declare-fun constraint (Bool) Bool)\n";
     aug_gram << "(declare-fun constraint_any (Bool) Bool)\n";
@@ -207,12 +213,12 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
 
     aug_gram << user_cfg.str();
 
-    /*if (printLog >= 3)
+    if (printLog >= 8)
     {
       outs() << "User-provided grammar:\n";
       outs() << aug_gram.str();
       outs() << endl;
-    }*/
+    }
 
     // Parse combined grammar
     Expr egram;
@@ -245,68 +251,6 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
       exit(10);
     }
 
-    // Parse and rewrite priorities
-    RW<function<Expr(Expr)>> rw(new function<Expr(Expr)>(
-      [&gram] (Expr e) -> Expr
-    {
-      if (CFGUtils::isEither(e))
-      {
-        ExprVector newdefargs;
-        vector<cpp_rational> rweights;
-        for (int i = 1; i < e->arity(); ++i)
-        {
-          string iname = "";
-          if (isOpX<FAPP>(e->arg(i)))
-            iname = lexical_cast<string>(bind::fname(e->arg(i))->left());
-          if (iname == "prio")
-            newdefargs.push_back(e->arg(i)->arg(1));
-          else
-            newdefargs.push_back(e->arg(i));
-        }
-        Expr newe = bind::fapp(e->left(), newdefargs);
-
-        for (int i = 1; i < e->arity(); ++i)
-        {
-          cpp_rational prio;
-          string iname = "";
-          if (isOpX<FAPP>(e->arg(i)))
-            iname = lexical_cast<string>(bind::fname(e->arg(i))->left());
-          if (iname == "prio")
-          {
-            std::pair<Expr,Expr> keypair(newe, e->arg(i)->arg(1));
-            prio = lexical_cast<cpp_rational>(e->arg(i)->arg(2));
-            gram.priomap[keypair] = prio;
-          }
-          else
-          {
-            std::pair<Expr,Expr> keypair(newe, e->arg(i));
-            prio = 1.0;
-            gram.priomap[keypair] = prio;
-          }
-          rweights.push_back(prio);
-        }
-
-        // Simple GCD, to make sure all priorities convert to integers
-        int gcd = 1;
-        for (auto &rw : rweights)
-          gcd *= (int)denominator(rw);
-
-        vector<int> iweights;
-        for (auto &rw : rweights)
-          iweights.push_back((int)(rw * gcd));
-
-        gram.distmap.emplace(newe,
-          std::move(discrete_distribution<int>(iweights.begin(),
-          iweights.end())));
-
-        return newe;
-      }
-      else
-        return e;
-    }));
-    egram = dagVisit(rw, egram);
-
-
     // Find root of grammar and fill in `defs` map.
     for (auto iter = egram->args_begin(); iter != egram->args_end(); ++iter)
     {
@@ -314,25 +258,57 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
       Expr ex = *iter;
       if (isOpX<EQ>(ex))
       {
+        if (!isOpX<FAPP>(ex->left()))
+        {
+          errs() << "Invalid format for production: " << ex << endl;
+          assert(0);
+        }
         string ex_fname = lexical_cast<string>(bind::fname(ex->left())->left());
-        if (ex_fname == ANY_INV && gram.root == NULL)
+        NT newnt = gram.addNt(ex_fname, typeOf(ex->left()));
+        if (ex_fname == ANY_INV && !gram.root)
         {
           // Only use ANY_INV if we don't already have a specific one
-          gram.root = ex->left();
+          gram.setRoot(newnt);
         }
         else if (ex_fname == inv_fname)
         {
-          gram.root = ex->left();
+          gram.setRoot(newnt);
         }
 
-        gram.defs[ex->left()] = ex->right();
+        Expr prods = ex->right();
+        if (!isOpX<FAPP>(prods))
+          gram.addProd(newnt, prods);
+        else
+        {
+          string rfname = getTerm<string>(prods->left()->left());
+          if (rfname == "prio")
+            gram.addProd(newnt, prods->right(),
+              getTerm<mpq_class>(prods->last()));
+          else if (rfname == "either")
+            for (int i = 1; i < prods->arity(); ++i)
+            {
+              Expr prod = prods->arg(i);
+              if (!isOpX<FAPP>(prod))
+                gram.addProd(newnt, prod);
+              else
+              {
+                string pname = getTerm<string>(prod->left()->left());
+                if (pname == "prio")
+                  gram.addProd(newnt, prod->right(), getTerm<mpq_class>(prod->last()));
+                else
+                  gram.addProd(newnt, prod);
+              }
+            }
+          else
+            gram.addProd(newnt, prods);
+        }
       }
       else if (isOpX<FAPP>(ex))
       {
         string ename = lexical_cast<string>(bind::fname(ex)->left());
         if (ename == "constraint" || ename == "constraint_any")
         {
-          gram.constraints.push_back(Constraint(ex));
+          gram.addConstraint(ex->last(), ename == "constraint_any");
 
           // Parse strings in Z3 now
           function<void(Expr)> visitExpr = [&] (Expr e)
@@ -352,7 +328,7 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
                 visitExpr(e->arg(i));
               }
           };
-          visitExpr(ex);
+          visitExpr(ex->last());
         }
       }
     }
@@ -362,16 +338,17 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
 
   if (printLog)
   {
-    for (const auto& p : gram.priomap)
-      outs() << "priomap[<" << p.first.first << ", " <<
-        p.first.second << ">]: " << p.second << "\n";
-    for (const auto& d : gram.distmap)
-      outs() << "distmap[" << d.first << "]: " << d.second << "\n";
+    for (const auto& nt_prods : gram.priomap)
+      for (const auto& prod_prio : nt_prods.second)
+        outs() << "priomap[<" << nt_prods.first << ", " <<
+          prod_prio.first << ">]: " << prod_prio.second << "\n";
   }
 
-  gram.vars = vars;
+  for (const auto& sort_vars : vars)
+    for (const auto& var : sort_vars.second)
+      gram.addVar(var);
 
-  return gram;
+  return std::move(gram);
 }
 
 // Returns a set of all quantified variables (which will be used outside
@@ -393,14 +370,14 @@ ExprUSet CFGUtils::getQVars(const Grammar &gram)
         qvars.insert(fapp(root->arg(i)));
     }
 
-    for (int i = 0; i < root->arity(); ++i)
-    {
-      if (gram.defs.count(root->arg(i)) != 0)
-        qvars_visit(gram.defs.at(root->arg(i)));
-      qvars_visit(root->arg(i));
-    }
+    if (gram.isNt(root))
+      for (const auto &prod : gram.prods.at(root))
+        qvars_visit(prod);
+    else
+      for (int i = 0; i < root->arity(); ++i)
+        qvars_visit(root->arg(i));
   };
-  qvars_visit(gram.defs.at(gram.root));
+  qvars_visit(gram.root);
   return qvars;
 }
 
@@ -410,112 +387,96 @@ string CFGUtils::toSyGuS(Grammar &gram, EZ3 &z3)
   // SyGuS requires us to declare the start symbol of the CFG first,
   //   and that production definitions are in the same order as
   //   declarations. Thus, decide on the order first.
-  vector<pair<Expr,Expr>> prods; // Key: nt, Value: production(s)
-  prods.push_back(make_pair(gram.root, gram.defs[gram.root]));
-  for (auto &pair : gram.defs)
-    if (pair.first != gram.root)
-      prods.push_back(pair);
+  vector<NT> nts;
+  nts.push_back(gram.root);
+  for (const auto &nt : gram.nts)
+    if (nt != gram.root)
+      nts.push_back(nt);
 
   // Include quantified variables as uninterpreted non-terminals
   for (auto &qvar : getQVars(gram))
-    prods.push_back(make_pair(qvar, nullptr));
+    nts.push_back(qvar);
+
+  unordered_set<Expr> constNts, varNts;
+  for (const auto &kv : gram.vars)
+  {
+    nts.push_back(varsNtName(kv.first, VarType::NONE));
+    varNts.insert(nts.back());
+    unordered_set<VarType> done;
+    for (const auto &var : kv.second)
+    {
+      if (done.count(var.type) != 0) continue;
+      nts.push_back(varsNtName(kv.first, var.type));
+      varNts.insert(nts.back());
+      done.insert(var.type);
+    }
+  }
+  for (const auto &kv : gram.consts)
+  {
+    nts.push_back(constsNtName(kv.first));
+    constNts.insert(nts.back());
+  }
 
   // Declare non-terminals
   out << "(\n  ";
-  for (auto &pair : prods)
-    out<<"("<<pair.first<<" "<<z3.toSmtLib(typeOf(pair.first))<<") ";
+  for (const auto &nt : nts)
+    out << "(" << nt << " " << z3.toSmtLib(typeOf(nt)) << ") ";
   out << ") ";
 
   // Declare productions
   out << "(\n";
-  for (auto &pair : prods)
+  for (const auto &nt : nts)
   {
-    string nname = lexical_cast<string>(fname(pair.first)->left());
+    const auto& prods = gram.prods.at(nt);
 
     // Define corresponding non-terminal (again...)
-    out<<"    ("<<pair.first<<" "<<z3.toSmtLib(typeOf(pair.first))<<" ";
+    out << "    (" << nt << " " << z3.toSmtLib(typeOf(nt)) << " ";
     out << "( "; // Start of productions
     int strpos;
-    if (nname == "INT_CONSTS")
-    {
-      out << "(Constant Int) ";
-    }
-    else if ((strpos = nname.rfind("VARS")) > 0 && strpos == nname.length() - 4)
-    {
-      // nname ends in "VARS", must be a auto-generated non-terminal
-      // TODO: Ugly hack
-      out << "(Variable " << z3.toSmtLib(typeOf(pair.first)) << ") ";
-    }
-    else if (pair.second == NULL)
+    if (constNts.count(nt) != 0)
     {
       // I assume (Constant Int) refers to all valid integers
-      out << "(Constant " << z3.toSmtLib(typeOf(pair.first)) << ") ";
+      out << "(Constant " << z3.toSmtLib(typeOf(nt)) << ") ";
+    }
+    else if (varNts.count(nt) != 0)
+    {
+      out << "(Variable " << z3.toSmtLib(typeOf(nt)) << ") ";
     }
     else
     {
-      // We allow quantified variables to be used "outside" of their
-      // proper scope. CVC5 doesn't. Re-write Expr's of form:
-      //   (forall ((favar Int)) (...)) to
-      //   (forall ((favar-qvar Int)) (=> (= favar favar-qvar) (...)))
-      RW<function<Expr(Expr)>> quantrw(new function<Expr(Expr)>(
-        [&gram] (Expr e) -> Expr {
-        if (isOpX<FORALL>(e) || isOpX<EXISTS>(e))
-        {
-          vector<Expr> newquant, conj_eqs;
-          for (int i = 0; i < e->arity() - 1; ++i)
-          {
-            assert(isOpX<FDECL>(e->arg(i)));
-            string varname = lexical_cast<string>(e->arg(i)->left());
-            Expr newvar = fdecl(
-              mkTerm(varname + "-qvar", e->efac()),
-              vector<Expr>({e->arg(i)->right()}));
-            newquant.push_back(newvar);
-            conj_eqs.push_back(mk<EQ>(fapp(e->arg(i)), fapp(newvar)));
-          }
-          Expr conj = conj_eqs.size() > 1 ?
-            mknary<AND>(conj_eqs.begin(), conj_eqs.end()) :
-            conj_eqs[0];
-          newquant.push_back(mk<IMPL>(conj, e->right()));
-          return mknary<FORALL>(newquant.begin(), newquant.end());
-        }
-
-        if (CFGUtils::isEither(e))
-        {
-          vector<Expr> newargs;
-          bool hasEither = false;
-          for (int i = 1; i < e->arity(); ++i)
-          {
-            if (CFGUtils::isEither(e->arg(i)))
-            {
-              hasEither = true;
-              for (int x = 1; x < e->arg(i)->arity(); ++x)
-                newargs.push_back(e->arg(i)->arg(x));
-            }
-            else
-              newargs.push_back(e->arg(i));
-          }
-
-          if (hasEither)
-            return fapp(fname(e), newargs);
-          else
-            return e;
-        }
-
-        return e;
-      }));
-      Expr prod = dagVisit(quantrw, pair.second);
-
-      if (isOpX<FAPP>(prod))
+      for (Expr prod : prods)
       {
-        string pname = lexical_cast<string>(fname(prod)->left());
-        if (pname == "either")
-          for (int i = 1; i < prod->arity(); ++i)
-            out << z3.toSmtLib(prod->arg(i)) << " ";
-        else
-          out << z3.toSmtLib(prod) << " ";
+        // We allow quantified variables to be used "outside" of their
+        // proper scope. CVC5 doesn't. Re-write Expr's of form:
+        //   (forall ((favar Int)) (...)) to
+        //   (forall ((favar-qvar Int)) (=> (= favar favar-qvar) (...)))
+        RW<function<Expr(Expr)>> quantrw(new function<Expr(Expr)>(
+          [&gram] (Expr e) -> Expr {
+          if (isOpX<FORALL>(e) || isOpX<EXISTS>(e))
+          {
+            vector<Expr> newquant, conj_eqs;
+            for (int i = 0; i < e->arity() - 1; ++i)
+            {
+              assert(isOpX<FDECL>(e->arg(i)));
+              string varname = lexical_cast<string>(e->arg(i)->left());
+              Expr newvar = fdecl(
+                mkTerm(varname + "-qvar", e->efac()),
+                vector<Expr>({e->arg(i)->right()}));
+              newquant.push_back(newvar);
+              conj_eqs.push_back(mk<EQ>(fapp(e->arg(i)), fapp(newvar)));
+            }
+            Expr conj = conj_eqs.size() > 1 ?
+              mknary<AND>(conj_eqs.begin(), conj_eqs.end()) :
+              conj_eqs[0];
+            newquant.push_back(mk<IMPL>(conj, e->right()));
+            return mknary<FORALL>(newquant.begin(), newquant.end());
+          }
+
+          return e;
+        }));
+        Expr newprod = dagVisit(quantrw, prod);
+        out << z3.toSmtLib(newprod) << " ";
       }
-      else
-        out << z3.toSmtLib(prod);
     }
     out << "))\n";
   }

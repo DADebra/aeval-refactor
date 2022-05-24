@@ -100,7 +100,7 @@ class ParseTree
       return data();
     else if (children().size() == 1)
     {
-      if (!isOpX<FAPP>(data()))
+      if (!isNt())
         return mk(data()->op(), children()[0].toExpr());
       return children()[0].toExpr();
     }
@@ -123,11 +123,7 @@ class ParseTree
       return;
     else if (isNt())
     {
-      const ParseTree* realnt = this;
-      while (realnt->children()[0].isNt())
-        realnt = &realnt->children()[0];
-
-      func(data(), realnt->children()[0]);
+      func(data(), children()[0]);
 
       return children()[0].foreachPt(func);
     }
@@ -139,11 +135,16 @@ class ParseTree
   }
 
   // First arg to func: Non-terminal Second arg: Production
-  void foreachExpansion(const function<void(const Expr&, const Expr&)>& func) const
+  // Follows simple NT renaming (A -> B).
+  void foreachExpansion(const function<void(const Expr&, const ParseTree&)>& func) const
   {
     return foreachPt([&] (const Expr& nt, const ParseTree& prod)
     {
-      func(nt, prod.data());
+      const ParseTree* realexpan = &prod;
+      while (realexpan->isNt())
+        realexpan = &realexpan->children()[0];
+
+      return func(nt, *realexpan);
     });
   }
 

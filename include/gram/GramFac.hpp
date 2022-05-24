@@ -55,10 +55,10 @@ namespace ufo
 
     // Key: <Non-terminal, Production>
     // Value: number of candidates generated with NT->Prod expansion
-    unordered_map<std::pair<Expr,Expr>,int> candnum;
+    unordered_map<std::pair<Expr,Expr>,mpz_class> candnum;
 
     // Total number of candidates we've generated (not necessarily returned)
-    int totalcandnum = 0;
+    mpz_class totalcandnum = 0;
 
     // The grammar being used
     Grammar gram;
@@ -80,20 +80,26 @@ namespace ufo
 
     private:
 
-    bool shoulddefer(Grammar& gram, const Expr& either, const Expr& expand)
+    bool shoulddefer(Grammar& gram, const Expr& nt, const Expr& expand)
     {
-      auto prod = make_pair(either, expand);
-      if (gram.priomapat(prod) >= 1 || candnum[prod] == 0)
-        return false;
-      return candnum[prod] > (int)(gram.priomapat(prod)*totalcandnum);
+      //outs() << "shoulddefer(" << nt << ", " << expand << ") = ";
+      //outs().flush();
+      auto prod = make_pair(nt, expand);
+      bool ret;
+      if (gram.priomap.at(nt).at(expand) >= 1 || candnum[prod] == 0)
+        ret = false;
+      else
+        ret = candnum[prod] > gram.priomap.at(nt).at(expand)*totalcandnum;
+      //outs() << ret << "\n";
+      return ret;
     }
 
     bool ptshoulddefer(const ParseTree &pt)
     {
       bool ret = false;
-      pt.foreachExpansion([&] (const Expr &nt, const Expr &expand)
+      pt.foreachPt([&] (const Expr &nt, const ParseTree &expand)
       {
-        ret |= shoulddefer(gram, gram.defs.at(nt), expand);
+        ret |= shoulddefer(gram, nt, expand.data());
       });
       return ret;
     }
@@ -152,7 +158,7 @@ namespace ufo
 
     void addIntConst(cpp_int iconst)
     {
-      consts[mk<INT_TY>(m_efac)].push_back(mkMPZ(iconst, m_efac));
+      consts[mk<INT_TY>(m_efac)].insert(mkMPZ(iconst, m_efac));
     }
 
     void addIncVar(Expr var)
@@ -198,23 +204,17 @@ namespace ufo
       b4simpl = _b4simpl;
       if (gram_file.empty())
         return;
-      gram = CFGUtils::parseGramFile(gram_file, inv_fname, z3,
-          m_efac, printLog, vars, othervars);
+      gram = std::move(CFGUtils::parseGramFile(gram_file, inv_fname, z3,
+          m_efac, printLog, vars, othervars));
       initialized = true;
     }
 
-    // Properly initialize INT_CONSTS now that we've found them
-    void initialize_intconsts()
+    // Properly initialize *_CONSTS now that we've found them
+    void initialize_consts()
     {
-      auto &intconsts = consts[mk<INT_TY>(m_efac)];
-      if (intconsts.size() != 0)
-      {
-        Expr eitherfunc = bind::fdecl(mkTerm(string("either"), m_efac),
-            ExprVector(intconsts.size(), m_efac.mkTerm(INT_TY())));
-
-        Expr int_consts_decl = bind::intConst(mkTerm(string(INT_CONSTS), m_efac));
-        gram.defs[int_consts_decl] = bind::fapp(eitherfunc, intconsts);
-      }
+      for (const auto &sort_consts : consts)
+        for (Expr c : sort_consts.second)
+          gram.addConst(c);
 
       if (initialized)
       {
@@ -277,9 +277,9 @@ namespace ufo
         nextcand = nextpt;
 
         // Update candnum and totalcandnum
-        nextpt.foreachExpansion([&] (const Expr& nt, const Expr& prod)
+        nextpt.foreachPt([&] (const Expr& nt, const ParseTree& prod)
           {
-            candnum[make_pair(gram.defs.at(nt), prod)]++;
+            candnum[make_pair(nt, prod.data())]++;
           });
         totalcandnum++;
 

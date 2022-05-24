@@ -18,8 +18,6 @@ class Constraint
 {
   private:
 
-  Expr expr;
-
   // Key: Non-terminal   Value: Set of Expr's that First expands to
   static void findExpansions(const ParseTree& pt, ExpansionsMap& outmap);
 
@@ -38,19 +36,21 @@ class Constraint
   static tribool evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
     seen_type& seenexpans);
 
-  static bool doesSatExpr(Expr con, const ExpansionsMap& expmap,
-    bool doAny, Expr origcon);
-
   static int calculateRecDepth(const ExpansionsMap& expmap, Expr nt);
 
   static void foreachExpans(Expr con, const ExpansionsMap& expmap,
     function<bool(const PtExpMap&)> func);
 
+  bool doesSatExpr(Expr con, const ExpansionsMap& expmap) const;
+
   public:
+
+  Expr expr;
+  bool any; // 'true' if a 'constraint_any'
 
   static ExprUMap strcache;
 
-  Constraint(Expr e) : expr(e) {}
+  Constraint(Expr e, bool _any) : expr(e), any(_any) {}
 
   bool doesSat(const ParseTree& pt) const;
 };

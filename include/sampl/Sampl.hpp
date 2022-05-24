@@ -143,7 +143,7 @@ namespace ufo
         }
       }
       initialized++;
-      gf.initialize_intconsts();
+      gf.initialize_consts();
     }
 
     // GRAMfactory requires two-stage initialization. This is the first part.

@@ -11,7 +11,7 @@ ExprUMap Constraint::strcache;
 
 void Constraint::findExpansions(const ParseTree& pt, ExpansionsMap& outmap)
 {
-  return pt.foreachPt([&] (const Expr& nt, const ParseTree& prod)
+  return pt.foreachExpansion([&] (const Expr& nt, const ParseTree& prod)
   {
     outmap[nt].push_back(prod);
   });
@@ -373,12 +373,11 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
   return indeterminate;
 }
 
-bool Constraint::doesSatExpr(Expr con, const ExpansionsMap& expmap,
-  bool doAny, Expr origcon)
+bool Constraint::doesSatExpr(Expr con, const ExpansionsMap& expmap) const
 {
   bool needsolver = false;
   ExprVector assertexps;
-  if (doAny)
+  if (any)
     assertexps.push_back(mk<FALSE>(con->efac()));
   else
     assertexps.push_back(mk<TRUE>(con->efac()));
@@ -416,12 +415,12 @@ bool Constraint::doesSatExpr(Expr con, const ExpansionsMap& expmap,
       assertexps.push_back(z3exp);
       needsolver = true;
     }
-    else if (!res && !doAny)
+    else if (!res && !any)
     {
       ret = false;
       return false;
     }
-    else if (res && doAny)
+    else if (res && any)
     {
       ret = true;
       return false;
@@ -436,7 +435,7 @@ bool Constraint::doesSatExpr(Expr con, const ExpansionsMap& expmap,
   {
     m_smt_solver.reset();
 
-    if (doAny)
+    if (any)
       m_smt_solver.assertExpr(m_efac.mkNary(OR(), assertexps));
     else
       m_smt_solver.assertExpr(m_efac.mkNary(AND(), assertexps));
@@ -456,13 +455,13 @@ bool Constraint::doesSatExpr(Expr con, const ExpansionsMap& expmap,
       outs() << endl;
       assert(0);
     }
-    if (!res && !doAny)
+    if (!res && !any)
       return false;
-    else if (res && doAny)
+    else if (res && any)
       return true;
   }*/
 
-  if (doAny)
+  if (any)
     return false;
   else
     return true;
@@ -484,11 +483,9 @@ bool Constraint::doesSat(const ParseTree& pt) const
   ExpansionsMap expmap;
   findExpansions(pt, expmap);
 
-  Expr con = expr->right();
-  bool doAny = lexical_cast<string>(bind::fname(expr)->left()) ==
-    "constraint_any";
+  Expr con = expr;
   RW<function<Expr(Expr)>> fapprw(new function<Expr(Expr)>(
-    [&expmap, &doAny, &pt, this] (Expr e) -> Expr
+    [&expmap, &pt, this] (Expr e) -> Expr
   {
     auto btoe = [&] (bool b) -> Expr
     {
@@ -577,7 +574,7 @@ bool Constraint::doesSat(const ParseTree& pt) const
       return e;
   }));
   con = dagVisit(fapprw, con);
-  if (!doesSatExpr(con, expmap, doAny, expr))
+  if (!doesSatExpr(con, expmap))
     return false;
 
   return true;
