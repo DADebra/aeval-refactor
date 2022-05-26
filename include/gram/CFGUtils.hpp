@@ -159,6 +159,9 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
       VarType::DEC, VarType::CONST })
         aug_gram << z3.toSmtLib(bind::fname(varsNtName(sort, ty))) << "\n";
 
+      // Generate *_CONSTS declaration
+      aug_gram << z3.toSmtLib(bind::fname(constsNtName(sort))) << "\n";
+
       // Generate *_prio declarations
       aug_gram << "(declare-fun prio (" <<
         sort_smt << " Real) " << sort_smt << ")\n";
@@ -198,9 +201,6 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
 
     generate_all(vars);
     generate_all(othervars);
-
-    // Generate INT_CONSTS declaration
-    aug_gram << z3.toSmtLib(constsNtName(mk<INT_TY>(m_efac))->left()) << "\n";
 
     aug_gram << "(declare-fun constraint (Bool) Bool)\n";
     aug_gram << "(declare-fun constraint_any (Bool) Bool)\n";

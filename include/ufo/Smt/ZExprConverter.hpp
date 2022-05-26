@@ -111,7 +111,7 @@ namespace ufo
 	  std::string sname = boost::lexical_cast<std::string>(op.get());
 	  res = Z3_mk_numeral (ctx, sname.c_str (), sort);
 	}
-      else if (bv::is_bvnum (e))
+      else if (is_bvnum (e))
       {
         z3::sort sort (ctx, Z3_mk_bv_sort (ctx, bv::width (e->arg (1))));
         const MPZ& num = dynamic_cast<const MPZ&> (e->arg (0)->op ());

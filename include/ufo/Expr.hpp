@@ -57,6 +57,9 @@ DM-0002198
 #define mk_it_range boost::make_iterator_range
 
 #define NOP_BASE(NAME) struct NAME : public expr::Operator {};
+#define NOP_BASE1(NAME, BASE) struct NAME : public expr::op::BASE {};
+#define NOP_BASE2(NAME, BASE1, BASE2) struct NAME : \
+  public expr::op::BASE1, public expr::op::BASE2 {};
 
 #define NOP(NAME,TEXT,STYLE,BASE)		\
   struct __ ## NAME { static inline std::string name () { return TEXT; } }; \
@@ -3254,7 +3257,7 @@ namespace expr
 
         // bv-typing below:
 
-        if (isOp<BvOp>(v))
+        if (is_bvop(v))
         {
           if (isOpX<BSEXT>(v) || isOpX<BZEXT>(v)) return v->last();
           if (isOpX<BCONCAT>(v))
@@ -3269,6 +3272,9 @@ namespace expr
 
           return typeOf(v->left());
         }
+        if (is_bvnum(v) || is_bvvar(v)) return v->right();
+
+      if (isOp<SimpleTypeOp>(v) || isOpX<BVSORT>(v)) return v;
 
       std::cerr << "WARNING: could not infer type of: " << *v << "\n";
       //      assert (0 && "Unreachable");
@@ -3276,6 +3282,18 @@ namespace expr
         return Expr();
       }
       inline Expr sortOf (Expr v) {return typeOf (v);}
+
+      // Is e a numeric literal (e.g. 0 or #x0 or 0.0)
+      inline bool isNum (Expr e)
+      { return isOpX<MPZ>(e) || isOpX<MPQ>(e) || is_bvnum(e); }
+
+      // Is e any literal
+      inline bool isLit (Expr e) { return e->arity() == 0 || is_bvnum(e); }
+
+      inline bool isOpLT (Expr v) {return isOpX<LT>(v) || isOpX<BULT>(v) || isOpX<BSLT>(v);}
+      inline bool isOpLEQ (Expr v) {return isOpX<LEQ>(v) || isOpX<BULE>(v) || isOpX<BSLE>(v);}
+      inline bool isOpGT (Expr v) {return isOpX<GT>(v) || isOpX<BUGT>(v) || isOpX<BSGT>(v);}
+      inline bool isOpGEQ (Expr v) {return isOpX<GEQ>(v) || isOpX<BUGE>(v) || isOpX<BSGE>(v);}
     }
   }
 }

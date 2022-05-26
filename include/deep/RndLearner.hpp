@@ -583,6 +583,7 @@ namespace ufo
       arrIterRanges.push_back(ExprSet());
 
       sf.gf.setParams(gramparams);
+      sf.gf.extract_consts(ruleManager);
       sf.initialize_gram(grams[lexical_cast<string>(invDecl)], lexical_cast<string>(invDecl), b4simpl);
 
       invNumber++;
@@ -759,14 +760,14 @@ namespace ufo
 
           if (isTautology(cand))  // keep searching
           {
-            sf.assignPrioritiesForLearned();
+            if (!ruleManager.hasBV) sf.assignPrioritiesForLearned();
             skip = true;
             break;
           }
 
           if (sf.lf.nonlinVars.size() > 0 && u.isFalse(cand))  // keep searching
           {
-            sf.assignPrioritiesForFailed();
+            if (!ruleManager.hasBV) sf.assignPrioritiesForFailed();
             skip = true;
             break;
           }
@@ -804,7 +805,7 @@ namespace ufo
 
         if (success) break;
 
-        assignPriorities();
+        if (!ruleManager.hasBV) assignPriorities();
         updateRels();
 
         for (auto &cand : curCandidates) cand = NULL; // preparing for the next iteration

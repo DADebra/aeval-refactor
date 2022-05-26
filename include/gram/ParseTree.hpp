@@ -22,11 +22,7 @@ class ParseTreeNode
   ParseTreeNode(Expr _data, vector<ParseTree>&& _children, bool _isnt) :
     data(_data), children(_children), parent(NULL), isNt(_isnt) {}
 
-  ParseTreeNode(Expr _data) : data(_data), parent(NULL), isNt(false)
-  {
-    // Must pass a vector of children for non-FAPP Expr with arity != 0
-    assert(data->arity() == 0 || isOpX<FAPP>(data));
-  }
+  ParseTreeNode(Expr _data) : data(_data), parent(NULL), isNt(false) {}
 
   friend ParseTree;
 };

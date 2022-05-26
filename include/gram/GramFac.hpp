@@ -209,6 +209,46 @@ namespace ufo
       initialized = true;
     }
 
+    void extract_consts(const CHCs& chcs)
+    {
+      ExprUSet nums;
+      for (const auto &chc : chcs.chcs)
+        filter(chc.body, bind::isNum, inserter(nums, nums.begin()));
+      if (printLog) outs() << "extract_consts found: ";
+      for (const auto& num : nums)
+      {
+        if (printLog) outs() << num << " (type " << typeOf(num) << ") ";
+        consts[typeOf(num)].insert(num);
+        if (bind::isNum(num))
+        {
+          Expr neg = NULL;
+          if (isOpX<MPZ>(num))
+          {
+            // To help the C++ template deduction.
+            mpz_class negmpz = -getTerm<mpz_class>(num);
+            neg = mkTerm(negmpz, num->efac());
+          }
+          else if (isOpX<MPQ>(num))
+          {
+            mpq_class negmpq = -getTerm<mpq_class>(num);
+            neg = mkTerm(negmpq, num->efac());
+          }
+          else if (is_bvnum(num))
+          {
+            mpz_class negmpz = -bv::toMpz(num);
+            neg = bv::bvnum(negmpz, bv::width(num->right()), num->efac());
+          }
+
+          if (neg)
+          {
+            if (printLog) outs() << neg << " (type " << typeOf(neg) << ") ";
+            consts[typeOf(num)].insert(neg);
+          }
+        }
+      }
+      if (printLog) outs() << endl;
+    }
+
     // Properly initialize *_CONSTS now that we've found them
     void initialize_consts()
     {
