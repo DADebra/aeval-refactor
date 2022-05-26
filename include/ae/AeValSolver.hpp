@@ -443,7 +443,7 @@ namespace ufo
       {
         return getDefaultAssignment(var);
       }
-      if (!isNumeric(var))
+      if (!isNumeric(var) && !isReal(var))
       {
         ExprSet cnjs;
         getConj(exp, cnjs);
@@ -1313,6 +1313,7 @@ namespace ufo
    */
   inline void aeSolveAndSkolemize(Expr s, Expr t, bool skol, int debug, bool opt, bool compact, bool split)
   {
+    outs().setf(std::ios_base::boolalpha);
     ExprSet fa_qvars, ex_qvars;
     ExprFactory& efac = s->getFactory();
     SMTUtils u(efac);
@@ -1378,14 +1379,25 @@ namespace ufo
           for (auto & evar : ex_qvars) sepSkols.push_back(mk<EQ>(evar,
                            simplifyBool(simplifyArithm(ae.getSeparateSkol(evar)))));
           u.serialize_formula(sepSkols);
-          if (debug) outs () << "Sanity check [split]: " <<
-            (bool)(u.implies(mk<AND>(s, conjoin(sepSkols, s->getFactory())), t_orig)) << "\n";
+          bool check = (bool)(u.implies(mk<AND>(s, conjoin(sepSkols, s->getFactory())), t_orig));
+          if (!check)
+          {
+            errs() << "ERROR: Skolem did not pass sanity check. Skolem is invalid." << endl;
+            exit(1);
+          }
+          if (debug) outs () << "Sanity check [split]: " << check << "\n";
         }
         else
         {
           outs() << "\nextracted skolem:\n";
           u.serialize_formula(simplifyBool(simplifyArithm(skol)));
-          if (debug) outs () << "Sanity check: " << (bool)(u.implies(mk<AND>(s, skol), t_orig)) << "\n";
+          bool check = (bool)(u.implies(mk<AND>(s, skol), t_orig));
+          if (!check)
+          {
+            errs() << "ERROR: Skolem did not pass sanity check. Skolem is invalid." << endl;
+            exit(1);
+          }
+          if (debug) outs () << "Sanity check: " << check << "\n";
         }
       }
     }
