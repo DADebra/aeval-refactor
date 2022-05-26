@@ -2,7 +2,7 @@
 #define AEVALSOLVER__HPP__
 #include <assert.h>
 
-#include "ae/SMTUtils.hpp"
+#include "expr/SMTUtils.hpp"
 #include "ufo/Smt/EZ3.hh"
 
 using namespace std;
