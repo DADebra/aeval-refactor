@@ -3,7 +3,7 @@
 
 #include "Horn.hpp"
 #include "BndExpl.hpp"
-#include "ae/SMTUtils.hpp"
+#include "expr/SMTUtils.hpp"
 #include "sampl/SeedMiner.hpp"
 #include "sampl/Sampl.hpp"
 

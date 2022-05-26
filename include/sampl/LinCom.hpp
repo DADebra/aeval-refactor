@@ -7,7 +7,7 @@
 #define EPSILONFRACTION 5
 
 #include "deep/Distribution.hpp"
-#include "ae/ExprSimpl.hpp"
+#include "expr/ExprSimpl.hpp"
 
 using namespace std;
 using namespace boost;

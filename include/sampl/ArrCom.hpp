@@ -2,7 +2,7 @@
 #define ARRCOM__HPP__
 
 #include "deep/Distribution.hpp"
-#include "ae/ExprSimpl.hpp"
+#include "expr/ExprSimpl.hpp"
 #include "LinCom.hpp"
 
 using namespace std;

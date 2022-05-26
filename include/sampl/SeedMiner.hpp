@@ -2,7 +2,7 @@
 #define SEEDMINER__HPP__
 
 #include "ae/AeValSolver.hpp"
-#include "ae/ExprSimpl.hpp"
+#include "expr/ExprSimpl.hpp"
 
 using namespace std;
 using namespace boost;

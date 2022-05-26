@@ -2,7 +2,7 @@
 #define SAMPL__HPP__
 
 #include "deep/Distribution.hpp"
-#include "ae/ExprSimpl.hpp"
+#include "expr/ExprSimpl.hpp"
 #include "LinCom.hpp"
 #include "BoolCom.hpp"
 #include "ArrCom.hpp"
