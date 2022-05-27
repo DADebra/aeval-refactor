@@ -874,7 +874,10 @@ namespace ufo
         }
         m_smt_solver.assertExpr(mk<NEG>(cand2));
 
-        assert(!m_smt_solver.solve());
+        bool safe = bool(!m_smt_solver.solve());
+        if (!safe)
+          errs() << "ERROR: Invariant(s) failed sanity check" << endl;
+        assert(safe);
       }
       if (m_smt_safety_solvers.size() == 0)
         setupSafetySolver(timeout);
@@ -892,8 +895,10 @@ namespace ufo
         }
 
         m_smt_safety_solvers[num-1].assertExpr(invApp);
-        boost::tribool res = m_smt_safety_solvers[num-1].solve();
-        assert(!res);
+        bool safe = bool(!m_smt_safety_solvers[num-1].solve());
+        if (!safe)
+          errs() << "ERROR: Invariant(s) failed sanity check" << endl;
+        assert(safe);
       }
     }
 

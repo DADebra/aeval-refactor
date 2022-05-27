@@ -57,7 +57,10 @@ void Constraint::foreachExpans(Expr con, const ExpansionsMap& expmap,
   {
     PtExpMap ret;
     for (int i = 0; i < from.size(); ++i)
-      assert(ret.emplace(from[i], to[i]).second);
+    {
+      bool insertgood = ret.emplace(from[i], to[i]).second;
+      assert(insertgood);
+    }
     return std::move(ret);
   };
 
