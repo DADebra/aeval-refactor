@@ -197,7 +197,15 @@ namespace ufo
       args[i] = Z3_ast_vector_get(ctx, b, i);
     }
     
-    z3::ast ast (ctx, Z3_mk_and(ctx, Z3_ast_vector_size(ctx, b), args));
+    z3::ast ast(ctx);
+    if(Z3_ast_vector_size(ctx, b) > 1){
+      z3::ast ast1 (ctx, Z3_mk_and(ctx, Z3_ast_vector_size(ctx, b), args));
+      ast = ast1;
+    }
+    else {
+      z3::ast ast1 (ctx, args[0]);
+      ast = ast1;
+    }
     ctx.check_error ();
     return z3.toExpr (ast);
   }
