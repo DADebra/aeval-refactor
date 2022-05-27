@@ -132,6 +132,8 @@ if (ARMADILLO_FOUND)
   include_directories(${ARMADILLO_INCLUDE_DIR})
 endif()
 
+find_package(BISON 3.2 REQUIRED)
+
 install(DIRECTORY include/
   DESTINATION include
   FILES_MATCHING
@@ -162,15 +164,8 @@ endif ()
 
 add_library(global STATIC global.cpp)
 
-### add our include directories to the front, overriding directories
-### specified by external packages.
-target_include_directories(global BEFORE PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# add the include directory from the build tree
-target_include_directories(global BEFORE PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}/include)
-
 add_subdirectory(expr)
+add_subdirectory(utils)
 add_subdirectory(aeval)
 add_subdirectory(rnd)
+add_subdirectory(sygus)

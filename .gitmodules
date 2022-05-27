@@ -10,3 +10,11 @@
 	path = rnd
 	url = ./
 	branch = rnd
+[submodule "utils"]
+	path = utils
+	url = ./
+	branch = utils
+[submodule "sygus"]
+	path = sygus
+	url = ./
+	branch = sygus
