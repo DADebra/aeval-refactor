@@ -581,6 +581,7 @@ namespace ufo
       return e;
     }
 
+
     r = mkplus(rhs, e->getFactory());
 
     if (coef == 0){

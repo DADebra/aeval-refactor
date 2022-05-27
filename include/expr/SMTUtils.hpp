@@ -2,7 +2,7 @@
 #define SMTUTILS__HPP__
 #include <assert.h>
 
-#include "ae/ExprSimpl.hpp"
+#include "expr/ExprSimpl.hpp"
 #include "ufo/Smt/EZ3.hh"
 
 using namespace std;
