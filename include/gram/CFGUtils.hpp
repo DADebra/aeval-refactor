@@ -123,6 +123,7 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
     {
       if (donesorts.count(sort) != 0)
         return;
+      donesorts.insert(sort);
       string sort_smt = z3.toSmtLib(sort);
       // Generate either functions for given sort
       for (int i = 1; i <= NUMEITHERS; ++i)

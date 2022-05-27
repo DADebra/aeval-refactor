@@ -535,8 +535,14 @@ class CoroTrav : public Traversal
     stuck.size() == cand.size())
     {
       //sink(m_efac.mkNary(root->op(), cand));
-      sink(ParseTree(root, cand, false));
-      int b = 0;
+      bool foundnull = false;
+      for (const auto& p : cand)
+        if (!p)
+        {
+          sink(NULL);
+          foundnull = true;
+        }
+      if (!foundnull) sink(ParseTree(root, cand, false));
     }
 
     if (stuck.size() == cand.size())
@@ -553,7 +559,8 @@ class CoroTrav : public Traversal
           if (meth)
           {
             ParseTree ret = meth.get();
-            sink(ret);
+            if (ret)
+              sink(ret);
             meth();
             methcoroavail = true;
           }
@@ -607,6 +614,12 @@ class CoroTrav : public Traversal
         if (newstuck.size() == newcand.size())
         {
           //sink(m_efac.mkNary(root->op(), newcand));
+          for (const auto& p : newcand)
+            if (!p)
+            {
+              sink(NULL);
+              return true;
+            }
           sink(ParseTree(root, newcand, false));
           int b = 0;
         }
@@ -692,14 +705,24 @@ class CoroTrav : public Traversal
           newcoros.push_back(boost::none);
 
         if (newstuck.size() == cand.size())
+        {
           //sink(m_efac.mkNary(root->op(), cand));
-          sink(ParseTree(root, cand, false));
+          bool foundnull = false;
+          for (const auto& p : cand)
+            if (!p)
+            {
+              sink(NULL);
+              foundnull = true;
+            }
+          if (!foundnull) sink(ParseTree(root, cand, false));
+        }
         else
         {
           PTCoro newmeth = getTravCoro(std::move(newcoros), cand,
             newstuck, root, currdepth, qvars, currnt);
           for (ParseTree exp : newmeth)
-            sink(exp);
+            if (exp)
+              sink(exp);
         }
       }
     }

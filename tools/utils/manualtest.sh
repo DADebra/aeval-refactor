@@ -55,7 +55,8 @@ touch chc.smt2
 ret=$?
 [ $ret -ne 0 ] && exit 9
 
-invdef="$("$FREQHORN" "$@" | awk -F% -v doprint=0 '$1 ~ /define-fun/ {doprint=1;} {if (doprint) {print $1;}}')"
+freqout="$("$FREQHORN" "$@")"
+invdef="$(echo "$freqout" | awk -F% -v doprint=0 '$1 ~ /define-fun/ {doprint=1;} {if (doprint) {print $1;}}')"
 if [ -n "$invdef" ]
 then
     z3in="$(cat "$chcfile" | grep -v -e 'declare-fun' -e 'check-sat' -e 'set-logic' | sed -r -n 'x;/./{x;/^\(assert|\(check-sat/!{H;d;}; x;s/(\n|\t)/ /g;s/  */ /g;p;s/.*//;}; x; /^\(assert/{H;d;}; p;' |
@@ -73,12 +74,12 @@ then
         exit 11
     elif ! echo "$z3resp" | grep -q -e '^sat$'
     then
-        echo "Safe invariant found:"
-        echo "$invdef"
+        echo "Safe invariant found."
+        echo "$freqout"
         exit 0
     else
-        echo "Faulty invariant found:"
-        echo "$invdef"
+        echo "Faulty invariant found."
+        echo "$freqout"
         echo "SMT file:"
         echo "$z3in"
         echo
