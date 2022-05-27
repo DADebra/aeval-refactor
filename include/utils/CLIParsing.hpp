@@ -1,6 +1,8 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <vector>
 
 bool getBoolValue(const char * opt, bool defValue, int argc, char ** argv)
 {
@@ -24,6 +26,29 @@ int getIntValue(const char * opt, int defValue, int argc, char ** argv)
     }
   }
   return defValue;
+}
+
+char * getStrValue(const char * opt, char * defValue, int argc, char ** argv)
+{
+  for (int i = 1; i < argc-1; i++)
+  {
+    if (strcmp(argv[i], opt) == 0)
+    {
+      return argv[i+1];
+    }
+  }
+  return defValue;
+}
+
+void getStrValues(const char * opt, std::vector<std::string> & values, int argc, char ** argv)
+{
+  for (int i = 1; i < argc-1; i++)
+  {
+    if (strcmp(argv[i], opt) == 0)
+    {
+      values.push_back(std::string(argv[i+1]));
+    }
+  }
 }
 
 char * getSmtFileName(int num, int argc, char ** argv)
