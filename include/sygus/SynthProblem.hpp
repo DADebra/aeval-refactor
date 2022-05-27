@@ -3,7 +3,7 @@
 
 #include <string>
 #include "ufo/Expr.hpp"
-#include "ae/SMTUtils.hpp"
+#include "expr/SMTUtils.hpp"
 
 namespace yy { class parser; }
 

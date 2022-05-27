@@ -2,10 +2,10 @@
 #include <cstdio>
 #include <boost/logic/tribool.hpp>
 
-#include "ae/CLIParsing.hpp"
-#include "ae/SMTUtils.hpp"
 #include "ufo/Expr.hpp"
 #include "ufo/Smt/EZ3.hh"
+#include "utils/CLIParsing.hpp"
+#include "expr/SMTUtils.hpp"
 #include "sygus/SynthProblem.hpp"
 #include "sygus/SyGuSSolver.hpp"
 

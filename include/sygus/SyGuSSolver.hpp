@@ -3,6 +3,7 @@
 
 #include "ae/AeValSolver.hpp"
 #include <boost/logic/tribool.hpp>
+#include "ufo/ExprLlvm.hpp"
 #include <fstream>
 
 namespace ufo

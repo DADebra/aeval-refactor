@@ -146,7 +146,7 @@ ufo::SynthFunc addFunc(ufo::EZ3& z3, std::string name,
   toparse += ") " + z3.toSmtLib(sort) + ")";
   yy::funcs.insert(name);
   return ufo::SynthFunc( type,
-    expr::bind::fdecl(expr::mkTerm<std::string>(name, sort->efac()),
+    expr::op::bind::fdecl(expr::mkTerm<std::string>(name, sort->efac()),
     declArgs), vardecls);
 }
 
@@ -212,7 +212,7 @@ vardecls:
            {
               std::swap($$, $5);
               // Note: this can be used directly for quantifiers, NOT for fdecls
-              $$.insert($$.begin(), expr::bind::constDecl(
+              $$.insert($$.begin(), expr::op::bind::constDecl(
                 ufo::mkTerm<std::string>($2, efac), $3));
            }
          | {}
