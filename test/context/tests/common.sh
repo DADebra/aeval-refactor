@@ -1,5 +1,8 @@
 #!/bin/sh
 
+if [ -z "$__COMMON_SH__" ]; then
+__COMMON_SH__=1
+
 # Usage: $1 = option, $2 = description
 printhelp() {
     tcols=$(tput cols) # Number of columns in terminal
@@ -42,3 +45,5 @@ findopt() {
     done
     return 1
 }
+
+fi
