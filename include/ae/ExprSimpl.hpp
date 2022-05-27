@@ -620,7 +620,7 @@ namespace ufo
    *  (a <= b && a >= b) -> (a == b)
    */
   inline static void ineqMerger(ExprSet& expClauses, bool clean = false){
-    vector<ExprSet::iterator> tmp;
+    unordered_set<Expr> toClear;
     ExprSet newClauses;
     for (auto it1 = expClauses.begin(); it1 != expClauses.end(); ++it1){
       if (isOpX<LEQ>(*it1)){
@@ -631,8 +631,8 @@ namespace ufo
             if ( e1l == e2l ){
               newClauses.insert(mk<EQ>(e1l, mkMPZ(0, e1l->getFactory())));
               if (clean){
-                tmp.push_back (it1);
-                tmp.push_back (it2);
+                toClear.insert (*it1);
+                toClear.insert (*it2);
                 break;
               }
             }
@@ -640,7 +640,7 @@ namespace ufo
         }
       }
     }
-    for (auto & it : tmp) expClauses.erase(it);
+    for (auto & e : toClear) expClauses.erase(e);
     expClauses.insert(newClauses.begin(), newClauses.end());
   }
 
@@ -4584,45 +4584,55 @@ namespace ufo
   void getLiterals (Expr exp, ExprSet& lits, bool splitEqs = true)
   {
     ExprFactory& efac = exp->getFactory();
+    Expr el = exp->left();
+    Expr er = exp->right();
     if (isOp<ComparissonOp>(exp) && !splitEqs)
     {
-      lits.insert(exp);
+      if (isNumeric(el) || (isBoolConstOrNegation(el) && isBoolConstOrNegation(er)))
+        lits.insert(exp);
     }
-    else if (isOpX<EQ>(exp) && isNumeric(exp->left()) && !containsOp<MOD>(exp))
+    if (isOpX<EQ>(exp) && isBoolean(er))
     {
-      getLiterals(mk<GEQ>(exp->left(), exp->right()), lits, splitEqs);
-      getLiterals(mk<LEQ>(exp->left(), exp->right()), lits, splitEqs);
+      getLiterals(mkNeg(el), lits, splitEqs);
+      getLiterals(er, lits, splitEqs);
+      getLiterals(mkNeg(er), lits, splitEqs);
+      getLiterals(el, lits, splitEqs);
     }
-    else if (isOpX<NEQ>(exp) && isNumeric(exp->left()) && !containsOp<MOD>(exp))
+    if (isOpX<EQ>(exp) && isNumeric(el) && !containsOp<MOD>(exp))
     {
-      getLiterals(mk<GT>(exp->left(), exp->right()), lits, splitEqs);
-      getLiterals(mk<LT>(exp->left(), exp->right()), lits, splitEqs);
+      getLiterals(mk<GEQ>(el, er), lits, splitEqs);
+      getLiterals(mk<LEQ>(el, er), lits, splitEqs);
     }
-    else if ((isOpX<EQ>(exp) || isOpX<NEQ>(exp) || isOpX<XOR>(exp)) && isBoolean(exp->left()))
+    else if (isOpX<NEQ>(exp) && isNumeric(el) && !containsOp<MOD>(exp))
     {
-      getLiterals(exp->left(), lits, splitEqs);
-      getLiterals(exp->right(), lits, splitEqs);
-      getLiterals(mkNeg(exp->left()), lits, splitEqs);
-      getLiterals(mkNeg(exp->right()), lits, splitEqs);
+      getLiterals(mk<GT>(el, er), lits, splitEqs);
+      getLiterals(mk<LT>(el, er), lits, splitEqs);
+    }
+    else if ((isOpX<EQ>(exp) || isOpX<NEQ>(exp) || isOpX<XOR>(exp)) && isBoolean(el))
+    {
+      getLiterals(el, lits, splitEqs);
+      getLiterals(er, lits, splitEqs);
+      getLiterals(mkNeg(el), lits, splitEqs);
+      getLiterals(mkNeg(er), lits, splitEqs);
     }
     else if (isOpX<NEG>(exp))
     {
-      if (bind::isBoolConst(exp->left()))
+      if (isBoolConst(el))
         lits.insert(exp);
       else
-        getLiterals(mkNeg(exp->left()), lits, splitEqs);
+        getLiterals(mkNeg(el), lits, splitEqs);
     }
     else if (isOpX<IMPL>(exp))
     {
-      getLiterals(mkNeg(exp->left()), lits, splitEqs);
-      getLiterals(exp->right(), lits, splitEqs);
+      getLiterals(mkNeg(el), lits, splitEqs);
+      getLiterals(er, lits, splitEqs);
     }
     else if (isOpX<IFF>(exp))
     {
-      getLiterals(mkNeg(exp->left()), lits, splitEqs);
-      getLiterals(exp->right(), lits, splitEqs);
-      getLiterals(mkNeg(exp->right()), lits, splitEqs);
-      getLiterals(exp->left(), lits, splitEqs);
+      getLiterals(mkNeg(el), lits, splitEqs);
+      getLiterals(er, lits, splitEqs);
+      getLiterals(mkNeg(er), lits, splitEqs);
+      getLiterals(el, lits, splitEqs);
     }
     else if (bind::typeOf(exp) == mk<BOOL_TY>(efac) &&
         !containsOp<AND>(exp) && !containsOp<OR>(exp))

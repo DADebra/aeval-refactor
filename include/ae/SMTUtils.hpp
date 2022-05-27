@@ -194,8 +194,9 @@ namespace ufo
     boost::tribool isEquiv(Expr a, Expr b)
     {
       auto r1 = implies (a, b);
+      if (!r1) return r1;
       auto r2 = implies (b, a);
-      return r1 && r2;
+      return r2;
     }
 
     /**
@@ -725,9 +726,10 @@ namespace ufo
 
     void serialize_formula(Expr form)
     {
-      outs() << "(assert ";
-      print (form);
-      outs() << ")\n";
+      smt.reset();
+      smt.assertExpr(form);
+      smt.toSmtLib(outs());
+      outs().flush();
     }
 
     template <typename T> void serialize_formula(T& forms)
