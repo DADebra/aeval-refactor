@@ -482,6 +482,24 @@ namespace ufo
       return exp;
     }
 
+    inline static string varType (Expr var)
+    {
+      if (bind::isIntConst(var))
+        return "Int";
+      else if (bind::isRealConst(var))
+        return "Real";
+      else if (bind::isBoolConst(var))
+        return "Bool";
+      else if (bind::isConst<ARRAY_TY> (var))
+      {
+        Expr name = mkTerm<string> ("", var->getFactory());
+        Expr s1 = bind::mkConst(name, var->last()->right()->left());
+        Expr s2 = bind::mkConst(name, var->last()->right()->right());
+        return string("(Array ") + varType(s1) + string(" ") + varType(s2) + string(")");
+      }
+      else return "";
+    }
+
     template <typename Range1, typename Range2, typename Range3> bool
       splitUnsatSets(Range1 & src, Range2 & dst1, Range3 & dst2)
     {
@@ -710,6 +728,26 @@ namespace ufo
       outs() << "(assert ";
       print (form);
       outs() << ")\n";
+    }
+
+    template <typename T> void serialize_formula(T& forms)
+    {
+      smt.reset();
+      for (auto form : forms)
+      {
+        assert(isOpX<EQ>(form));
+        outs () << "(define-fun " << *form->left() << " (";
+        ExprVector allVars;
+        filter (form->right(), bind::IsConst (), back_inserter (allVars));
+        for (auto & b : allVars)
+        {
+          outs () << "(" << *b << " " << varType(b) << ")";
+        }
+        outs () << ") " << varType(form->left()) << "\n  ";
+        print(form->right());
+        outs () << ")\n";
+      }
+      outs().flush ();
     }
   };
 
