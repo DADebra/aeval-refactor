@@ -486,61 +486,6 @@ string CFGUtils::toSyGuS(Grammar &gram, EZ3 &z3)
   return std::move(out.str());
 }
 
-
-// Returns the path to the CFG (within 'grams') corresponding to invDecl.
-// Returns the empty string if no appropriate CFG is found.
-// Set 'useany' to only look for ANY_INV.
-string CFGUtils::findGram(vector<string>& grams, Expr invDecl, bool useany)
-{
-  string invName = lexical_cast<string>(invDecl->left());
-
-  // The declarations in the grammar we're looking for.
-  // Note: a (declare-rel) won't work, so we don't need to look for it.
-  string finddecl1 = "(declare-fun " + invName + " () Bool)";
-  string finddecl2 = "(declare-var " + invName + " Bool)";
-  string finddecl3 = string("(declare-fun ") + ANY_INV + " () Bool)";
-  string finddecl4 = string("(declare-var ") + ANY_INV + " Bool)";
-
-  for (auto& gramstr : grams)
-  {
-    ifstream gramfile(gramstr);
-    string line;
-    while (getline(gramfile, line))
-    {
-      if (!useany)
-      {
-        // Prioritize the exact invariant decl over ANY_INV
-        if (line.find(finddecl1) != string::npos ||
-          line.find(finddecl2) != string::npos)
-        {
-          gramfile.close();
-          return gramstr;
-        }
-      }
-      else
-      {
-        if (line.find(finddecl3) != string::npos ||
-          line.find(finddecl4) != string::npos)
-        {
-          gramfile.close();
-          return gramstr;
-        }
-      }
-    }
-  }
-
-  if (!useany)
-  {
-    // Retry, looking for ANY_INV this time.
-    return std::move(findGram(grams, invDecl, true));
-  }
-  else
-  {
-    // We've exhausted the list of grammars, return failure.
-    return "";
-  }
-}
-
 TPMethod CFGUtils::strtogenmethod(const char* methodstr)
 {
   if (!strcmp(methodstr, "rnd"))

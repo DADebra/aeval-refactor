@@ -113,7 +113,6 @@ int main (int argc, char ** argv)
         "                                 (if not specified, sample from uniform distributions)\n" <<
         " " << OPT_MAX_ATTEMPTS << " <N>                  maximal number of candidates to sample and check\n" <<
         " " << OPT_GRAMMAR << " <grammar.smt2>        generate candidates using CFG from `grammar.smt2`\n" <<
-        "                                 (can be specified multiple times for inputs with multiple invariants)\n" <<
         " " << OPT_ELIM << "                     do not minimize CHC rules (and do not slice)\n" <<
         " " << OPT_ARITHM << "                   do not apply arithmetic constant propagation during parsing\n" <<
         " " << OPT_TO << "                            timeout for each Z3 run in ms (default: 1000)\n" <<
@@ -233,7 +232,7 @@ int main (int argc, char ** argv)
   }
 
   vector<string> grammars;
-  getStrValues(OPT_GRAMMAR, grammars, argc, argv);
+  const char* gramfile = getStrValue(OPT_GRAMMAR, "", argc, argv);
   const char* gram_trav_type = getStrValue(OPT_GRAM_TRAV_TYPE, "striped", argc, argv);
   const char* gram_trav_prio = getStrValue(OPT_GRAM_TRAV_PRIO, NULL, argc, argv);
   bool b4simpl = getBoolValue(OPT_GRAM_B4SIMPL, false, argc, argv);
@@ -260,14 +259,14 @@ int main (int argc, char ** argv)
     learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
                      do_dl, do_mu, do_elim, do_arithm, do_disj, do_prop, mbp_eqs,
                      d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot, templ, saveLemmas, printSygus,
-                     grammars, gramparams, b4simpl);
+                     gramfile, gramparams, b4simpl);
   else if (vers2) // run the TACAS'18 algorithm
     learnInvariants2(string(argv[argc-1]), to, max_attempts,
                   itp, batch, retry, densecode, aggressivepruning, debug, do_boot, templ, saveLemmas,
-                  grammars, gramparams, b4simpl);
+                  gramfile, gramparams, b4simpl);
   else            // run the FMCAD'17 algorithm
     learnInvariants(string(argv[argc-1]), to, max_attempts,
                   kinduction, itp, densecode, addepsilon, aggressivepruning, debug, templ, saveLemmas,
-                  grammars, gramparams, b4simpl);
+                  gramfile, gramparams, b4simpl);
   return 0;
 }

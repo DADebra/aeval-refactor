@@ -62,15 +62,15 @@ namespace ufo
 
     public:
 
-    // The locations of the CFGs. Key: Invariant Name, Value: CFG path
-    unordered_map<string, string> grams;
+    // Path to CFG File, or empty if non provided
+    string gramfile;
 
-    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, int debug, string _fileName, int sw, bool sl) :
+    RndLearner (ExprFactory &efac, EZ3 &z3, CHCs& r, unsigned to, bool k, bool b1, bool b2, bool b3, int debug, string _fileName, string _gramfile, int sw, bool sl) :
       m_efac(efac), m_z3(z3), ruleManager(r), m_smt_solver (z3, to), u(efac, to),
       invNumber(0), numOfSMTChecks(0), oneInductiveProof(true), kind_succeeded (!k),
       densecode(b1), addepsilon(b2), aggressivepruning(b3),
       statsInitialized(false), printLog(debug), fileName(_fileName),
-      strenOrWeak(sw), saveLemmas(sl), timeout(to) {}
+      strenOrWeak(sw), saveLemmas(sl), timeout(to), gramfile(_gramfile) {}
 
     bool isTautology (Expr a)     // adjusted for big disjunctions
     {
@@ -432,26 +432,6 @@ namespace ufo
       }
     }
 
-    bool fillgrams(vector<string>& grammars)
-    {
-      if (grammars.empty())
-        return true;
-      // Figure out which CFG corresponds to which invariant
-      for (auto& dcl : ruleManager.decls)
-      {
-        string gram = std::move(CFGUtils::findGram(grammars, dcl));
-        if (gram.empty())
-        {
-          outs() << "Error: No CFG provided for invariant \"" << dcl << "\"";
-          outs() << endl;
-          return false;
-        }
-        grams[lexical_cast<string>(bind::fname(dcl))] = gram;
-      }
-
-      return true;
-    }
-
     void updateRels()
     {
       // this should not affect the learning process for a CHC system with one (declare-rel ...)
@@ -500,7 +480,7 @@ namespace ufo
         sf_after.lf.nonlinVars = sf_before.lf.nonlinVars;
 
         sf_after.gf.setParams(sf_before.gf.getParams());
-        sf_after.initialize_gram(grams[lexical_cast<string>(decls[ind])], lexical_cast<string>(decls[ind]), sf_before.gf.b4simpl);
+        sf_after.initialize_gram(gramfile, lexical_cast<string>(decls[ind]), sf_before.gf.b4simpl);
 
         set<cpp_int> progConsts, intCoefs;
         ExprSet cands;
@@ -584,7 +564,7 @@ namespace ufo
 
       sf.gf.setParams(gramparams);
       sf.gf.extract_consts(ruleManager);
-      sf.initialize_gram(grams[lexical_cast<string>(invDecl)], lexical_cast<string>(invDecl), b4simpl);
+      sf.initialize_gram(gramfile, lexical_cast<string>(invDecl), b4simpl);
 
       invNumber++;
     }
@@ -1151,17 +1131,14 @@ namespace ufo
   };
 
   inline void learnInvariants(string smt, unsigned to, int maxAttempts,
-                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, bool sl, vector<string> grammars, TravParams gramparams, bool b4simpl)
+                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, bool sl, string gramfile, TravParams gramparams, bool b4simpl)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
 
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
-    RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt, sw, sl);
-
-    if (!ds.fillgrams(grammars))
-      return; // Couldn't find grammars for all invariants.
+    RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt, gramfile, sw, sl);
 
     ds.setupSafetySolver(to);
     std::srand(std::time(0));

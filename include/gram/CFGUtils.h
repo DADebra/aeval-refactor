@@ -31,7 +31,6 @@ class CFGUtils
     const VarMap&, const VarMap&);
   static ExprUSet getQVars(const Grammar&);
   static string toSyGuS(Grammar&, EZ3&);
-  static string findGram(vector<string>&, Expr, bool useany = false);
 
   static TPMethod strtogenmethod(const char* methodstr);
   static TPDir strtotravdir(const char* str);
