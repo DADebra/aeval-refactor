@@ -1,20 +1,15 @@
 #ifndef __GRAMENUM__HPP__
 #define __GRAMENUM__HPP__
 
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
+
 #include <set>
 #include <unordered_map>
 #include <list>
 
 #include "gram/PairHash.hpp"
-
-#include "ufo/Expr.hpp"
-#include "gram/Grammar.h"
-#include "gram/TravParams.hpp"
-#include "gram/TravParams.hpp"
-#include "gram/Traversal.hpp"
-#include "gram/RndTrav.hpp"
-#include "gram/CoroTrav.hpp"
-#include "gram/NewTrav.hpp"
 
 namespace ufo
 {

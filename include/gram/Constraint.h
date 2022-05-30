@@ -1,7 +1,11 @@
 #ifndef CONSTRAINT__H__
 #define CONSTRAINT__H__
 
-#include "gram/ParseTree.hpp"
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
+
+#include "gram/PairHash.hpp"
 
 #include <boost/optional.hpp>
 

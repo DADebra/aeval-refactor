@@ -1,7 +1,10 @@
 #ifndef CFGUTILS__HPP__
 #define CFGUTILS__HPP__
 
-#include "gram/CFGUtils.h"
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
+
 #include "gram/PairHash.hpp"
 
 using namespace ufo;

@@ -7,14 +7,7 @@
 typedef unordered_set<ufo::Expr> ExprUSet;
 typedef unordered_map<ufo::Expr, ufo::Expr> ExprUMap;
 
-#include "gram/ParseTree.hpp"
-#include "gram/TravParams.hpp"
-#include "gram/CFGUtils.h"
-#include "gram/Grammar.h"
-
-#include "gram/CFGUtils.hpp"
-#include "gram/Grammar.hpp"
-#include "gram/GramEnum.hpp"
+#include "gram/AllHeaders.hpp"
 
 using namespace std;
 using namespace boost;

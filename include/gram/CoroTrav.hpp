@@ -1,13 +1,13 @@
 #ifndef COROTRAV__HPP__
 #define COROTRAV__HPP__
 
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
+
 #include <boost/coroutine2/coroutine.hpp>
 #include <boost/optional.hpp>
 #include <boost/optional/optional_io.hpp>
-
-#include "gram/ParseTree.hpp"
-#include "gram/TravParams.hpp"
-#include "gram/Grammar.h"
 
 namespace ufo
 {

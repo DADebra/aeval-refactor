@@ -1,11 +1,11 @@
 #ifndef RNDTRAV__HPP__
 #define RNDTRAV__HPP__
 
-#include <random>
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
 
-#include "gram/ParseTree.hpp"
-#include "gram/TravParams.hpp"
-#include "gram/Grammar.h"
+#include <random>
 
 namespace ufo
 {

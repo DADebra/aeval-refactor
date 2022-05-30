@@ -1,12 +1,15 @@
 #ifndef CFGUTILS__H__
 #define CFGUTILS__H__
 
+#include <unordered_map>
+#include <utility>
+#include <string>
+
 #include "gram/Grammar.h"
-#include "gram/TravParams.hpp"
 
 namespace ufo
 {
-
+using namespace std;
 const char* ANY_INV = "ANY_INV";
 // The maximum arity of 'either' functions we write.
 const int NUMEITHERS = 100;

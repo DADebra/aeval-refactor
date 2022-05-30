@@ -1,10 +1,11 @@
 #ifndef NEWTRAV__HPP__
 #define NEWTRAV__HPP__
 
-#include "gram/ParseTree.hpp"
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
+
 #include "gram/TravPos.hpp"
-#include "gram/TravParams.hpp"
-#include "gram/Grammar.hpp"
 
 namespace ufo
 {

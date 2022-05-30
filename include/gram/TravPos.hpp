@@ -1,7 +1,12 @@
 #ifndef TRAVPOS__HPP__
 #define TRAVPOS__HPP__
+
+#include <vector>
+#include <deque>
+
 namespace ufo
 {
+using namespace std;
 struct TravPos;
 
 struct CircularInt

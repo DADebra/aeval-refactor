@@ -6,7 +6,8 @@
 #include "ae/SMTUtils.hpp"
 #include "sampl/SeedMiner.hpp"
 #include "sampl/Sampl.hpp"
-#include "gram/CFGUtils.h"
+
+#include "gram/TravParams.hpp"
 
 #include <boost/optional.hpp>
 

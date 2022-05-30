@@ -1,10 +1,11 @@
 #ifndef GRAMMAR__HPP__
 #define GRAMMAR__HPP__
 
-#include <random>
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
 
-#include "gram/ParseTree.hpp"
-#include "gram/Constraint.hpp"
+#include <random>
 
 namespace ufo
 {

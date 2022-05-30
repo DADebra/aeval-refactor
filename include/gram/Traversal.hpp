@@ -1,7 +1,9 @@
 #ifndef TRAVERSAL__HPP__
 #define TRAVERSAL__HPP__
 
-#include "gram/ParseTree.hpp"
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
 
 namespace ufo
 {

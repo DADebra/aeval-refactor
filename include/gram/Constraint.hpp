@@ -1,9 +1,9 @@
 #ifndef CONSTRAINT__HPP__
 #define CONSTRAINT__HPP__
 
-#include "gram/Constraint.h"
-
-#include "gram/CFGUtils.h"
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
 
 using namespace ufo;
 

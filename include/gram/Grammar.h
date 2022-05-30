@@ -1,7 +1,9 @@
 #ifndef GRAMMAR__H__
 #define GRAMMAR__H__
 
-#include "gram/Constraint.h"
+#ifndef GRAMINCLUDED
+#error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
+#endif
 
 namespace ufo
 {

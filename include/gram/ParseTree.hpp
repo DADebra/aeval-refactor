@@ -1,8 +1,14 @@
 #ifndef PARSETREE__HPP__
 #define PARSETREE__HPP__
 
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <functional>
+
 namespace ufo
 {
+using namespace std;
 class ParseTree;
 class ParseTreeNode
 {
