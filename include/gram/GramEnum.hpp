@@ -131,6 +131,11 @@ class GramEnum
   void SetGrammar(Grammar& _gram)
   {
     gram = _gram;
+    Restart();
+  }
+
+  void Restart()
+  {
     if (params.method != TPMethod::NONE)
       initTraversal();
   }

@@ -16,6 +16,7 @@ class RndTrav : public Traversal
   private:
 
   Grammar &gram;
+  bool grammodified = false;
   TravParams params;
 
   ParseTree lastcand;
@@ -134,10 +135,17 @@ class RndTrav : public Traversal
     return ParseTree(root, expanded_args, false);
   }
 
+  void handleGramMod()
+  {
+    regendistmap();
+    grammodified = false;
+  }
+
   void onGramMod(ModClass cl, ModType ty)
   {
-    if (cl == ModClass::PRIO)
-      regendistmap();
+    if (cl == ModClass::PRIO || cl == ModClass::PROD)
+      grammodified = true;
+    lastcand = NULL;
   }
   ModListener ml; std::shared_ptr<ModListener> mlp;
 
@@ -164,6 +172,7 @@ class RndTrav : public Traversal
 
   virtual ParseTree Increment()
   {
+    if (grammodified) handleGramMod();
     ParseTree ret = lastcand;
     lastcand = getRandCand(gram.root, 0, NULL, gram.root);
     lastcand.fixchildren();

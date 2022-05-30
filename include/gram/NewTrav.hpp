@@ -14,9 +14,12 @@ class NewTrav : public Traversal
   private:
 
   Grammar &gram;
+  bool grammodified = false;
   TravParams params;
   TravPos rootpos;
   function<bool(const Expr&, const Expr&)> shoulddefer;
+
+  ParseTree lastcand; // Not strictly necessary, but for efficiency.
 
   ParseTree gettrav(const Expr& root, const TravPos& travpos, int currdepth,
     std::shared_ptr<ExprUSet> qvars,Expr currnt,bool& needdefer,bool getfirst)
@@ -702,10 +705,18 @@ class NewTrav : public Traversal
     return std::move(ret);
   }
 
+  void handleGramMod()
+  {
+    assert(0 && "NewTrav doesn't support modifying Grammar mid-traversal!");
+    grammodified = false;
+  }
+
   void onGramMod(ModClass cl, ModType ty)
   {
-    if (cl != ModClass::CONSTRAINT)
-      assert(0 && "NewTrav doesn't support modifying Grammar mid-traversal!");
+    if (cl == ModClass::CONSTRAINT && ty == ModType::ADD)
+      return;
+    grammodified = true;
+    lastcand = NULL;
   }
   ModListener ml; std::shared_ptr<ModListener> mlp;
 
@@ -726,22 +737,25 @@ class NewTrav : public Traversal
     assert(ret);
   }
 
-  virtual bool IsDone() { return rootpos.isdone(); }
+  virtual bool IsDone()
+  {
+    if (grammodified) handleGramMod();
+    return rootpos.isdone();
+  }
 
   virtual ParseTree GetCurrCand()
   {
-    bool needdefer = false;
-    ParseTree ret = gettrav(gram.root,rootpos,0,NULL,gram.root,needdefer,false);
-    ret.fixchildren();
-    return ret;
+    return lastcand;
   }
 
   virtual ParseTree Increment()
   {
+    if (grammodified) handleGramMod();
     if (IsDone())
       return NULL;
     ParseTree ret = newtrav(gram.root, rootpos, 0, NULL, gram.root);
     ret.fixchildren();
+    lastcand = ret;
     return std::move(ret);
   }
 };

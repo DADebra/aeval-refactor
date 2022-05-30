@@ -160,6 +160,7 @@ class CoroTrav : public Traversal
     PTCoroCache,tuplehash> ptcorocache;
 
   Grammar &gram;
+  bool grammodified = false;
   TravParams params;
 
   ParseTree lastcand; // Coroutines will destroy last cand once generated.
@@ -741,10 +742,18 @@ class CoroTrav : public Traversal
         std::move(stuck), root, currdepth, qvars, currnt); }));
   }
 
+  void handleGramMod()
+  {
+    assert(0 && "Coroutine traversal does not support modifying Grammar mid-traversal!");
+    grammodified = false;
+  }
+
   void onGramMod(ModClass cl, ModType ty)
   {
-    if (cl != ModClass::CONSTRAINT)
-      assert(0 && "Coroutine traversal does not support modifying Grammar mid-traversal!");
+    if (cl == ModClass::CONSTRAINT && ty == ModType::ADD)
+      return;
+    grammodified = true;
+    lastcand = NULL;
   }
   ModListener ml; std::shared_ptr<ModListener> mlp;
 
@@ -775,7 +784,8 @@ class CoroTrav : public Traversal
 
   virtual bool IsDone()
   {
-    return bool(!lastcand);
+    if (grammodified) handleGramMod();
+    return !lastcand && !bool(*getNextCandTrav);
   }
 
   virtual ParseTree GetCurrCand()
@@ -785,6 +795,7 @@ class CoroTrav : public Traversal
 
   virtual ParseTree Increment()
   {
+    if (grammodified) handleGramMod();
     if (IsDone())
       return NULL;
     ParseTree ret = lastcand;
