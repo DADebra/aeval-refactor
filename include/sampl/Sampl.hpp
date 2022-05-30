@@ -6,7 +6,7 @@
 #include "LinCom.hpp"
 #include "BoolCom.hpp"
 #include "ArrCom.hpp"
-#include "gram/GramFac.hpp"
+#include "GramFac.hpp"
 
 using namespace std;
 using namespace boost;

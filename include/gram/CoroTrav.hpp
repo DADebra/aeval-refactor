@@ -185,7 +185,7 @@ class CoroTrav : public Traversal
       outs() << "NULL";
     outs() << ", " << currnt << ")" << endl;*/
 
-    if (gram.isVar(root) || gram.isConst(root) || bind::isLit(root))
+    if (gram.isVar(root) || bind::isLit(root))
     {
       // Root is a symbolic variable; don't expand.
       sink(ParseTree(root));

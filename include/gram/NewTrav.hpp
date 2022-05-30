@@ -28,7 +28,7 @@ class NewTrav : public Traversal
     if (!getfirst && travpos.pos == -3)
       return NULL;
 
-    if (gram.isVar(root) || gram.isConst(root) || bind::isLit(root))
+    if (gram.isVar(root) || bind::isLit(root) || gram.isConst(root))
     {
       // Root is a symbolic variable
       return ParseTree(root);
@@ -185,7 +185,7 @@ class NewTrav : public Traversal
     // Some operations should not cause copy-up; use constpos for these.
     const TravPos &constpos = travpos;
 
-    if (gram.isVar(root) || gram.isConst(root) || bind::isLit(root))
+    if (gram.isVar(root) || bind::isLit(root))
     {
       // Root is a symbolic variable
       travpos = TravPos(0, 1);

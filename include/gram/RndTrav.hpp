@@ -62,7 +62,7 @@ class RndTrav : public Traversal
   ParseTree getRandCand(const Expr& root, int currdepth,
       std::shared_ptr<ExprUSet> qvars, Expr currnt)
   {
-    if (gram.isVar(root) || gram.isConst(root) || bind::isLit(root))
+    if (gram.isVar(root) || bind::isLit(root))
         // Root is a symbolic variable or constant; don't expand.
         return ParseTree(root);
     else if (gram.isNt(root))

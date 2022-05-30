@@ -138,7 +138,7 @@ class Grammar
   }
   bool isConst(Expr e) const
   {
-    return (isOpX<MPZ>(e) || isOpX<MPQ>(e) || is_bvnum(e)) &&
+    return bind::isLit(e) &&
       _consts.count(typeOf(e)) != 0 && _consts.at(typeOf(e)).count(e) != 0;
   }
 

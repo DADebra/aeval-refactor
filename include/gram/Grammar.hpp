@@ -4,6 +4,7 @@
 #include <random>
 
 #include "gram/ParseTree.hpp"
+#include "gram/Constraint.hpp"
 
 namespace ufo
 {
@@ -97,6 +98,7 @@ vector<Constraint>::iterator Grammar::delConstraint(vector<Constraint>::const_it
 
 bool Grammar::addConst(Expr c, mpq_class prio)
 {
+  assert(bind::isLit(c));
   bool ret = _consts[bind::typeOf(c)].insert(c).second;
   if (ret)
   {

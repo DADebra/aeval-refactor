@@ -233,7 +233,7 @@ int main (int argc, char ** argv)
 
   vector<string> grammars;
   const char* gramfile = getStrValue(OPT_GRAMMAR, "", argc, argv);
-  const char* gram_trav_type = getStrValue(OPT_GRAM_TRAV_TYPE, "striped", argc, argv);
+  const char* gram_trav_type = getStrValue(OPT_GRAM_TRAV_TYPE, "none", argc, argv);
   const char* gram_trav_prio = getStrValue(OPT_GRAM_TRAV_PRIO, NULL, argc, argv);
   bool b4simpl = getBoolValue(OPT_GRAM_B4SIMPL, false, argc, argv);
 
@@ -244,15 +244,16 @@ int main (int argc, char ** argv)
   }
 
   // Gets ignored if --trav_type ordered
-  if (gram_trav_prio == NULL) gram_trav_prio = "sfs";
+  if (gram_trav_prio == NULL) gram_trav_prio = "none";
 
-  TravParams gramparams = {
-    CFGUtils::strtogenmethod(getStrValue(OPT_GRAM_GEN, "newtrav", argc, argv)),
-    CFGUtils::strtotravdir(getStrValue(OPT_GRAM_TRAV_DIR, "ltr", argc, argv)),
-    CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "forward", argc, argv)),
+  TravParams gramparams(
+    CFGUtils::strtogenmethod(getStrValue(OPT_GRAM_GEN, "none", argc, argv)),
+    CFGUtils::strtotravdir(getStrValue(OPT_GRAM_TRAV_DIR, "none", argc, argv)),
+    CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "none", argc, argv)),
     CFGUtils::strtotravtype(gram_trav_type),
     CFGUtils::strtotravprio(gram_trav_prio),
-    getIntValue(OPT_GRAM_MAXREC, 1, argc, argv)};
+    getIntValue(OPT_GRAM_MAXREC, -1, argc, argv));
+  gramparams.SetDefaults();
 
  
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments

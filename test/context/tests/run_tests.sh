@@ -70,11 +70,8 @@ if [ -z "$runtest" ]
 then
     comboout="$TESTOUTDIR/test_${nowdate}_output.txt"
     timeout="$TESTOUTDIR/test_${nowdate}_timing.csv"
-elif [ "${runtest%.sh}" != "$runtest" ]
-then
-    comboout="/dev/stdout"; timeout="/dev/null";
 else
-    comboout="/dev/null"; timeout="/dev/null";
+    comboout="/dev/stdout"; timeout="/dev/null";
 fi
 
 echo "Log output of $(basename $0)" > "$comboout"

@@ -2,6 +2,7 @@
 #define CFGUTILS__HPP__
 
 #include "gram/CFGUtils.h"
+#include "gram/PairHash.hpp"
 
 using namespace ufo;
 
@@ -486,18 +487,20 @@ string CFGUtils::toSyGuS(Grammar &gram, EZ3 &z3)
   return std::move(out.str());
 }
 
-TPMethod CFGUtils::strtogenmethod(const char* methodstr)
+TPMethod CFGUtils::strtogenmethod(const char* str)
 {
-  if (!strcmp(methodstr, "rnd"))
+  if (!strcmp(str, "rnd"))
     return TPMethod::RND;
-  if (!strcmp(methodstr, "coro"))
+  if (!strcmp(str, "coro"))
     return TPMethod::CORO;
-  if (!strcmp(methodstr, "newtrav"))
+  if (!strcmp(str, "newtrav"))
     return TPMethod::NEWTRAV;
+  if (!strcmp(str, "none"))
+    return TPMethod::NONE;
 
-  outs() << "Error: Unrecognized --gen_method \"" << methodstr << "\"" << endl;
+  outs() << "Error: Unrecognized --gen_method \"" << str << "\"" << endl;
   exit(1);
-  return TPMethod::RND;
+  return TPMethod::NONE;
 }
 
 TPDir CFGUtils::strtotravdir(const char* str)
@@ -508,10 +511,12 @@ TPDir CFGUtils::strtotravdir(const char* str)
     return TPDir::RTL;
   if (!strcmp(str, "rnd"))
     return TPDir::RND;
+  if (!strcmp(str, "none"))
+    return TPDir::NONE;
 
   outs() << "Error: Unrecognized --trav_direction \"" << str << "\"" << endl;
   exit(1);
-  return TPDir::LTR;
+  return TPDir::NONE;
 }
 TPOrder CFGUtils::strtotravord(const char* str)
 {
@@ -521,10 +526,12 @@ TPOrder CFGUtils::strtotravord(const char* str)
     return TPOrder::REV;
   if (!strcmp(str, "rnd"))
     return TPOrder::RND;
+  if (!strcmp(str, "none"))
+    return TPOrder::NONE;
 
   outs() << "Error: Unrecognized --trav_order \"" << str << "\"" << endl;
   exit(1);
-  return TPOrder::FOR;
+  return TPOrder::NONE;
 }
 
 TPType CFGUtils::strtotravtype(const char* str)
@@ -533,10 +540,12 @@ TPType CFGUtils::strtotravtype(const char* str)
     return TPType::ORDERED;
   if (!strcmp(str, "striped"))
     return TPType::STRIPED;
+  if (!strcmp(str, "none"))
+    return TPType::NONE;
 
   outs() << "Error: Unrecognized --trav_type \"" << str << "\"" << endl;
   exit(1);
-  return TPType::STRIPED;
+  return TPType::NONE;
 }
 
 TPPrio CFGUtils::strtotravprio(const char* str)
@@ -547,10 +556,12 @@ TPPrio CFGUtils::strtotravprio(const char* str)
     return TPPrio::BFS;
   if (!strcmp(str, "dfs"))
     return TPPrio::DFS;
+  if (!strcmp(str, "none"))
+    return TPPrio::NONE;
 
   outs() << "Error: Unrecognized --trav_priority \"" << str << "\"" << endl;
   exit(1);
-  return TPPrio::SFS;
+  return TPPrio::NONE;
 }
 
 #endif

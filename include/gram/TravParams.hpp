@@ -11,12 +11,27 @@ enum class TPPrio { NONE, SFS, DFS, BFS };
 
 struct TravParams
 {
-  TPMethod method;
-  TPDir dir;
-  TPOrder order;
-  TPType type;
-  TPPrio prio;
-  int maxrecdepth;
+  TPMethod method = TPMethod::NONE;
+  TPDir dir = TPDir::NONE;
+  TPOrder order = TPOrder::NONE;
+  TPType type = TPType::NONE;
+  TPPrio prio = TPPrio::NONE;
+  int maxrecdepth = -1;
+
+  TravParams() {}
+
+  TravParams(TPMethod m, TPDir d, TPOrder o, TPType t, TPPrio p, int r) :
+    method(m), dir(d), order(o), type(t), prio(p), maxrecdepth(r) {}
+
+  void SetDefaults()
+  {
+    if (method == TPMethod::NONE) method = TPMethod::NEWTRAV;
+    if (dir == TPDir::NONE)       dir = TPDir::LTR;
+    if (order == TPOrder::NONE)   order = TPOrder::FOR;
+    if (type == TPType::NONE)     type = TPType::STRIPED;
+    if (prio == TPPrio::NONE)     prio = TPPrio::SFS;
+    if (maxrecdepth < 0)          maxrecdepth = 1;
+  }
 };
 }
 
