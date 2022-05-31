@@ -5,6 +5,9 @@
 #error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
 #endif
 
+#include <sstream>
+#include <fstream>
+
 #include "gram/PairHash.hpp"
 
 using namespace ufo;

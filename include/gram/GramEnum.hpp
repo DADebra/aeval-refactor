@@ -112,7 +112,7 @@ class GramEnum
   public:
 
   int debug;
-  bool b4simpl;
+  bool b4simpl = false;
 
   bool simplify;
 
