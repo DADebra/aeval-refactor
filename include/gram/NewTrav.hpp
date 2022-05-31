@@ -22,6 +22,8 @@ class NewTrav : public Traversal
 
   ParseTree lastcand; // Not strictly necessary, but for efficiency.
 
+  int currmaxdepth = -1;
+
   ParseTree gettrav(const Expr& root, const TravPos& travpos, int currdepth,
     std::shared_ptr<ExprUSet> qvars,Expr currnt,bool& needdefer,bool getfirst)
   {
@@ -54,7 +56,7 @@ class NewTrav : public Traversal
           pos = prods.size() - 1;
         int startpos = pos;
         while (gram.isRecursive(prods[pos], root) &&
-          currdepth == params.maxrecdepth)
+          currdepth == currmaxdepth)
         {
           if (params.order == TPOrder::FOR) ++pos;
           else if (params.order == TPOrder::REV) --pos;
@@ -240,7 +242,7 @@ class NewTrav : public Traversal
       int startpos = checkpos;
       /*while (constpos.childat(checkpos).isdone() ||
       (gram.isRecursive(prods[checkpos], root) &&
-       currdepth == params.maxrecdepth))
+       currdepth == currmaxdepth))
       {
         if (params.order == TPOrder::FOR)
           ++checkpos;
@@ -259,7 +261,7 @@ class NewTrav : public Traversal
         while (constpos.childat(checkpos).isdone() ||
          (checkprio && shoulddefer(root, prods[checkpos])) ||
          (gram.isRecursive(prods[checkpos], root) &&
-         currdepth == params.maxrecdepth))
+         currdepth == currmaxdepth))
         {
           if (params.order == TPOrder::FOR)
             ++checkpos;
@@ -287,7 +289,7 @@ class NewTrav : public Traversal
         else
           newdepth = currdepth;
 
-        assert(newdepth <= params.maxrecdepth);
+        assert(newdepth <= currmaxdepth);
 
         ret = ParseTree(root, vector<ParseTree>{newtrav(prods[travpos.pos],
           travpos.childat(travpos.pos), newdepth, qvars, currnt)}, true);
@@ -302,7 +304,7 @@ class NewTrav : public Traversal
       checkpos = travpos.pos;
       while (constpos.childat(checkpos).isdone() ||
       (gram.isRecursive(prods[checkpos], root) &&
-       currdepth == params.maxrecdepth))
+       currdepth == currmaxdepth))
       {
         if (params.order == TPOrder::FOR)
           ++checkpos;
@@ -731,6 +733,10 @@ class NewTrav : public Traversal
     function<bool(const Expr&, const Expr&)> sd) :
     gram(_gram), params(tp), shoulddefer(sd)
   {
+    if (params.iterdeepen)
+      currmaxdepth = 0;
+    else
+      currmaxdepth = params.maxrecdepth;
     ml = [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); };
     bool ret = gram.addModListener(mlp);
     assert(ret);
@@ -744,8 +750,18 @@ class NewTrav : public Traversal
 
   virtual bool IsDone()
   {
+    return IsDepthDone() && currmaxdepth == params.maxrecdepth;
+  }
+
+  virtual bool IsDepthDone()
+  {
     if (grammodified) handleGramMod();
     return rootpos.isdone();
+  }
+
+  virtual int GetCurrDepth()
+  {
+    return currmaxdepth;
   }
 
   virtual ParseTree GetCurrCand()
@@ -758,6 +774,11 @@ class NewTrav : public Traversal
     if (grammodified) handleGramMod();
     if (IsDone())
       return NULL;
+    if (IsDepthDone())
+    {
+      rootpos = TravPos();
+      currmaxdepth++;
+    }
     ParseTree ret = newtrav(gram.root, rootpos, 0, NULL, gram.root);
     ret.fixchildren();
     lastcand = ret;

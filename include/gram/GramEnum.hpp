@@ -171,6 +171,18 @@ class GramEnum
     bool needInitTrav = params != _params;
     TPMethod oldmeth = params.method;
     params = _params;
+    if (params.iterdeepen && !gram.isInfinite())
+    {
+      if (debug > 1)
+        outs() << "NOTE: Finite grammar but iterative deepening enabled. Disabling iterative deepening (as it does nothing here)" << endl;
+      params.iterdeepen = false;
+    }
+    if (params.maxrecdepth > 0 && !gram.isInfinite())
+    {
+      params.maxrecdepth = 0;
+      if (debug > 1)
+        outs() << "NOTE: Finite grammar but maxrecdepth > 0. Setting maxrecdepth = 0 (as it does nothing here)" << endl;
+    }
     if (needInitTrav)
     {
       if (oldmeth != TPMethod::NONE && traversal && !traversal->IsDone())
@@ -194,6 +206,13 @@ class GramEnum
     return deferred_cands.size() == 0;
   }
 
+  int GetCurrDepth() const
+  {
+    if (!traversal)
+      return -1;
+    return traversal->GetCurrDepth();
+  }
+
   Expr Increment()
   {
     Expr nextcand = NULL;
@@ -202,12 +221,18 @@ class GramEnum
     // Generate a new candidate from the grammar, and simplify
     while (!nextcand)
     {
-      if (!traversal->IsDone())
+      if (traversal->IsDone() && deferred_cands.size() == 0)
+        return NULL;
+      if (!traversal->IsDepthDone() || deferred_cands.size() == 0)
+      {
         nextpt = traversal->Increment();
+        if (debug && traversal->IsDepthDone())
+          outs() << "Done with depth " << traversal->GetCurrDepth() << endl;
+      }
       else
       {
         nextpt = getCandidate_Done();
-        if (!nextpt) return NULL;
+        if (!nextpt && traversal->IsDone()) return NULL;
       }
       if (!nextpt) continue;
       nextcand = nextpt;

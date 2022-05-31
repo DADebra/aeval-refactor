@@ -155,6 +155,10 @@ class RndTrav : public Traversal
 
   RndTrav(Grammar &_gram, const TravParams& tp) : gram(_gram), params(tp), mlp(&ml)
   {
+    if (params.iterdeepen)
+    {
+      errs() << "Warning: Random traversal doesn't support iterative deepening. Ignoring and starting at maximum recursion depth." << endl;
+    }
     ml = [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); };
     bool ret = gram.addModListener(mlp);
     assert(ret);
@@ -169,6 +173,10 @@ class RndTrav : public Traversal
   }
 
   virtual bool IsDone() { return false; }
+
+  virtual bool IsDepthDone() { return false; }
+
+  virtual int GetCurrDepth() { return params.maxrecdepth; }
 
   virtual ParseTree GetCurrCand() { return lastcand; }
 

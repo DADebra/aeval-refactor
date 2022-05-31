@@ -163,7 +163,10 @@ class CoroTrav : public Traversal
   bool grammodified = false;
   TravParams params;
 
-  ParseTree lastcand; // Coroutines will destroy last cand once generated.
+  ParseTree nextcand; // Coroutines will destroy last cand once generated.
+  ParseTree lastcand;
+
+  int currmaxdepth = -1;
 
   // Helper function to convert from our format to Grammar's
   inline double grampriomapat(const pair<Expr,Expr> prod)
@@ -214,14 +217,14 @@ class CoroTrav : public Traversal
         for (int i = 0; i < prods.size(); ++i)
         {
           if (!gram.isRecursive(prods[i], currnt) ||
-          currdepth + 1 <= params.maxrecdepth)
+          currdepth + 1 <= currmaxdepth)
             order.push_back(i);
         }
       else if (params.order == TPOrder::REV)
         for (int i = prods.size() - 1; i >= 0; --i)
         {
           if (!gram.isRecursive(prods[i], currnt) ||
-          currdepth + 1 <= params.maxrecdepth)
+          currdepth + 1 <= currmaxdepth)
             order.push_back(i);
         }
       else if (params.order == TPOrder::RND)
@@ -237,7 +240,7 @@ class CoroTrav : public Traversal
 
           // Don't traverse past maximum depth
           if (!gram.isRecursive(prods[randnum], root) ||
-          currdepth + 1 <= params.maxrecdepth)
+          currdepth + 1 <= currmaxdepth)
             order.push_back(randnum);
         }
       }
@@ -756,26 +759,84 @@ class CoroTrav : public Traversal
       return;
     grammodified = true;
     lastcand = NULL;
+    nextcand = NULL;
   }
   ModListener ml; std::shared_ptr<ModListener> mlp;
+
+  void invalidateCache()
+  {
+    // Invalidate NTs that are recursive and their "parents"
+    unordered_set<NT> recursiveNts, needInvalidate;
+    for (const NT& nt : gram.nts)
+      if (gram.pathExists(nt, nt))
+        recursiveNts.insert(nt);
+    for (const NT& nt : gram.nts)
+    {
+      if (recursiveNts.count(nt) != 0)
+        needInvalidate.insert(nt);
+      else
+        for (const NT& recNt : recursiveNts)
+          if (gram.pathExists(nt, recNt))
+            needInvalidate.insert(nt);
+    }
+
+    for (auto itr = ptcorocache.begin(); itr != ptcorocache.end();)
+    {
+      const Expr& root = get<0>(itr->first);
+      bool invalidate = false;
+      if (gram.isVar(root) || bind::isLit(root))
+      {
+        // No need to invalidate literals/variables
+        invalidate = false;
+      }
+      else if (gram.isNt(root))
+        invalidate = needInvalidate.count(root) != 0;
+      else // A production
+      {
+        ExprVector prodnts;
+        filter(root, [&](Expr e){return gram.isNt(e);}, inserter(prodnts, prodnts.begin()));
+        for (const Expr& nt : prodnts)
+          if (needInvalidate.count(nt) != 0)
+          {
+            invalidate = true;
+            break;
+          }
+      }
+
+      if (invalidate)
+        itr = ptcorocache.erase(itr);
+      else
+        ++itr;
+    }
+  }
+
+  void init()
+  {
+    std::shared_ptr<ExprUSet> qvars = NULL;
+    int currdepth = 0;
+    Expr currnt = NULL;
+    // This will start the coroutine, running until first yield
+    getNextCandTrav.reset(new PTCoro(
+          std::bind(&CoroTrav::getNextCandTrav_fn, this,
+          std::placeholders::_1, gram.root, currdepth, qvars, currnt)));
+    nextcand = getNextCandTrav->get();
+    (*getNextCandTrav)();
+    nextcand.fixchildren();
+  }
 
   public:
 
   CoroTrav(Grammar &_gram,const TravParams &tp) : gram(_gram), params(tp), mlp(&ml)
   {
+    if (params.iterdeepen)
+      currmaxdepth = 0;
+    else
+      currmaxdepth = params.maxrecdepth;
+
     ml = [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); };
     bool ret = gram.addModListener(mlp);
     assert(ret);
-    std::shared_ptr<ExprUSet> qvars = NULL;
-    int currdepth = 0;
-    Expr currnt = NULL;
-    // This will start the coroutine, running until first yield
-    getNextCandTrav = std::unique_ptr<PTCoro>(new PTCoro(
-          std::bind(&CoroTrav::getNextCandTrav_fn, this,
-          std::placeholders::_1, gram.root, currdepth, qvars, currnt)));
-    lastcand = getNextCandTrav->get();
-    (*getNextCandTrav)();
-    lastcand.fixchildren();
+    init();
   }
 
   virtual ~CoroTrav()
@@ -786,8 +847,18 @@ class CoroTrav : public Traversal
 
   virtual bool IsDone()
   {
+    return IsDepthDone() && currmaxdepth == params.maxrecdepth;
+  }
+
+  virtual bool IsDepthDone()
+  {
     if (grammodified) handleGramMod();
-    return !lastcand && !bool(*getNextCandTrav);
+    return !nextcand && !bool(*getNextCandTrav);
+  }
+
+  virtual int GetCurrDepth()
+  {
+    return currmaxdepth;
   }
 
   virtual ParseTree GetCurrCand()
@@ -799,17 +870,26 @@ class CoroTrav : public Traversal
   {
     if (grammodified) handleGramMod();
     if (IsDone())
-      return NULL;
-    ParseTree ret = lastcand;
-    if (*getNextCandTrav)
     {
-      lastcand = getNextCandTrav->get();
-      (*getNextCandTrav)();
-      lastcand.fixchildren();
-    }
-    else
       lastcand = NULL;
-    return ret;
+      return NULL;
+    }
+    if (IsDepthDone())
+    {
+      invalidateCache();
+      currmaxdepth++;
+      init();
+    }
+    lastcand = nextcand;
+    if (!*getNextCandTrav)
+    {
+      nextcand = NULL;
+      return lastcand;
+    }
+    nextcand = getNextCandTrav->get();
+    (*getNextCandTrav)();
+    nextcand.fixchildren();
+    return lastcand;
   }
 };
 

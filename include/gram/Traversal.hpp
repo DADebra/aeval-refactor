@@ -17,6 +17,13 @@ class Traversal
   // Returns true if all candidates in the grammar have been enumerated.
   virtual bool IsDone() { return true; }
 
+  // Returns true if all candidates at the current recursion depth.
+  // have been enumerated.
+  virtual bool IsDepthDone() { return true; }
+
+  // Get the recursion depth currently used as maximum.
+  virtual int GetCurrDepth() { return -1; }
+
   // Returns the candidate at the current traversal position.
   virtual ParseTree GetCurrCand() { return NULL; }
 

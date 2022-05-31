@@ -319,7 +319,7 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
 
   //initialized = (inv != NULL);
 
-  if (printLog)
+  if (printLog > 2)
   {
     for (const auto& nt_prods : gram.priomap)
       for (const auto& prod_prio : nt_prods.second)

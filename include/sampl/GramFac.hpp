@@ -59,7 +59,7 @@ namespace ufo
     bool b4simpl;
 
     GRAMfactory(ExprFactory &_efac, EZ3 &_z3, int _debug) :
-      m_efac(_efac), z3(_z3), debug(_debug), gram(new Grammar()), gramenum(*gram, NULL, true) {}
+      m_efac(_efac), z3(_z3), debug(_debug), gram(new Grammar()), gramenum(*gram, NULL, true, debug) {}
 
     /*void addVar(Expr var)
     {
@@ -174,6 +174,11 @@ namespace ufo
       outs() << CFGUtils::toSyGuS(*gram, z3);
     }
 
+    int getCurrDepth()
+    {
+      return gramenum.GetCurrDepth();
+    }
+
     Expr getFreshCandidate()
     {
       if (gram->root == NULL)
@@ -181,7 +186,10 @@ namespace ufo
       
       Expr ret = gramenum.Increment();
       if (gramenum.IsDone())
+      {
+        outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
         done = true;
+      }
       return ret;
     }
   };

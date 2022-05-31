@@ -85,6 +85,7 @@ int main (int argc, char ** argv)
   const char *OPT_GRAM_TRAV_ORD = "--trav_order";
   const char *OPT_GRAM_TRAV_TYPE = "--trav_type";
   const char *OPT_GRAM_TRAV_PRIO = "--trav_priority";
+  const char *OPT_GRAM_ITER_DEEPEN = "--iter-deepen";
   const char *OPT_GRAM_B4SIMPL = "--b4simpl";
   const char *OPT_D5 = "--fwd";
   const char *OPT_D6 = "--prune";
@@ -139,6 +140,7 @@ int main (int argc, char ** argv)
         " " << OPT_GRAM_TRAV_PRIO << " <sfs, bfs, dfs> parameter for " << OPT_GRAM_GEN << " traverse and " << OPT_GRAM_TRAV_TYPE << " striped\n" <<
         " " << OPT_GRAM_TRAV_DIR << " <ltr, rtl>     parameter for " << OPT_GRAM_GEN << " traverse\n" <<
         " " << OPT_GRAM_TRAV_ORD << " <forward, reverse> parameter for " << OPT_GRAM_GEN << " traverse\n" <<
+        " " << OPT_GRAM_ITER_DEEPEN << "         start at maxrecdepth = 0, and increase depth until at maxrecdepth\n" <<
         " " << OPT_GRAM_B4SIMPL << "                       print candidates before they're simplified\n\n" <<
         "V3 options only:\n" <<
         " " << OPT_DATA_LEARNING << " <N>                      bootstrap candidates from behaviors (0: no, NUM: rounds)\n" <<
@@ -252,6 +254,7 @@ int main (int argc, char ** argv)
     CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "none", argc, argv)),
     CFGUtils::strtotravtype(gram_trav_type),
     CFGUtils::strtotravprio(gram_trav_prio),
+    getBoolValue(OPT_GRAM_ITER_DEEPEN, false, argc, argv),
     getIntValue(OPT_GRAM_MAXREC, -1, argc, argv));
   gramparams.SetDefaults();
 
