@@ -12,6 +12,8 @@ class Traversal
 {
   public:
 
+  virtual ~Traversal() {}
+
   // Returns true if all candidates in the grammar have been enumerated.
   virtual bool IsDone() { return true; }
 

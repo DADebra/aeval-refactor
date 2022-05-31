@@ -23,6 +23,17 @@ struct TravParams
   TravParams(TPMethod m, TPDir d, TPOrder o, TPType t, TPPrio p, int r) :
     method(m), dir(d), order(o), type(t), prio(p), maxrecdepth(r) {}
 
+  bool operator==(const TravParams& oth)
+  {
+    return method == oth.method && dir == oth.dir && order == oth.order &&
+      type == oth.type && prio == oth.prio && maxrecdepth == oth.maxrecdepth;
+  }
+  bool operator!=(const TravParams& oth)
+  {
+    return method != oth.method || dir != oth.dir || order != oth.order ||
+      type != oth.type || prio != oth.prio || maxrecdepth != oth.maxrecdepth;
+  }
+
   void SetDefaults()
   {
     if (method == TPMethod::NONE) method = TPMethod::NEWTRAV;

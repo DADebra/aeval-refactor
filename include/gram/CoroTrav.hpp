@@ -778,7 +778,7 @@ class CoroTrav : public Traversal
     lastcand.fixchildren();
   }
 
-  ~CoroTrav()
+  virtual ~CoroTrav()
   {
     bool ret = gram.delModListener(mlp);
     assert(ret);

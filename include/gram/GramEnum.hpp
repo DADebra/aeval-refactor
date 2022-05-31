@@ -17,7 +17,7 @@ namespace ufo
 class GramEnum
 {
   // The maximum number of previous candidates we store.
-  const int MAXGRAMCANDS = 100;
+  const int MAXGRAMCANDS = 200;
 
   // Previously generated candidates from sample grammar
   ExprUSet gramCands;
@@ -65,10 +65,31 @@ class GramEnum
     return ret;
   }
 
+  void gramReset()
+  {
+    travReset();
+    gramCands.clear();
+    gramCandsOrder.clear();
+  }
+
+  void travReset()
+  {
+    totalcandnum = 0;
+    candnum.clear();
+    deferred_cands.clear();
+    ignoreprios = false;
+    lastpt = NULL;
+    lastexpr = NULL;
+  }
+
   void initTraversal()
   {
     if (traversal)
+    {
       delete traversal;
+      traversal = NULL;
+      travReset();
+    }
     switch (params.method)
     {
       case TPMethod::RND:
@@ -103,7 +124,6 @@ class GramEnum
       return ret;
     }
 
-    outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
     //exit(0);
     return NULL;
 
@@ -122,10 +142,19 @@ class GramEnum
     if (_params)
       SetParams(*_params);
   }
+  ~GramEnum()
+  {
+    if (traversal)
+    {
+      delete traversal;
+      traversal = NULL;
+    }
+  }
 
   void SetGrammar(Grammar& _gram)
   {
     gram = _gram;
+    gramReset();
     Restart();
   }
 
@@ -139,12 +168,12 @@ class GramEnum
 
   void SetParams(TravParams _params)
   {
-    bool needInitTrav = params.method != _params.method;
+    bool needInitTrav = params != _params;
     TPMethod oldmeth = params.method;
     params = _params;
     if (needInitTrav)
     {
-      if (oldmeth != TPMethod::NONE)
+      if (oldmeth != TPMethod::NONE && traversal && !traversal->IsDone())
         // Wrap in assert so only printed in debug builds.
         assert(errs() << "WARNING: Re-initializing traversal. Make sure this is what you want!" << endl);
       initTraversal();

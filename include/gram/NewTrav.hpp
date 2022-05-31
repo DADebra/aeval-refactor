@@ -736,7 +736,7 @@ class NewTrav : public Traversal
     assert(ret);
   }
 
-  ~NewTrav()
+  virtual ~NewTrav()
   {
     bool ret = gram.delModListener(mlp);
     assert(ret);

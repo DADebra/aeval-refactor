@@ -162,7 +162,7 @@ class RndTrav : public Traversal
     Increment();
   }
 
-  ~RndTrav()
+  virtual ~RndTrav()
   {
     bool ret = gram.delModListener(mlp);
     assert(ret);
