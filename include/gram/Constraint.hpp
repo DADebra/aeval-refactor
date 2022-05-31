@@ -470,13 +470,13 @@ bool Constraint::doesSatExpr(Expr con, const ExpansionsMap& expmap) const
     return true;
 }
 
-int Constraint::calculateRecDepth(const ExpansionsMap& expmap, Expr nt)
+int Constraint::calculateRecDepth(const ExpansionsMap& expmap, Expr nt) const
 {
   if (expmap.count(nt) == 0)
     return 0;
   int depth = 0;
   for (const auto &pt : expmap.at(nt))
-    if (CFGUtils::isRecursive(pt.data(), nt))
+    if (gram->isRecursive(pt.data(), nt))
       ++depth;
   return depth;
 }

@@ -76,11 +76,27 @@ class Grammar
 
   ConstMap _consts;
 
+  // K: NT, V: NTs transitively reachable from K
+  unordered_map<NT,unordered_set<NT>> _graph;
+  bool graphIsOld = true; // Does _graph need to be re-generated?
+  void graphOnGramMod(ModClass cl, ModType ty)
+  {
+    if (cl == ModClass::PROD)
+      graphIsOld = true;
+  }
+
+  // K: NT, V: (K': Prod, V': K' is recursive w.r.t. K)
+  unordered_map<NT,unordered_map<Expr,bool>> _isRecCache;
+
   // Functions called when the grammar is modified.
   // TODO: Also tell listener what changed (which production, etc.)
   unordered_set<std::shared_ptr<ModListener>> modListeners;
 
   void notifyListeners(ModClass cl, ModType ty);
+
+  // Will fill _graph and _isRecCache
+  void generateGraph();
+  void generateGraph(NT start); // Helper
 
   public:
   
@@ -93,6 +109,7 @@ class Grammar
   const decltype(_priomap)& priomap = _priomap;
   const decltype(_vars)& vars = _vars;
   const decltype(_consts)& consts = _consts;
+  const decltype(_graph)& graph = _graph;
 
   /*** MODIFIERS ***/
 
@@ -133,33 +150,57 @@ class Grammar
   /*** UTILITIES ***/
   bool satsConstraints(const ParseTree& pt) const;
 
-  bool isNt(Expr e) const { return isOpX<FAPP>(e) && _prods.count(e) != 0; }
-  bool isVar(Expr e) const
+  inline bool isNt(Expr e) const { return isOpX<FAPP>(e) && _prods.count(e) != 0; }
+  inline bool isVar(Expr e) const
   {
     return isOpX<FAPP>(e) &&
       _vars.count(typeOf(e)) != 0 && _vars.at(typeOf(e)).count(e) != 0;
   }
-  bool isConst(Expr e) const
+  inline bool isConst(Expr e) const
   {
     return bind::isLit(e) &&
       _consts.count(typeOf(e)) != 0 && _consts.at(typeOf(e)).count(e) != 0;
   }
 
+  inline bool isRecursive(Expr prod, NT nt)
+  {
+    if (graphIsOld)
+      generateGraph();
+    return _isRecCache.at(nt).at(prod);
+  }
+
+  // Does path exist from nt1 to nt2 (nt2 is reachable from nt1)?
+  inline bool pathExists(NT nt1, NT nt2)
+  {
+    if (graphIsOld)
+      generateGraph();
+    return _graph.at(nt1).count(nt2) != 0;
+  }
+
   /*** C-TORS, ETC. ***/
   Grammar() {}
   Grammar(const Grammar& g) :
-    _root(g._root),_nts(g._nts),_prods(g._prods),_constraints(g._constraints),
+    _root(g._root),_nts(g._nts),_prods(g._prods),
     _priomap(g._priomap),_vars(g._vars),_consts(g._consts),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
-    vars(_vars),consts(_consts),priomap(_priomap) {}
+    vars(_vars),consts(_consts),priomap(_priomap),graph(_graph)
+  {
+    for (const Constraint& c : g._constraints)
+      _constraints.push_back(Constraint(c, this));
+  }
   Grammar(Grammar&& g) :
     _root(std::move(g._root)),_nts(std::move(g._nts)),
-    _prods(std::move(g._prods)),_constraints(std::move(g._constraints)),
+    _prods(std::move(g._prods)),
     _priomap(std::move(g._priomap)),
     _vars(std::move(g._vars)),_consts(std::move(g._consts)),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
-    vars(_vars),consts(_consts),priomap(_priomap) {}
-  
+    vars(_vars),consts(_consts),priomap(_priomap),graph(_graph)
+  {
+    for (const Constraint& c : g._constraints)
+      _constraints.push_back(Constraint(std::move(c), this));
+    g._constraints.clear();
+  }
+
   Grammar& operator=(const Grammar& g)
   { this->~Grammar(); new (this) Grammar(g); return *this; }
   Grammar& operator=(Grammar&& g)

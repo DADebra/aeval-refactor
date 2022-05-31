@@ -136,6 +136,8 @@ def getvec(vec):
         return vec
 
 def mpzToInt(mpz):
+    if mpz['_mp_size'] == 0:
+        return 0
     if mpz['_mp_size'] > 1:
         raise NotImplementedError("Conversion for GMP MPZ with more than one limb allocated is unimplemented")
     neg = -1 if mpz['_mp_size'] < 0 else 1

@@ -18,6 +18,7 @@ typedef unordered_map<pair<Expr,ParseTree>,ExprUSet> seen_type;
 // A map of <Non-terminal, Set of Expansions> (see findExpansions)
 typedef unordered_map<Expr,vector<ParseTree>> ExpansionsMap;
 
+class Grammar;
 class Constraint
 {
   private:
@@ -40,7 +41,7 @@ class Constraint
   static tribool evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
     seen_type& seenexpans);
 
-  static int calculateRecDepth(const ExpansionsMap& expmap, Expr nt);
+  int calculateRecDepth(const ExpansionsMap& expmap, Expr nt) const;
 
   static void foreachExpans(Expr con, const ExpansionsMap& expmap,
     function<bool(const PtExpMap&)> func);
@@ -51,12 +52,21 @@ class Constraint
 
   Expr expr;
   bool any; // 'true' if a 'constraint_any'
+  Grammar* gram;
 
   static ExprUMap strcache;
 
-  Constraint(Expr e, bool _any) : expr(e), any(_any) {}
-
   bool doesSat(const ParseTree& pt) const;
+
+  Constraint(const Constraint& oth, Grammar* _gram) :
+    expr(oth.expr), any(oth.any), gram(_gram) {}
+  Constraint(Constraint&& oth, Grammar* _gram) :
+    expr(oth.expr), any(oth.any), gram(_gram) {}
+  Constraint(Expr e, bool _any, Grammar* _gram) : expr(e), any(_any),
+    gram(_gram) {}
+
+  // Other constructors potentially memory unsafe
+  // Use at own risk
 };
 
 }

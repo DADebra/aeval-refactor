@@ -82,31 +82,6 @@ bool CFGUtils::isEither(const Expr& exp)
   return expname == "either";
 }
 
-// exp is e.g. (= iterm iterm), nonterm is e.g. iterm
-bool CFGUtils::isRecursive(const Expr& exp, const Expr& nonterm)
-{
-  // Handle simple recursion
-  if (exp == nonterm)
-    return true;
-  if (isOpX<FDECL>(exp))
-    return false; // We don't need to search this deep
-  if (isEither(exp))
-  {
-    // Handle the case of a nested either (e.g. (either 1 (either ...)))
-    // We don't want this to be recursive, as this is just a way to
-    //   control the traversal and should be equivalent to a non-nested
-    //   either.
-    return false;
-  }
-  for (auto itr = exp->args_begin(); itr != exp->args_end(); ++itr)
-  {
-    if (isRecursive(*itr, nonterm))
-      return true;
-  }
-
-  return false;
-}
-
 Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
   ExprFactory &m_efac,int printLog, const VarMap& vars, const VarMap& othervars)
 {

@@ -29,7 +29,6 @@ class CFGUtils
 
   static void noNtDefError(NT nt, NT root);
   static bool isEither(const Expr&);
-  static bool isRecursive(const Expr&, const Expr&);
   static Grammar parseGramFile(string, string, EZ3&, ExprFactory&, int,
     const VarMap&, const VarMap&);
   static ExprUSet getQVars(const Grammar&);

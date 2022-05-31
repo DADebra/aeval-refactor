@@ -195,9 +195,11 @@ class CoroTrav : public Traversal
     }
     else if (gram.isNt(root))
     {
-      if (root != currnt)
+      if (root != currnt && !gram.pathExists(root, currnt))
+      {
         currdepth = 0;
-      currnt = root;
+        currnt = root;
+      }
       vector<int> order;
 
       auto &prods = gram.prods.at(root);
@@ -211,14 +213,14 @@ class CoroTrav : public Traversal
       if (params.order == TPOrder::FOR)
         for (int i = 0; i < prods.size(); ++i)
         {
-          if (!CFGUtils::isRecursive(prods[i], currnt) ||
+          if (!gram.isRecursive(prods[i], currnt) ||
           currdepth + 1 <= params.maxrecdepth)
             order.push_back(i);
         }
       else if (params.order == TPOrder::REV)
         for (int i = prods.size() - 1; i >= 0; --i)
         {
-          if (!CFGUtils::isRecursive(prods[i], currnt) ||
+          if (!gram.isRecursive(prods[i], currnt) ||
           currdepth + 1 <= params.maxrecdepth)
             order.push_back(i);
         }
@@ -234,7 +236,7 @@ class CoroTrav : public Traversal
             continue;
 
           // Don't traverse past maximum depth
-          if (!CFGUtils::isRecursive(prods[randnum], root) ||
+          if (!gram.isRecursive(prods[randnum], root) ||
           currdepth + 1 <= params.maxrecdepth)
             order.push_back(randnum);
         }
@@ -252,7 +254,7 @@ class CoroTrav : public Traversal
       {
         Expr prod = prods[i];
         int newdepth;
-        if (CFGUtils::isRecursive(prod, root))
+        if (gram.isRecursive(prod, root))
           newdepth = currdepth + 1;
         else
           newdepth = currdepth;

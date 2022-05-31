@@ -16,6 +16,45 @@ void Grammar::notifyListeners(ModClass cl, ModType ty)
   assert(ty != ModType::NONE);
   for (const auto &l : modListeners)
     (*l)(cl, ty);
+  graphOnGramMod(cl, ty);
+}
+
+void Grammar::generateGraph()
+{
+  if (!graphIsOld)
+    return;
+  _graph.clear();
+  _isRecCache.clear();
+  generateGraph(root);
+  graphIsOld = false;
+}
+
+void Grammar::generateGraph(NT start)
+{
+  auto& reachable = _graph[start];
+  for (const Expr& prod : _prods.at(start))
+  {
+    bool isRec = false;
+    ExprUSet prodnts;
+    expr::filter(prod, [&] (Expr e) { return isNt(e); },
+      inserter(prodnts, prodnts.begin()));
+    for (const Expr& prodnt : prodnts)
+    {
+      reachable.insert(prodnt);
+      if (prodnt != start)
+      {
+        if (_graph.count(prodnt) == 0)
+          generateGraph(prodnt);
+        for (const Expr& rnt : _graph[prodnt])
+          reachable.insert(rnt);
+      }
+      else
+        isRec = true;
+    }
+    if (!isRec && reachable.count(start) != 0)
+      isRec = true;
+    _isRecCache[start][prod] = isRec;
+  }
 }
 
 template <typename Sort>
@@ -81,7 +120,7 @@ bool Grammar::addConstraint(Expr cons, bool any)
   for (const auto& con : _constraints)
     if (con.expr == cons)
       return false;
-  _constraints.push_back(Constraint(cons, any));
+  _constraints.emplace_back(cons, any, this);
   notifyListeners(ModClass::CONSTRAINT, ModType::ADD);
   return true;
 }
@@ -120,7 +159,11 @@ bool Grammar::addConst(Expr c, mpq_class prio)
     }
     _priomap[constNt][c] = prio;
   }
-  if (ret) notifyListeners(ModClass::CONST, ModType::ADD);
+  if (ret)
+  {
+    notifyListeners(ModClass::CONST, ModType::ADD);
+    notifyListeners(ModClass::PROD, ModType::ADD);
+  }
   return ret;
 }
 
@@ -166,7 +209,11 @@ bool Grammar::addVar(Var var, mpq_class prio)
       _priomap[varsNt][var] = prio;
     }
   }
-  if (ret) notifyListeners(ModClass::VAR, ModType::ADD);
+  if (ret)
+  {
+    notifyListeners(ModClass::VAR, ModType::ADD);
+    notifyListeners(ModClass::PROD, ModType::ADD);
+  }
   return ret;
 }
 

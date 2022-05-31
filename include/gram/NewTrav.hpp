@@ -39,9 +39,11 @@ class NewTrav : public Traversal
     }
     else if (gram.isNt(root))
     {
-      if (root != currnt)
+      if (root != currnt && !gram.pathExists(root, currnt))
+      {
         currdepth = 0;
-      currnt = root;
+        currnt = root;
+      }
       const auto& prods = gram.prods.at(root);
       pos.limit = prods.size();
       if (getfirst)
@@ -51,7 +53,7 @@ class NewTrav : public Traversal
         else if (params.order == TPOrder::REV)
           pos = prods.size() - 1;
         int startpos = pos;
-        while (CFGUtils::isRecursive(prods[pos], root) &&
+        while (gram.isRecursive(prods[pos], root) &&
           currdepth == params.maxrecdepth)
         {
           if (params.order == TPOrder::FOR) ++pos;
@@ -64,7 +66,7 @@ class NewTrav : public Traversal
         nextpos = &travpos.childat(pos);
 
       int newdepth;
-      if (CFGUtils::isRecursive(prods[pos], root))
+      if (gram.isRecursive(prods[pos], root))
         newdepth = currdepth + 1;
       else
         newdepth = currdepth;
@@ -82,7 +84,7 @@ class NewTrav : public Traversal
           else if (params.order == TPOrder::REV) --pos;
           if (pos == startpos)
             return NULL;
-          if (CFGUtils::isRecursive(prods[pos], root))
+          if (gram.isRecursive(prods[pos], root))
             newdepth = currdepth + 1;
           else
             newdepth = currdepth;
@@ -199,9 +201,11 @@ class NewTrav : public Traversal
     }
     else if (gram.isNt(root))
     {
-      if (root != currnt)
+      if (root != currnt && !gram.pathExists(root, currnt))
+      {
         currdepth = 0;
-      currnt = root;
+        currnt = root;
+      }
       const auto &prods = gram.prods.at(root);
       if (prods.size() == 0)
       {
@@ -235,7 +239,7 @@ class NewTrav : public Traversal
 
       int startpos = checkpos;
       /*while (constpos.childat(checkpos).isdone() ||
-      (CFGUtils::isRecursive(prods[checkpos], root) &&
+      (gram.isRecursive(prods[checkpos], root) &&
        currdepth == params.maxrecdepth))
       {
         if (params.order == TPOrder::FOR)
@@ -254,7 +258,7 @@ class NewTrav : public Traversal
       {
         while (constpos.childat(checkpos).isdone() ||
          (checkprio && shoulddefer(root, prods[checkpos])) ||
-         (CFGUtils::isRecursive(prods[checkpos], root) &&
+         (gram.isRecursive(prods[checkpos], root) &&
          currdepth == params.maxrecdepth))
         {
           if (params.order == TPOrder::FOR)
@@ -278,7 +282,7 @@ class NewTrav : public Traversal
 
         travpos.pos = checkpos;
 
-        if (CFGUtils::isRecursive(prods[travpos.pos], root))
+        if (gram.isRecursive(prods[travpos.pos], root))
           newdepth = currdepth + 1;
         else
           newdepth = currdepth;
@@ -297,7 +301,7 @@ class NewTrav : public Traversal
       // Check to see if we're done.
       checkpos = travpos.pos;
       while (constpos.childat(checkpos).isdone() ||
-      (CFGUtils::isRecursive(prods[checkpos], root) &&
+      (gram.isRecursive(prods[checkpos], root) &&
        currdepth == params.maxrecdepth))
       {
         if (params.order == TPOrder::FOR)

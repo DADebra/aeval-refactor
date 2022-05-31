@@ -68,9 +68,11 @@ class RndTrav : public Traversal
         return ParseTree(root);
     else if (gram.isNt(root))
     {
-      if (root != currnt)
+      if (root != currnt && !gram.pathExists(root, currnt))
+      {
         currdepth = 0;
-      currnt = root;
+        currnt = root;
+      }
       if (gram.prods.at(root).size() == 0)
       {
         CFGUtils::noNtDefError(root, gram.root);
@@ -84,10 +86,10 @@ class RndTrav : public Traversal
         //int randindex = (rand() % (root->arity() - 1)) + 1;
         int randindex = distmap[root](randgenerator);
         Expr prod = gram.prods.at(root)[randindex];
-        if (CFGUtils::isRecursive(prod, root) &&
+        if (gram.isRecursive(prod, root) &&
             currdepth == params.maxrecdepth)
           continue;
-        int newdepth = CFGUtils::isRecursive(prod, root) ?
+        int newdepth = gram.isRecursive(prod, root) ?
                         currdepth + 1 : currdepth;
 
         cand = getRandCand(prod, newdepth, qvars, currnt);
