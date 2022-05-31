@@ -216,15 +216,15 @@ class CoroTrav : public Traversal
       if (params.order == TPOrder::FOR)
         for (int i = 0; i < prods.size(); ++i)
         {
-          if (!gram.isRecursive(prods[i], currnt) ||
-          currdepth + 1 <= currmaxdepth)
+          if (!gram.isRecursive(prods[i], root) ||
+          currdepth < currmaxdepth)
             order.push_back(i);
         }
       else if (params.order == TPOrder::REV)
         for (int i = prods.size() - 1; i >= 0; --i)
         {
-          if (!gram.isRecursive(prods[i], currnt) ||
-          currdepth + 1 <= currmaxdepth)
+          if (!gram.isRecursive(prods[i], root) ||
+          currdepth < currmaxdepth)
             order.push_back(i);
         }
       else if (params.order == TPOrder::RND)
@@ -240,7 +240,7 @@ class CoroTrav : public Traversal
 
           // Don't traverse past maximum depth
           if (!gram.isRecursive(prods[randnum], root) ||
-          currdepth + 1 <= currmaxdepth)
+          currdepth < currmaxdepth)
             order.push_back(randnum);
         }
       }

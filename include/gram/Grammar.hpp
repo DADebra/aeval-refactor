@@ -51,7 +51,7 @@ void Grammar::generateGraph(NT start)
       else
         isRec = true;
     }
-    if (!isRec && reachable.count(start) != 0)
+    if (!isRec && prodnts.size() != 0 && reachable.count(start) != 0)
       isRec = true;
     _isRecCache[start][prod] = isRec;
   }
