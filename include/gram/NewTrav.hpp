@@ -32,7 +32,7 @@ class NewTrav : public Traversal
     if (!getfirst && travpos.pos == -3)
       return NULL;
 
-    if (gram.isVar(root) || bind::isLit(root) || gram.isConst(root))
+    if (gram.isVar(root) || bind::isLit(root) || isOpX<FDECL>(root))
     {
       // Root is a symbolic variable
       return ParseTree(root);
@@ -99,7 +99,7 @@ class NewTrav : public Traversal
         // Root is a closed (quantified) variable
         return ParseTree(root);
       }
-      else
+      else if (root->arity() == 1)
       {
         // Should never happen
         // There's no definition, we're expanding an empty *_VARS
@@ -189,7 +189,7 @@ class NewTrav : public Traversal
     // Some operations should not cause copy-up; use constpos for these.
     const TravPos &constpos = travpos;
 
-    if (gram.isVar(root) || bind::isLit(root))
+    if (gram.isVar(root) || bind::isLit(root) || isOpX<FDECL>(root))
     {
       // Root is a symbolic variable
       travpos = TravPos(0, 1);
@@ -332,7 +332,7 @@ class NewTrav : public Traversal
         travpos.makedone();
         return ParseTree(root);
       }
-      else
+      else if (root->arity() == 1)
       {
         // There's no definition, we're expanding an empty *_VARS
         CFGUtils::noNtDefError(root, gram.root);

@@ -63,7 +63,7 @@ class RndTrav : public Traversal
   ParseTree getRandCand(const Expr& root, int currdepth,
       std::shared_ptr<ExprUSet> qvars, Expr currnt)
   {
-    if (gram.isVar(root) || bind::isLit(root))
+    if (gram.isVar(root) || bind::isLit(root) || isOpX<FDECL>(root))
         // Root is a symbolic variable or constant; don't expand.
         return ParseTree(root);
     else if (gram.isNt(root))
@@ -99,7 +99,7 @@ class RndTrav : public Traversal
       if (qvars != NULL && qvars->count(root->first()) != 0)
         // Root is a variable for a surrounding quantifier
         return ParseTree(root);
-      else
+      else if (root->arity() == 1)
       {
         // There's no definition, we're expanding an empty *_VARS
         CFGUtils::noNtDefError(root, gram.root);

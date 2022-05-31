@@ -186,7 +186,7 @@ class CoroTrav : public Traversal
       outs() << "NULL";
     outs() << ", " << currnt << ")" << endl;*/
 
-    if (gram.isVar(root) || bind::isLit(root))
+    if (gram.isVar(root) || bind::isLit(root) || isOpX<FDECL>(root))
     {
       // Root is a symbolic variable; don't expand.
       sink(ParseTree(root));
@@ -422,7 +422,7 @@ class CoroTrav : public Traversal
           //currnumcandcoros--;
           return;
       }
-      else
+      else if (root->arity() == 1)
       {
         CFGUtils::noNtDefError(root, gram.root);
         sink(NULL); // Unreachable
