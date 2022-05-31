@@ -725,7 +725,7 @@ class NewTrav : public Traversal
     grammodified = true;
     lastcand = NULL;
   }
-  ModListener ml; std::shared_ptr<ModListener> mlp;
+  std::shared_ptr<ModListener> mlp;
 
   public:
 
@@ -737,7 +737,7 @@ class NewTrav : public Traversal
       currmaxdepth = 0;
     else
       currmaxdepth = params.maxrecdepth;
-    ml = [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); };
+    mlp.reset(new ModListener([&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); }));
     bool ret = gram.addModListener(mlp);
     assert(ret);
   }

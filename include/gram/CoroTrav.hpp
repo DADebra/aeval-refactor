@@ -761,7 +761,7 @@ class CoroTrav : public Traversal
     lastcand = NULL;
     nextcand = NULL;
   }
-  ModListener ml; std::shared_ptr<ModListener> mlp;
+  std::shared_ptr<ModListener> mlp;
 
   void invalidateCache()
   {
@@ -826,14 +826,15 @@ class CoroTrav : public Traversal
 
   public:
 
-  CoroTrav(Grammar &_gram,const TravParams &tp) : gram(_gram), params(tp), mlp(&ml)
+  CoroTrav(Grammar &_gram,const TravParams &tp) : gram(_gram), params(tp)
   {
     if (params.iterdeepen)
       currmaxdepth = 0;
     else
       currmaxdepth = params.maxrecdepth;
 
-    ml = [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); };
+    mlp.reset(new ModListener(
+      [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); }));
     bool ret = gram.addModListener(mlp);
     assert(ret);
     init();

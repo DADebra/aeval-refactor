@@ -149,17 +149,18 @@ class RndTrav : public Traversal
       grammodified = true;
     lastcand = NULL;
   }
-  ModListener ml; std::shared_ptr<ModListener> mlp;
+  std::shared_ptr<ModListener> mlp;
 
   public:
 
-  RndTrav(Grammar &_gram, const TravParams& tp) : gram(_gram), params(tp), mlp(&ml)
+  RndTrav(Grammar &_gram, const TravParams& tp) : gram(_gram), params(tp)
   {
     if (params.iterdeepen)
     {
       errs() << "Warning: Random traversal doesn't support iterative deepening. Ignoring and starting at maximum recursion depth." << endl;
     }
-    ml = [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); };
+    mlp.reset(new ModListener(
+      [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); }));
     bool ret = gram.addModListener(mlp);
     assert(ret);
     regendistmap();
