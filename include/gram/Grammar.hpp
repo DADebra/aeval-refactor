@@ -27,10 +27,15 @@ NT Grammar::addNt(string name, Expr sort)
 {
   // NOTE: This only works because of how Exprs are constructed. If the
   // 'NT' type changes, this will need to also be changed!
-  NT newnt = mkConst(mkTerm(name, sort->efac()), sort);
-  _nts.insert(newnt);
-  if (_prods.count(newnt) == 0) _prods.emplace(newnt, vector<Expr>());
-  return newnt;
+  return addNt(mkConst(mkTerm(name, sort->efac()), sort));
+}
+NT Grammar::addNt(Expr ntFapp)
+{
+  assert(isOpX<FAPP>(ntFapp));
+  assert(ntFapp->arity() == 1 && ntFapp->left()->arity() == 2);
+  _nts.insert(ntFapp);
+  if (_prods.count(ntFapp) == 0) _prods.emplace(ntFapp, vector<Expr>());
+  return ntFapp;
 }
 
 bool Grammar::addProd(NT nt, Expr prod, mpq_class prio)

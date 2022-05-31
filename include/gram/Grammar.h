@@ -102,6 +102,7 @@ class Grammar
   template <typename Sort>
   NT addNt(string name, ExprFactory& efac);
   NT addNt(string name, Expr sort);
+  NT addNt(Expr ntFapp);
 
   bool addProd(NT nt, Expr prod, mpq_class prio = 1);
 
