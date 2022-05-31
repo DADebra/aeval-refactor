@@ -16,7 +16,7 @@ void Grammar::notifyListeners(ModClass cl, ModType ty)
   assert(ty != ModType::NONE);
   for (const auto &l : modListeners)
     (*l)(cl, ty);
-  graphOnGramMod(cl, ty);
+  invalidateCachedProps(cl, ty);
 }
 
 void Grammar::generateGraph()
@@ -55,6 +55,24 @@ void Grammar::generateGraph(NT start)
       isRec = true;
     _isRecCache[start][prod] = isRec;
   }
+}
+
+void Grammar::calcIsInfinite()
+{
+  // Technically, we need to remove unreachable/useless prods/NTs first.
+  // But I doubt that many grammars will include these features, so I'm
+  // going to skip that step and just look for loops instead.
+  if (graphIsOld)
+    generateGraph();
+  for (const auto& kv : _graph)
+    for (const NT& ntto : kv.second)
+      if (ntto == kv.first)
+      {
+        _isInfinite = true;
+        return;
+      }
+  _isInfinite = false;
+  return;
 }
 
 template <typename Sort>

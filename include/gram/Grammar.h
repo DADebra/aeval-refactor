@@ -79,14 +79,11 @@ class Grammar
   // K: NT, V: NTs transitively reachable from K
   unordered_map<NT,unordered_set<NT>> _graph;
   bool graphIsOld = true; // Does _graph need to be re-generated?
-  void graphOnGramMod(ModClass cl, ModType ty)
-  {
-    if (cl == ModClass::PROD)
-      graphIsOld = true;
-  }
 
   // K: NT, V: (K': Prod, V': K' is recursive w.r.t. K)
   unordered_map<NT,unordered_map<Expr,bool>> _isRecCache;
+
+  tribool _isInfinite = indeterminate;
 
   // Functions called when the grammar is modified.
   // TODO: Also tell listener what changed (which production, etc.)
@@ -94,9 +91,20 @@ class Grammar
 
   void notifyListeners(ModClass cl, ModType ty);
 
+  void invalidateCachedProps(ModClass cl, ModType ty)
+  {
+    if (cl == ModClass::PROD)
+    {
+      graphIsOld = true;
+      _isInfinite = indeterminate;
+    }
+  }
+
   // Will fill _graph and _isRecCache
   void generateGraph();
   void generateGraph(NT start); // Helper
+
+  void calcIsInfinite();
 
   public:
   
@@ -175,6 +183,13 @@ class Grammar
     if (graphIsOld)
       generateGraph();
     return _graph.at(nt1).count(nt2) != 0;
+  }
+
+  bool isInfinite()
+  {
+    if (indeterminate(_isInfinite))
+      calcIsInfinite();
+    return bool(_isInfinite);
   }
 
   /*** C-TORS, ETC. ***/
