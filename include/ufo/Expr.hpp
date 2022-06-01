@@ -77,10 +77,47 @@ namespace expr
 
   typedef boost::intrusive_ptr<ENode> Expr;
   typedef std::set<Expr> ExprSet;
+  typedef std::unordered_set<Expr> ExprUSet;
   typedef std::vector<Expr> ExprVector;
   typedef std::pair<Expr,Expr> ExprPair;
   typedef std::map<Expr,Expr> ExprMap;
+  typedef std::unordered_map<Expr,Expr> ExprUMap;
 
+  inline size_t hash_value (Expr e)
+  {
+    std::hash<ENode*> hasher;
+    return hasher (e.get ());
+  }
+}
+
+/// implement boost::hash
+namespace boost
+{
+  template<> struct hash<expr::Expr> :
+    public std::unary_function<expr::Expr, std::size_t>
+  {
+    std::size_t operator() (const expr::Expr &v) const
+    {
+      return expr::hash_value (v);
+    }
+  };
+}
+
+/// implement std::hash
+namespace std
+{
+  template<> struct hash<expr::Expr> :
+    public std::unary_function<expr::Expr, std::size_t>
+  {
+    std::size_t operator() (const expr::Expr &v) const
+    {
+      return expr::hash_value (v);
+    }
+  };
+}
+
+namespace expr
+{
   /* Helper functions to convert from different wrappers over
      expressions into a pointer to an expression node */
   inline ENode* eptr (ENode *p) { return p; }
@@ -2738,11 +2775,12 @@ namespace expr
       }
     };
 
+    template <typename T>
     struct RAVALLM: public std::unary_function<Expr,VisitAction>
     {
-      ExprMap* m;
+      T* m;
 
-      RAVALLM (ExprMap* _m) : m(_m) { }
+      RAVALLM (T* _m) : m(_m) { }
       VisitAction operator() (Expr exp) const
       {
         auto it = m->find(exp);
@@ -3010,7 +3048,17 @@ namespace expr
   inline Expr replaceAll (Expr exp, ExprMap& m)
   {
     if (m.empty()) return exp;
-    RAVALLM rav(&m);
+    RAVALLM<ExprMap> rav(&m);
+    Expr tmp = dagVisit (rav, exp);
+    if (tmp == exp) return tmp;
+    else return replaceAll(tmp, m);
+  }
+
+  // pairwise replacing
+  inline Expr replaceAll (Expr exp, ExprUMap& m)
+  {
+    if (m.empty()) return exp;
+    RAVALLM<ExprUMap> rav(&m);
     Expr tmp = dagVisit (rav, exp);
     if (tmp == exp) return tmp;
     else return replaceAll(tmp, m);
@@ -3261,6 +3309,9 @@ namespace expr
 
           return typeOf(v->left());
         }
+        if (is_bvnum(v) || is_bvvar(v)) return v->right();
+
+      if (isOp<SimpleTypeOp>(v) || isOpX<BVSORT>(v)) return v;
 
       std::cerr << "WARNING: could not infer type of: " << *v << "\n";
       //      assert (0 && "Unreachable");
@@ -3268,6 +3319,13 @@ namespace expr
         return Expr();
       }
       inline Expr sortOf (Expr v) {return typeOf (v);}
+
+      // Is e a numeric literal (e.g. 0 or #x0 or 0.0)
+      inline bool isNum (Expr e)
+      { return isOpX<MPZ>(e) || isOpX<MPQ>(e) || is_bvnum(e); }
+
+      // Is e any literal
+      inline bool isLit (Expr e) { return e->arity() == 0 || is_bvnum(e); }
     }
   }
 }
@@ -3362,41 +3420,6 @@ namespace expr
     size_t size () const { return cache.size (); }
 
 
-  };
-}
-
-namespace expr
-{
-  inline size_t hash_value (Expr e)
-  {
-    std::hash<ENode*> hasher;
-    return hasher (e.get ());
-  }
-}
-
-/// implement boost::hash
-namespace boost
-{
-  template<> struct hash<expr::Expr> :
-    public std::unary_function<expr::Expr, std::size_t>
-  {
-    std::size_t operator() (const expr::Expr &v) const
-    {
-      return expr::hash_value (v);
-    }
-  };
-}
-
-/// implement std::hash
-namespace std
-{
-  template<> struct hash<expr::Expr> :
-    public std::unary_function<expr::Expr, std::size_t>
-  {
-    std::size_t operator() (const expr::Expr &v) const
-    {
-      return expr::hash_value (v);
-    }
   };
 }
 
