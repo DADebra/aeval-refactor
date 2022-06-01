@@ -226,4 +226,16 @@ class Grammar
 
 }
 
+namespace std
+{
+template<>
+struct hash<ufo::VarType>
+{
+    size_t operator()(const ufo::VarType& vt) const
+    {
+        return std::hash<long>()((long)vt);
+    }
+};
+}
+
 #endif
