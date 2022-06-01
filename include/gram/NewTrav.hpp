@@ -14,6 +14,8 @@ class NewTrav : public Traversal
 {
   private:
 
+  CFGUtils cfgutils;
+
   Grammar &gram;
   bool grammodified = false;
   TravParams params;

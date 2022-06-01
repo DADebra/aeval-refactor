@@ -20,8 +20,9 @@ void CFGUtils::noNtDefError(NT nt, NT root)
   exit(2);
 }
 
-decltype(CFGUtils::varsNtNameCache) CFGUtils::varsNtNameCache;
-decltype(CFGUtils::constsNtNameCache) CFGUtils::constsNtNameCache;
+decltype(CFGUtils::varsNtNameCache) CFGUtils::varsNtNameCache = NULL;
+decltype(CFGUtils::constsNtNameCache) CFGUtils::constsNtNameCache = NULL;
+decltype(CFGUtils::refcnt) CFGUtils::refcnt = 0;
 string CFGUtils::sortName(Expr sort)
 {
   EZ3 z3(sort->efac());
@@ -43,7 +44,7 @@ string CFGUtils::sortName(Expr sort)
 Expr CFGUtils::varsNtName(Expr sort, VarType type)
 {
   auto key = make_pair(sort, type);
-  if (varsNtNameCache.count(key) == 0)
+  if (varsNtNameCache->count(key) == 0)
   {
     string vars_name(sortName(sort));
     vars_name += "_VARS";
@@ -61,17 +62,17 @@ Expr CFGUtils::varsNtName(Expr sort, VarType type)
         vars_name += "_CONST"; break;
     }
     Expr nt = mkConst(mkTerm(vars_name, sort->efac()), sort);
-    return varsNtNameCache.emplace(key, nt).first->second;
+    return varsNtNameCache->emplace(key, nt).first->second;
   }
-  return varsNtNameCache.at(key);
+  return varsNtNameCache->at(key);
 }
 
 Expr CFGUtils::constsNtName(Expr sort)
 {
-  if (constsNtNameCache.count(sort) == 0)
-    return constsNtNameCache.emplace(sort,
+  if (constsNtNameCache->count(sort) == 0)
+    return constsNtNameCache->emplace(sort,
       mkConst(mkTerm(sortName(sort) + "_CONSTS", sort->efac()), sort)).first->second;
-  return constsNtNameCache.at(sort);
+  return constsNtNameCache->at(sort);
 }
 
 bool CFGUtils::isEither(const Expr& exp)

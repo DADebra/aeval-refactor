@@ -8,8 +8,9 @@
 // Order important
 #include "gram/TravParams.hpp"
 #include "gram/Constraint.h"
-#include "gram/Grammar.h"
+#include "gram/GrammarTypes.hpp"
 #include "gram/CFGUtils.h"
+#include "gram/Grammar.h"
 
 #include "gram/Constraint.hpp"
 #include "gram/Grammar.hpp"

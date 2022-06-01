@@ -159,6 +159,8 @@ class CoroTrav : public Traversal
   unordered_map<std::tuple<Expr,int,std::shared_ptr<ExprUSet>,Expr>,
     PTCoroCache,tuplehash> ptcorocache;
 
+  CFGUtils cfgutils;
+
   Grammar &gram;
   bool grammodified = false;
   TravParams params;

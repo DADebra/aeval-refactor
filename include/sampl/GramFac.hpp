@@ -21,6 +21,7 @@ namespace ufo
 
     ExprFactory &m_efac;
     EZ3 &z3;
+    CFGUtils cfgutils;
 
     // Stored for later
     VarMap vars, othervars;
