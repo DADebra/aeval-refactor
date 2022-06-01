@@ -17,4 +17,8 @@
 [submodule "sygus"]
 	path = sygus
 	url = ./
-	branch = sygus
+	branch = sygus-gram
+[submodule "gram"]
+	path = gram
+	url = ./
+	branch = gram

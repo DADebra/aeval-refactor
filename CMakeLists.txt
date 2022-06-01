@@ -38,7 +38,7 @@ set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ${CMAKE_FIND_LIBRARY_SUFFIXES})
 
 
 set (Boost_USE_STATIC_LIBS ON)
-set (BOOST_COMPONENTS system)
+set (BOOST_COMPONENTS system coroutine)
 if (UNIT_TESTS)
   set (BOOST_COMPONENTS ${BOOST_COMPONENTS} unit_test_framework)
 endif()
@@ -166,6 +166,7 @@ add_library(global STATIC global.cpp)
 
 add_subdirectory(expr)
 add_subdirectory(utils)
+add_subdirectory(gram)
 add_subdirectory(aeval)
 add_subdirectory(rnd)
 add_subdirectory(sygus)
