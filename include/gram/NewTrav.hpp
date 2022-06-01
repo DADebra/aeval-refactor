@@ -736,7 +736,10 @@ class NewTrav : public Traversal
     if (params.iterdeepen)
       currmaxdepth = 0;
     else
+    {
+      assert(params.maxrecdepth >= 0);
       currmaxdepth = params.maxrecdepth;
+    }
     mlp.reset(new ModListener([&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); }));
     bool ret = gram.addModListener(mlp);
     assert(ret);

@@ -255,7 +255,7 @@ int main (int argc, char ** argv)
     CFGUtils::strtotravtype(gram_trav_type),
     CFGUtils::strtotravprio(gram_trav_prio),
     getBoolValue(OPT_GRAM_ITER_DEEPEN, false, argc, argv),
-    getIntValue(OPT_GRAM_MAXREC, -1, argc, argv));
+    getIntValue(OPT_GRAM_MAXREC, -2, argc, argv));
   gramparams.SetDefaults();
 
  

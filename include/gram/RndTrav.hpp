@@ -158,7 +158,11 @@ class RndTrav : public Traversal
     if (params.iterdeepen)
     {
       errs() << "Warning: Random traversal doesn't support iterative deepening. Ignoring and starting at maximum recursion depth." << endl;
+      params.maxrecdepth = -2;
+      params.SetDefaults();
     }
+    else
+      assert(params.maxrecdepth >= 0);
     mlp.reset(new ModListener(
       [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); }));
     bool ret = gram.addModListener(mlp);

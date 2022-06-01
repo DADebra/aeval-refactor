@@ -19,7 +19,7 @@ struct TravParams
   TPType type = TPType::NONE;
   TPPrio prio = TPPrio::NONE;
   boost::tribool iterdeepen = indeterminate;
-  int maxrecdepth = -1;
+  int maxrecdepth = -2;
 
   TravParams() {}
 
@@ -47,7 +47,11 @@ struct TravParams
     if (type == TPType::NONE)     type = TPType::STRIPED;
     if (prio == TPPrio::NONE)     prio = TPPrio::SFS;
     if (indeterminate(iterdeepen)) iterdeepen = false;
-    if (maxrecdepth < 0)          maxrecdepth = 1;
+    if (maxrecdepth == -2)
+    {
+      if (iterdeepen) maxrecdepth = -1;
+      else maxrecdepth = 1;
+    }
   }
 };
 }
