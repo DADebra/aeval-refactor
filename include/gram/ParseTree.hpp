@@ -26,7 +26,11 @@ class ParseTreeNode
     data(_data), children(_children), parent(NULL), isNt(_isnt) {}
 
   ParseTreeNode(Expr _data, vector<ParseTree>&& _children, bool _isnt) :
-    data(_data), children(_children), parent(NULL), isNt(_isnt) {}
+    data(_data), children(std::move(_children)), parent(NULL), isNt(_isnt) {}
+
+  ParseTreeNode(Expr _data, ParseTree&& _child, bool _isnt) :
+    data(_data), parent(NULL), isNt(_isnt)
+  { children.emplace_back(std::move(_child)); }
 
   ParseTreeNode(Expr _data) : data(_data), parent(NULL), isNt(false) {}
 
@@ -40,18 +44,22 @@ class ParseTree
   public:
   ParseTree(Expr _data, const vector<ParseTree>& _children, bool _isnt) :
     ptr(new ParseTreeNode(_data, _children, _isnt)) {}
-
   ParseTree(Expr _data, vector<ParseTree>&& _children, bool _isnt) :
-    ptr(new ParseTreeNode(_data, _children, _isnt)) {}
-  ParseTree(const ParseTree& pt) : ptr(pt.ptr) {}
+    ptr(new ParseTreeNode(_data, std::move(_children), _isnt)) {}
+  ParseTree(Expr _data, ParseTree&& _child, bool _isnt) :
+    ptr(new ParseTreeNode(_data, std::move(_child), _isnt)) {}
+
   ParseTree(ParseTreeNode* ptptr) : ptr(ptptr) {}
   ParseTree(const std::shared_ptr<ParseTreeNode>& cp) : ptr(cp) {}
   ParseTree(Expr _data) : ptr(new ParseTreeNode(_data)) {}
-  ParseTree() : ptr(NULL) {}
+
+  ParseTree() = default;
+  ParseTree(const ParseTree& pt) = default;
+  ParseTree(ParseTree&& pt) = default;
+  ParseTree& operator=(const ParseTree& pt) = default;
+  ParseTree& operator=(ParseTree&& pt) = default;
 
   const Expr& data() const { return ptr->data; }
-
-  vector<ParseTree>& children() { return ptr->children; }
 
   const vector<ParseTree>& children() const { return ptr->children; }
 

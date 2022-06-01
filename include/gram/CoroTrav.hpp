@@ -110,7 +110,7 @@ class PTCoroCacheIter
 
   ParseTree operator*()
   {
-    return get();
+    return std::move(get());
   }
 
   PTCoroCacheIter begin()
@@ -270,7 +270,7 @@ class CoroTrav : public Traversal
           coros.pop_back();
         else if (params.type == TPType::STRIPED)
         {
-          sink(ParseTree(root, vector<ParseTree>{*coros.back().second}, true));
+          sink(ParseTree(root, std::move(*coros.back().second), true));
           ++coros.back().second;
           if (!coros.back().second)
             coros.pop_back();
@@ -329,7 +329,7 @@ class CoroTrav : public Traversal
 
             if (itr != coros.end())
             {
-              sink(ParseTree(root, vector<ParseTree>{*itr->second}, true));
+              sink(ParseTree(root, std::move(*itr->second), true));
               candnum[itr->first]++;
               ++totalcandnum;
               ++itr->second;
@@ -352,7 +352,7 @@ class CoroTrav : public Traversal
               continue;
             }
 
-            sink(ParseTree(root, vector<ParseTree>{*itr->second}, true));
+            sink(ParseTree(root, std::move(*itr->second), true));
             didsink = true;
             candnum[itr->first]++;
             ++totalcandnum;
@@ -401,7 +401,7 @@ class CoroTrav : public Traversal
             }
           }
 
-          sink(ParseTree(root, vector<ParseTree>{*bestcoro->second}, true));
+          sink(ParseTree(root, std::move(*bestcoro->second), true));
           candnum[bestcoro->first]++;
           ++totalcandnum;
           ++bestcoro->second;
@@ -566,9 +566,9 @@ class CoroTrav : public Traversal
         {
           if (meth)
           {
-            ParseTree ret = meth.get();
+            ParseTree ret = std::move(meth.get());
             if (ret)
-              sink(ret);
+              sink(std::move(ret));
             meth();
             methcoroavail = true;
           }
@@ -647,7 +647,7 @@ class CoroTrav : public Traversal
 
           methcoros.push_back(getTravCoro(std::move(newcoros),
            std::move(newcand),std::move(newstuck),root,currdepth,qvars,currnt));
-          sink(methcoros.back().get());
+          sink(std::move(methcoros.back().get()));
           methcoros.back()();
         }
 
@@ -728,9 +728,9 @@ class CoroTrav : public Traversal
         {
           PTCoro newmeth = getTravCoro(std::move(newcoros), cand,
             newstuck, root, currdepth, qvars, currnt);
-          for (ParseTree exp : newmeth)
+          for (const ParseTree& exp : newmeth)
             if (exp)
-              sink(exp);
+              sink(std::move(exp));
         }
       }
     }
@@ -821,9 +821,8 @@ class CoroTrav : public Traversal
     getNextCandTrav.reset(new PTCoro(
           std::bind(&CoroTrav::getNextCandTrav_fn, this,
           std::placeholders::_1, gram.root, currdepth, qvars, currnt)));
-    nextcand = getNextCandTrav->get();
+    nextcand = std::move(getNextCandTrav->get());
     (*getNextCandTrav)();
-    nextcand.fixchildren();
   }
 
   public:
@@ -886,15 +885,14 @@ class CoroTrav : public Traversal
       currmaxdepth++;
       init();
     }
-    lastcand = nextcand;
+    lastcand = std::move(nextcand);
     if (!*getNextCandTrav)
     {
       nextcand = NULL;
       return lastcand;
     }
-    nextcand = getNextCandTrav->get();
+    nextcand = std::move(getNextCandTrav->get());
     (*getNextCandTrav)();
-    nextcand.fixchildren();
     return lastcand;
   }
 };

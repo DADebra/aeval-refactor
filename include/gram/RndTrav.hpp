@@ -96,7 +96,7 @@ class RndTrav : public Traversal
 
         cand = getRandCand(prod, newdepth, qvars, currnt);
       }
-      return ParseTree(root, vector<ParseTree>{cand}, true);
+      return ParseTree(root, std::move(cand), true);
     }
     else if (isOpX<FAPP>(root))
     {
@@ -136,7 +136,7 @@ class RndTrav : public Traversal
       expanded_args.push_back(getRandCand(*itr, currdepth, localqvars, currnt));
     }
 
-    return ParseTree(root, expanded_args, false);
+    return ParseTree(root, std::move(expanded_args), false);
   }
 
   void handleGramMod()
@@ -192,7 +192,6 @@ class RndTrav : public Traversal
     if (grammodified) handleGramMod();
     ParseTree ret = lastcand;
     lastcand = getRandCand(gram.root, 0, NULL, gram.root);
-    lastcand.fixchildren();
     return ret;
   }
 };

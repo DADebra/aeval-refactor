@@ -91,6 +91,7 @@ struct TravPos
   vector<pair<bool,TravPos*>> children;
   deque<pair<bool,TravPos*>> queue; // For STRIPED traversal
   bool readonly = false;
+  std::shared_ptr<const TravPos> parent;
 
   void copyother(const TravPos& copy, bool copyqueue)
   {
@@ -119,7 +120,7 @@ struct TravPos
       children.push_back(std::move(make_pair(true, new TravPos())));
   }
 
-  TravPos(const TravPos& copy)
+  TravPos(const TravPos& copy) : parent(copy.parent)
   {
     copyother(copy, true);
   }
@@ -128,7 +129,10 @@ struct TravPos
   {
     // If child is read-only, we can do a const-copy.
     if (copy.readonly)
+    {
       copyother((const TravPos&)copy, copyqueue);
+      parent = copy.parent;
+    }
     else
     {
       // Can't just set realpos to &copy; if copy changes any of its
@@ -137,7 +141,7 @@ struct TravPos
       //   data, and make a CoW clone of that. This necessitates changing
       //   copy, of course.
 
-      const TravPos *ropos = new TravPos(std::move(copy));
+      const std::shared_ptr<const TravPos> ropos(new TravPos(std::move(copy)));
       for (auto &child : ropos->children)
         if (child.first)
           child.second->readonly = true;
@@ -146,23 +150,31 @@ struct TravPos
           que.second->readonly = true;
       copy.~TravPos();
       new (&copy) TravPos(*ropos);
+      copy.parent = ropos;
       copyother(*ropos, copyqueue);
+      parent = ropos;
     }
   }
 
   TravPos(TravPos&& move) : pos(move.pos),
     children(std::move(move.children)), queue(std::move(move.queue)),
-    oldmin(move.oldmin) {}
+    oldmin(move.oldmin), parent(std::move(move.parent)) {}
 
   ~TravPos()
   {
     // Only deallocate any memory we own.
     for (auto &child : children)
       if (child.first)
+      {
         delete child.second;
+        child.second = NULL;
+      }
     for (auto &que : queue)
       if (que.first)
+      {
         delete que.second;
+        que.second = NULL;
+      }
   }
 
   TravPos& operator=(const TravPos& copy)

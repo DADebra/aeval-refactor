@@ -79,8 +79,8 @@ class NewTrav : public Traversal
       ParseTree ret = NULL;
       while (!ret)
       {
-        ret = gettrav(prods[pos], *nextpos, newdepth,
-          qvars, currnt, needdefer, getfirst);
+        ret = std::move(gettrav(prods[pos], *nextpos, newdepth,
+          qvars, currnt, needdefer, getfirst));
         if (!getfirst) assert(ret);
         if (!ret)
         {
@@ -96,7 +96,7 @@ class NewTrav : public Traversal
       }
       assert(ret);
       needdefer= needdefer || shoulddefer(root, prods[pos]);
-      return ParseTree(root, vector<ParseTree>{ret}, true);
+      return ParseTree(root, std::move(ret), true);
     }
     else if (isOpX<FAPP>(root))
     {
@@ -293,8 +293,8 @@ class NewTrav : public Traversal
 
         assert(newdepth <= currmaxdepth);
 
-        ret = ParseTree(root, vector<ParseTree>{newtrav(prods[travpos.pos],
-          travpos.childat(travpos.pos), newdepth, qvars, currnt)}, true);
+        ret = ParseTree(root, std::move(newtrav(prods[travpos.pos],
+          travpos.childat(travpos.pos), newdepth, qvars, currnt)), true);
 
         if (!ret.children()[0])
           // The either we picked is done at that recursive depth. Pick another.
@@ -323,12 +323,11 @@ class NewTrav : public Traversal
 
       assert(ret);
       bool unused = false;
-      ParseTree getpt = ParseTree(root,
-        vector<ParseTree>{gettrav(prods[constpos.pos],
+      ParseTree getpt(root, std::move(gettrav(prods[constpos.pos],
         constpos.childat(constpos.pos), newdepth, qvars, currnt,
-        unused, false)}, true);
+        unused, false)), true);
       assert(getpt == ret);
-      return ret;
+      return std::move(ret);
     }
     else if (isOpX<FAPP>(root))
     {
@@ -499,7 +498,7 @@ class NewTrav : public Traversal
         ret = newtrav(root, travpos.queueat(travpos.pos),
           currdepth, localqvars, currnt);
         if (!ret)
-          return newtrav(root, travpos, currdepth, qvars, currnt);
+          return std::move(newtrav(root, travpos, currdepth, qvars, currnt));
 
         bool done = true;
         checkpos = travpos.pos;
@@ -520,10 +519,10 @@ class NewTrav : public Traversal
 
         assert(ret);
         bool unused = false;
-        ParseTree getpt= gettrav(root, travpos, currdepth, localqvars, currnt,
-          unused, false);
+        ParseTree getpt = std::move(gettrav(root, travpos, currdepth,
+          localqvars, currnt, unused, false));
         assert(getpt == ret);
-        return ret;
+        return std::move(ret);
       }
       else if (travpos.pos.limit == -1)
       {
@@ -706,10 +705,10 @@ class NewTrav : public Traversal
         return NULL;
       }
 
-    ParseTree ret = ParseTree(root, newexpr, false);
+    ParseTree ret = ParseTree(root, std::move(newexpr), false);
     bool unused = false;
-    ParseTree getret = gettrav(root, travpos, currdepth,
-      localqvars, currnt, unused, false);
+    ParseTree getret = std::move(gettrav(root, travpos, currdepth,
+      localqvars, currnt, unused, false));
     assert(getret == ret);
     return std::move(ret);
   }
@@ -784,10 +783,8 @@ class NewTrav : public Traversal
       rootpos = TravPos();
       currmaxdepth++;
     }
-    ParseTree ret = newtrav(gram.root, rootpos, 0, NULL, gram.root);
-    ret.fixchildren();
-    lastcand = ret;
-    return std::move(ret);
+    lastcand = std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root));
+    return lastcand;
   }
 };
 }
