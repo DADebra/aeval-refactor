@@ -1,3 +1,5 @@
+#ifndef __CLIPARSING_HPP__
+#define __CLIPARSING_HPP__
 
 #include <cstdlib>
 #include <cstring>
@@ -28,7 +30,7 @@ int getIntValue(const char * opt, int defValue, int argc, char ** argv)
   return defValue;
 }
 
-char * getStrValue(const char * opt, char * defValue, int argc, char ** argv)
+const char * getStrValue(const char * opt, const char * defValue, int argc, char ** argv)
 {
   for (int i = 1; i < argc-1; i++)
   {
@@ -80,3 +82,5 @@ char * getSyGuSFileName(int num, int argc, char ** argv)
   }
   return NULL;
 }
+
+#endif
