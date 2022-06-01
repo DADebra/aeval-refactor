@@ -8,9 +8,12 @@
 %locations
 
 %code requires {
+  #include <sstream>
+
   #include "ufo/Expr.hpp"
   #include "ufo/Smt/EZ3.hh"
   #include "sygus/SynthProblem.hpp"
+  #include "gram/AllHeaders.hpp"
 }
 
 %parse-param {ufo::SynthProblem& prob} {ufo::ExprFactory& efac} {ufo::EZ3& z3}
@@ -42,8 +45,10 @@
 %code {
 namespace yy
 {
-std::string toparse; /* Everything we'll eventually send to Z3 parser */
+std::ostringstream toparse; /* Everything we'll eventually send to Z3 parser */
 std::unordered_set<std::string> funcs; /* Defined functions */
+std::vector<expr::Expr> funcvars; /* Variables for current function */
+Grammar gram; /* Current grammar */
 
 yy::location loc;
 FILE *infile;
@@ -136,18 +141,31 @@ ufo::SynthFunc addFunc(ufo::EZ3& z3, std::string name,
   }
   declArgs.push_back(sort);
   /* Z3 needs to know the function exists */
-  toparse += "\n(declare-fun " + name + " (";
+  toparse << "\n(declare-fun " << name << " (";
   for (int i = 0; i < declArgs.size() - 1; ++i)
   {
     expr::Expr vsort = declArgs[i];
-    if (i != 0) toparse += " ";
-    toparse += z3.toSmtLib(vsort);
+    if (i != 0) toparse << " ";
+    toparse << z3.toSmtLib(vsort);
   }
-  toparse += ") " + z3.toSmtLib(sort) + ")";
+  toparse << ") " << z3.toSmtLib(sort) << ")";
   yy::funcs.insert(name);
-  return ufo::SynthFunc( type,
-    expr::op::bind::fdecl(expr::mkTerm<std::string>(name, sort->efac()),
-    declArgs), vardecls);
+
+  ufo::SynthFunc ret;
+  if (gram.nts.size() != 0)
+    ret = ufo::SynthFunc(type,
+      expr::op::bind::fdecl(expr::mkTerm<std::string>(name, sort->efac()),
+      declArgs), vardecls, gram);
+  else
+    ret = ufo::SynthFunc(type,
+      expr::op::bind::fdecl(expr::mkTerm<std::string>(name, sort->efac()),
+      declArgs), vardecls);
+
+  // Reset Grammar
+  gram.~Grammar();
+  new (&gram) Grammar();
+
+  return std::move(ret);
 }
 
 }
@@ -218,6 +236,15 @@ vardecls:
          | {}
          ;
 
+%nterm <std::vector<expr::Expr>> funcvars;
+funcvars: vardecls
+            {
+              std::swap($$, $1);
+              funcvars = $$;
+              for (const Expr& var : funcvars)
+                gram.addVar(expr::op::bind::fapp(var));
+            }
+
 /* Will be parsed by Expr/Z3's parser */
 %nterm <std::string> expr;
 expr:
@@ -228,15 +255,46 @@ expr:
 /*For newest version (2.1), but won't work for older versions b/c SR-conflict*/
 gramnts:
         LPAR vardecls RPAR
+          {
+            gram.setRoot(gram.addNt(expr::op::bind::fapp($2[0])));
+            for (int i = 1; i < $2.size(); ++i)
+              gram.addNt(expr::op::bind::fapp($2[i]));
+          }
         ;
 
+%nterm <std::vector<std::string>> eithers;
 eithers:
-        expr eithers
-        | expr
+        expr eithers  { std::swap($$, $2); $$.push_back($1); }
+        | expr        { $$.push_back($1); }
         ;
 
 gramprod:
          LPAR ID sort LPAR eithers RPAR RPAR
+           {
+              NT nt = gram.addNt($2, $3);
+              std::string ntname = expr::getTerm<std::string>(nt->left()->left());
+              std::ostringstream parseprods;
+              parseprods << toparse.str();
+
+              for (const Expr& nt : gram.nts)
+                parseprods << z3.toSmtLib(nt->left()) << "\n";
+
+              for (const Expr& var : funcvars)
+                parseprods << z3.toSmtLib(var) << "\n";
+              
+              for (int i = $5.size() - 1; i >= 0; --i)
+              {
+                if ($5[i].find("(Constant") == 0)
+                  assert(0 && "(Constant *) currently unsupported");
+                if ($5[i].find("(Variable") == 0)
+                  assert(0 && "(Variable *) currently unsupported");
+                parseprods << "(assert (= " << ntname << " " << $5[i] << "))";
+              }
+              Expr prods = z3_from_smtlib(z3, parseprods.str());
+              for (int i = 0; i < prods->arity(); ++i)
+                gram.addProd(nt, prods->arg(i)->right());
+           }
+         ;
 
 gramprods:
           gramprod gramprods
@@ -265,13 +323,13 @@ topvardecl:
 topcommand:
            COMMENT
            | LPAR SETLOGIC ID RPAR { prob._logic = $2; }
-           | LPAR SYNTHFUN ID LPAR vardecls RPAR sort grammar RPAR
+           | LPAR SYNTHFUN ID LPAR funcvars RPAR sort grammar RPAR
                {
                   /* TODO: Ignoring grammar for now */
                   prob._synthfuncs.push_back(std::move(
                     addFunc(z3, $3, $5, $7, ufo::SynthFuncType::SYNTH)));
                }
-           | LPAR SYNTHINV ID LPAR vardecls RPAR grammar RPAR
+           | LPAR SYNTHINV ID LPAR funcvars RPAR grammar RPAR
                {
                   /* TODO: Ignoring grammar for now */
                   prob._synthfuncs.push_back(std::move(
@@ -280,40 +338,41 @@ topcommand:
                }
            | LPAR DEFFUN ID LPAR vardecls RPAR sort expr RPAR
                {
-                  toparse += "\n(define-fun " + $3 + " (";
+                  toparse << "\n(define-fun " << $3 << " (";
                   for (int i = 0; i < $5.size(); ++i)
                   {
                     expr::Expr v = $5[i];
-                    if (i != 0) toparse += " ";
-                    toparse += "(" + expr::getTerm<std::string>(v->left()) + " " + z3.toSmtLib(v->right()) + ")";
+                    if (i != 0) toparse << " ";
+                    toparse << "(" + expr::getTerm<std::string>(v->left()) <<
+                      " " << z3.toSmtLib(v->right()) << ")";
                   }
-                  toparse += ") " + z3.toSmtLib($7) + "\n  " + $8 + "\n)";
+                  toparse << ") " << z3.toSmtLib($7) << "\n  " << $8 << "\n)";
                   yy::funcs.insert($3);
                }
            | LPAR topvardecl ID sort RPAR
                {
                   std::string sort = z3.toSmtLib($4);
-                  toparse += "\n(declare-fun " + $3 + " () " + sort + ")";
+                  toparse << "\n(declare-fun " << $3 << " () " << sort << ")";
                   if ($2 == "declare-primed-var")
-                    toparse += "\n(declare-fun " + $3 + "! () " + sort + ")";
+                    toparse << "\n(declare-fun " << $3 << "! () " << sort<< ")";
                }
            | LPAR CONSTRAINT expr RPAR
                {
-                  toparse += "\n(assert " + $3 + ")";
+                  toparse << "\n(assert " << $3 << ")";
                }
            | LPAR INVCONSTRAINT ID ID ID ID RPAR { assert(0 && "inv-constraint currently unsupported"); }
            | LPAR CHECKSYNTH RPAR
                {
-                  toparse += "\n(assert true)";
-                  toparse += "\n(check-sat)";
+                  toparse << "\n(assert true)";
+                  toparse << "\n(check-sat)";
                   expr::Expr e;
                   try
                   {
-                    e = z3_from_smtlib(z3, toparse);
+                    e = z3_from_smtlib(z3, toparse.str());
                   }
                   catch (...)
                   {
-                    std::cout << "To be parsed: \n" << toparse << std::endl;
+                    //std::cout << "To be parsed: \n" << toparse.str() << std::endl;
                     throw;
                   }
                   if (!e)
@@ -325,6 +384,10 @@ topcommand:
                   prob._constraints.reserve(e->arity() - 1);
                   for (int i = 0; i < e->arity() - 1; ++i)
                     prob._constraints.push_back(e->arg(i));
+
+                  funcvars.clear();
+                  gram.~Grammar();
+
                   return 0;
                }
            ;

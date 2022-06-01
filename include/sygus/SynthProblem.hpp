@@ -2,8 +2,11 @@
 #define __SYNTHPROBLEM_HPP__
 
 #include <string>
+#include <utility>
 #include "ufo/Expr.hpp"
 #include "expr/SMTUtils.hpp"
+
+#include "gram/AllHeaders.hpp"
 
 namespace yy { class parser; }
 
@@ -20,11 +23,14 @@ class SynthFunc
   SynthFuncType type;
   Expr decl;
   vector<Expr> vars; // V: FAPP
+  bool hasgram = false;
+  Grammar gram;
 
-  SynthFunc(SynthFuncType _type, Expr _decl, const vector<Expr>& _vars) :
-    type(_type), decl(_decl), vars(_vars) {}
-  SynthFunc(SynthFuncType _type, Expr _decl, vector<Expr>&& _vars) :
-    type(_type), decl(_decl), vars(_vars) {}
+  SynthFunc() {}
+  SynthFunc(SynthFuncType t, Expr _decl, const vector<Expr>& _vars) :
+    type(t), decl(_decl), vars(_vars) {}
+  SynthFunc(SynthFuncType t, Expr _d, const vector<Expr>& _v, const Grammar& _g) :
+    type(t), decl(_d), vars(_v), gram(_g), hasgram(true) {}
 
   // Convert to (define-fun ...)
   string GetDefFun(Expr def, SMTUtils& u, bool newlines = false) const

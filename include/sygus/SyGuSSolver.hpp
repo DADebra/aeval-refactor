@@ -11,20 +11,25 @@ namespace ufo
 using namespace std;
 using namespace boost;
 
+const int TOTALMAXRECDEPTH = 5; // The absolute deepest to go before terminating
+
 class SyGuSSolver
 {
+  typedef unordered_map<const SynthFunc*, Expr> DefMap; // K: func, V: Def
+
   private:
   SynthProblem prob;
+  Expr allcons; // Conjunction of all problem constraints
   ExprFactory &efac;
   EZ3 &z3;
   SMTUtils u;
-  int debug;
+  SyGuSParams params;
 
   unordered_map<Expr, const SynthFunc*> declToFunc; // K: FDECL, V: SynthFunc
 
   string _errmsg; // Non-empty if Solve() returned false
-  unordered_map<const SynthFunc*,Expr> _foundfuncs; // K: func, V: Def
-  vector<const SynthFunc*> _foundfuncsorder; // see findOrdering()
+  DefMap _foundfuncs;
+  vector<const SynthFunc*> _foundfuncsorder; // see findFoundOrdering()
 
   public:
   const string& errmsg = _errmsg;
@@ -35,7 +40,7 @@ class SyGuSSolver
 
   // Find ordering of foundfuncs, such that
   // j > i implies that ret[i] doesn't depend on ret[j]
-  void findOrdering()
+  void findFoundOrdering()
   {
     if (foundfuncsorder.size() == prob.synthfuncs.size())
       return;
@@ -66,50 +71,101 @@ class SyGuSSolver
     }
   }
 
-  // "Applies" `def` using arguments in `fapp`
-  Expr applyDefinition(Expr fapp, const SynthFunc& func, Expr def)
+  // Can't use replaceAll because it'll infinitely loop for e.g. x->y, y->x
+  Expr replaceAllCust(Expr ex, const ExprUMap& repMap)
   {
-    // TODO: Assumes single application
-    vector<Expr> argfrom, argto;
-    assert(isOpX<FAPP>(fapp));
+    ExprUMap visited;
+    function<Expr(Expr)> visit = [&] (Expr e)
+    {
+      auto visiteditr = visited.find(e);
+      if (visiteditr != visited.end())
+        return visiteditr->second;
+
+      Expr ret;
+      auto repitr = repMap.find(e);
+      if (repitr != repMap.end())
+      {
+        e = repitr->second;
+      }
+      if (!isOpX<FDECL>(e))
+      {
+        ExprVector newargs(e->arity());
+        bool needupdate = false;
+        for (int i = 0; i < e->arity(); ++i)
+        {
+          Expr newarg = visit(e->arg(i));
+          if (!needupdate && newarg != e->arg(i))
+            needupdate = true;
+          newargs[i] = newarg;
+        }
+        if (needupdate)
+          ret = e->efac().mkNary(e->op(), newargs);
+        else
+          ret = e;
+      }
+      else
+        ret = e;
+      visited[e] = ret;
+      return ret;
+    };
+    return visit(ex);
+  }
+
+  // "Applies" `def` using arguments in `ffapp`
+  Expr applyDefinition(Expr ffapp, const SynthFunc& func, Expr def)
+  {
+    ExprUMap replaceMap;
+    assert(isOpX<FAPP>(ffapp));
 
     for (int i = 0; i < func.vars.size(); ++i)
-      argfrom.push_back(bind::fapp(func.vars[i]));
-    for (int i = 1; i < fapp->arity(); ++i)
-      argto.push_back(fapp->arg(i));
-    Expr out = replaceAll(def, argfrom, argto);
-    out = replaceFapps(out);
-    return out;
+    {
+      Expr k = bind::fapp(func.vars[i]);
+      Expr v = ffapp->arg(i + 1);
+      if (k != v)
+        replaceMap[k] = v;
+    }
+    if (replaceMap.size() == 0)
+      return def;
+    else
+      return replaceAllCust(def, replaceMap);
   }
 
   // Replace applications of synth-fun's with their definitions
-  Expr replaceFapps(Expr e)
+  Expr replaceFapps(Expr e, const DefMap& defs)
   {
     RW<function<Expr(Expr)>> recrw(new function<Expr(Expr)>(
       [&] (Expr e) -> Expr
       {
         if (isOpX<FAPP>(e))
         {
-          for (const auto &kv : foundfuncs)
-            if (kv.first->decl == e->left())
-              return applyDefinition(e, *kv.first, kv.second);
+          auto funcitr = declToFunc.find(e->left());
+          if (funcitr != declToFunc.end())
+          {
+            e = applyDefinition(e, *funcitr->second, defs.at(funcitr->second));
+          }
         }
         return e;
       }));
     return dagVisit(recrw, e);
   }
 
+  tribool checkCands(const DefMap& cands)
+  {
+    Expr tocheck = replaceFapps(allcons, cands);
+    return !u.isSat(mk<NEG>(tocheck));
+  }
+
   // Check the found functions against the constraints
   bool sanityCheck()
   {
     const bool doExtraCheck = false;
-    Expr allcons = conjoin(prob.constraints, efac);
-    allcons = replaceFapps(allcons);
+    Expr checkcons = conjoin(prob.constraints, efac);
+    checkcons = replaceFapps(checkcons, foundfuncs);
 
     ZSolver<EZ3> smt(z3);
-    smt.assertExpr(mk<NEG>(allcons));
+    smt.assertExpr(mk<NEG>(checkcons));
     tribool ret = smt.solve();
-    if (ret && debug)
+    if (ret && params.debug)
     {
       outs() << "Sanity check:\n";
       smt.toSmtLib(outs());
@@ -185,10 +241,15 @@ class SyGuSSolver
     return mk<EQ>(newt->left(), mknary<ITE>(newargs));
   }
 
-  tribool solveSingleApps()
+  tribool solveWithAeval()
   {
-    Expr allcons = conjoin(prob.constraints, efac);
-    vector<Expr> from, to;
+    if (prob.singleapps.size() != prob.synthfuncs.size())
+    {
+      _errmsg = "Single-invocation solver doesn't support multi-application functions (" + to_string(prob.synthfuncs.size() - prob.singleapps.size()) + " found)";
+      return indeterminate;
+    }
+
+    ExprUMap replaceMap, replaceRevMap;
 
     unordered_map<Expr,const SynthFunc*> varToFunc; // K: funcvar (below)
 
@@ -199,13 +260,13 @@ class SyGuSSolver
       Expr funcsort = func.decl->last();
       Expr funcvar = mkConst(mkTerm<string>(getTerm<string>(func.decl->first()) + "_out", efac), funcsort);
       Expr singlefapp = prob.singleapps.at(func.decl);
-      from.push_back(singlefapp);
-      to.push_back(funcvar);
+      replaceMap[singlefapp] = funcvar;
+      replaceRevMap[funcvar] = singlefapp;
       exArgs.push_back(funcvar->first());
       exVars.insert(funcvar);
       varToFunc[funcvar] = &func;
     }
-    allcons = replaceAll(allcons, from, to);
+    allcons = replaceAll(allcons, replaceMap);
 
     for (const auto& kv : prob.singleapps)
       for (int i = 1; i < kv.second->arity(); ++i)
@@ -215,20 +276,20 @@ class SyGuSSolver
     Expr aeProb = mknary<FORALL>(faArgs);
     aeProb = regularizeQF(aeProb);
     aeProb = convertIntsToReals<DIV>(aeProb);
-    if (debug > 1)
+    if (params.debug > 1)
       { outs() << "Sending to aeval: "; u.print(aeProb); outs() << endl; }
 
-    AeValSolver ae(mk<TRUE>(efac), aeProb->last()->last(), exVars, debug, true);
+    AeValSolver ae(mk<TRUE>(efac), aeProb->last()->last(), exVars, params.debug, true);
 
     tribool aeret = ae.solve();
     if (indeterminate(aeret))
     {
-      _errmsg = "AE-VAL returned unknown";
+      _errmsg = "Single-invocation solver returned unknown";
       return indeterminate;
     }
     else if (aeret)
     {
-      _errmsg = "AE-VAL determined conjecture was infeasible";
+      _errmsg = "Single-invocation solver determined conjecture was infeasible";
       errs() << "Model for conjecture:\n";
       ae.printModelNeg(errs());
       errs() << "\n";
@@ -248,7 +309,7 @@ class SyGuSSolver
       for (int i = 0; i < funcs_conj->arity(); ++i)
       {
         Expr func = funcs_conj->arg(i)->right();
-        func = replaceAll(func, to, from); // Convert variables back to FAPPs
+        func = replaceAll(func, replaceRevMap); // Convert variables back to FAPPs
         func = simplifyBool(simplifyArithm(func));
         _foundfuncs[varToFunc.at(funcs_conj->arg(i)->left())] = func;
       }
@@ -256,12 +317,121 @@ class SyGuSSolver
     }
   }
 
+  tribool solveWithEnum()
+  {
+    for (const auto& func : prob.synthfuncs)
+      if (!func.hasgram)
+      {
+        _errmsg = "Enumerative solver currently doesn't work without a grammar given in the SyGuS problem";
+        return indeterminate;
+      }
+
+    TravParams tparams;
+    tparams.SetDefaults();
+    // TODO: To be changed when NewTrav is quicker and more memory efficient.
+    tparams.method = TPMethod::CORO;
+    tparams.maxrecdepth = TOTALMAXRECDEPTH;
+    tparams.iterdeepen = true;
+
+    // Create a "super" grammar which will synthesize permutations of
+    // candidates for all of the functions to synthesize.
+    Grammar supergram;
+    vector<const SynthFunc*> funcorder;
+    if (prob.synthfuncs.size() == 1)
+      supergram = prob.synthfuncs[0].gram;
+    else
+    {
+      // G' -> f(G1, G2, G3)
+      ExprVector newrootdecl, newrootapp;
+      newrootdecl.push_back(mkTerm(string("supergramfunc"), efac));
+      newrootapp.push_back(NULL); // Space for eventual FDECL
+
+      unordered_map<const SynthFunc*, ExprUMap> ntmap;
+
+      for (const auto &func : prob.synthfuncs)
+      {
+        funcorder.push_back(&func);
+
+        ExprUMap& fntmap = ntmap[&func];
+        string funcname = getTerm<string>(func.decl->left());
+
+        for (const auto& kv : func.gram.prods)
+        {
+          NT newnt = supergram.addNt(funcname + "_" +
+            getTerm<string>(kv.first->left()->left()), kv.first->left()->last());
+          fntmap[kv.first] = newnt;
+
+          for (const Expr& prod : kv.second)
+            supergram.addProd(newnt, replaceAll(prod, fntmap), func.gram.priomap.at(kv.first).at(prod));
+        }
+
+        // Just so we know not to expand them; the created *_VARS won't be used
+        for (const auto& kv : func.gram.vars)
+          for (const Var& var : kv.second)
+            supergram.addVar(var);
+        for (const auto& kv : func.gram.consts)
+          for (const Expr& c : kv.second)
+            supergram.addConst(c);
+
+        Expr newroot = fntmap[func.gram.root];
+        newrootdecl.push_back(typeOf(newroot));
+        newrootapp.push_back(newroot);
+      }
+
+      Expr roottype = mk<BOOL_TY>(efac); // Can be anything
+      newrootdecl.push_back(roottype);
+      Expr nredecl = mknary<FDECL>(newrootdecl);
+
+      newrootapp[0] = nredecl;
+      NT newroot = supergram.addNt("supergramroot", roottype);
+      supergram.setRoot(newroot);
+
+      supergram.addProd(newroot, mknary<FAPP>(newrootapp));
+    }
+
+    GramEnum ge(supergram, &tparams, false, params.debug);
+    DefMap cands;
+    auto parseExpr = [&] (Expr cand)
+    {
+      if (prob.synthfuncs.size() > 1)
+        for (int i = 1; i < cand->arity(); ++i)
+          cands[funcorder[i - 1]] = cand->arg(i);
+      else
+        cands[&prob.synthfuncs[0]] = cand;
+    };
+    while (!ge.IsDone())
+    {
+      Expr newcand = ge.Increment();
+      if (!newcand)
+        break;
+      parseExpr(newcand);
+      if (checkCands(cands))
+      {
+        _foundfuncs = cands;
+        if (params.debug) outs() << "Candidate found at recursion depth " + to_string(ge.GetCurrDepth()) << endl;
+        return true;
+      }
+    }
+
+    if (supergram.isInfinite())
+    {
+      _errmsg = "Unable to find solution for max recursion depth " + to_string(tparams.maxrecdepth);
+      return indeterminate;
+    }
+    else
+    {
+      _errmsg = "No solution in grammar";
+      return false;
+    }
+  }
+
   public:
-  SyGuSSolver(SynthProblem _prob, ExprFactory &_efac, EZ3 &_z3, int _debug) :
-    prob(_prob), efac(_efac), z3(_z3), debug(_debug), u(efac)
+  SyGuSSolver(SynthProblem _prob, ExprFactory &_efac, EZ3 &_z3, SyGuSParams p) :
+    prob(_prob), efac(_efac), z3(_z3), u(efac), params(p)
   {
     for (const auto &func : prob.synthfuncs)
       declToFunc.emplace(func.decl, &func);
+    allcons = conjoin(prob.constraints, efac);
   }
 
   // Returns success: true == solved, false == infeasible, indeterminate == fail
@@ -269,25 +439,19 @@ class SyGuSSolver
   {
     prob.Analyze();
 
-    if (prob.singleapps.size() != prob.synthfuncs.size())
-    {
-      _errmsg = "Solver current doesn't support multi-application functions (" + to_string(prob.synthfuncs.size() - prob.singleapps.size()) + " found)";
-      return indeterminate;
-    }
-
     tribool ret;
 
-    ret = solveSingleApps();
-    if (!ret || indeterminate(ret))
-      return ret;
-
-    if (foundfuncs.size() != prob.singleapps.size())
+    if (params.method == SPMethod::SINGLE)
+      ret = solveWithAeval();
+    else if (params.method == SPMethod::ENUM)
+      ret = solveWithEnum();
+    else
     {
-      _errmsg = "[Program Error] AE-VAL invoked on " + to_string(prob.singleapps.size()) +
-        " single-app functions but only synthesized " + to_string(foundfuncs.size()) +
-        " of them";
+      _errmsg = "No solving method selected";
       return indeterminate;
     }
+    if (!ret || indeterminate(ret))
+      return ret;
 
     if (foundfuncs.size() != prob.synthfuncs.size())
     {
@@ -297,7 +461,7 @@ class SyGuSSolver
       return indeterminate;
     }
 
-    findOrdering();
+    findFoundOrdering();
 
     if (!sanityCheck())
     {

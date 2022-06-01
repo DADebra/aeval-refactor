@@ -8,7 +8,7 @@ install(TARGETS sygustestparser RUNTIME DESTINATION bin)
 
 add_executable(sygussolver sygussolver.cpp)
 target_link_libraries(sygussolver global)
-target_link_libraries(sygussolver ${Z3_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${GMPXX_LIB} ${GMP_LIB})
+target_link_libraries(sygussolver ${Z3_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${Boost_CONTEXT_LIBRARY} ${Boost_COROUTINE_LIBRARY} ${GMPXX_LIB} ${GMP_LIB})
 #if (BISON_FOUND)
 add_dependencies(sygussolver SyGuSParserBison)
 #endif()
