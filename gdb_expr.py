@@ -214,19 +214,7 @@ class ENodePrinter:
             optype = optype.template_argument(0)
             opname = str(optype)
             if "__gmp_expr" in opname:
-                # MPZ or MPQ
-                if '__mpz_struct' in opname:
-                    # MPZ
-                    mp = val.cast(mpz_struct)
-                    return str(mpzToInt(mp))
-                elif '_mp_num' in opfields:
-                    # MPQ
-                    mp = val.cast(mpq_struct)
-                    num = mpzToInt(mp['_mp_num'])
-                    den = mpzToInt(mp['_mp_den'])
-                    return str(num / den)
-                else:
-                    raise ValueError("Unknown GMP type {}".format(optype))
+                return str(val)
             elif "string" in opname:
                 return str(val)[1:-1]
             elif "BvSort" in opname:
