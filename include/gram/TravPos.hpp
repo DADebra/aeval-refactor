@@ -13,12 +13,12 @@ struct CircularInt
   // min <= val < limit
   int min, val, limit;
   
-  CircularInt(int _min, int _val, int _limit) :
+  CircularInt(unsigned int _min, unsigned int _val, unsigned int _limit) :
     min(_min), val(_val), limit(_limit) {}
   CircularInt(const CircularInt& copy) :
     min(copy.min), val(copy.val), limit(copy.limit) {}
 
-  inline operator int() const { return val; }
+  inline operator unsigned int() const { return val; }
 
   CircularInt& operator=(const CircularInt& copy)
   {
@@ -28,7 +28,7 @@ struct CircularInt
     return *this;
   }
 
-  CircularInt& operator=(int other)
+  CircularInt& operator=(unsigned int other)
   {
     // Purposefully ignore limits.
     val = other;
@@ -115,23 +115,24 @@ class TravPos
   private:
   static TravPos uninitialized_pos, done_pos;
 
-  int _min = 0, val = -2;
-  uint8_t state = 0;
-
   // Pair is <we_own, object>; we_own is true if we can modify w/o CoW
   OwnedPtr<TravPos> *children = NULL;
-  int children_size = 0;
   OwnedPtr<TravPos> *queue = NULL; // For STRIPED traversal
-  int queue_size = 0, queue_cap = 0;
+
   std::shared_ptr<const TravPos> parent;
 
-  void newchildren(int size)
+  unsigned int queue_size = 0, queue_cap = 0;
+  unsigned short children_size = 0;
+  unsigned short _min = 0, val = -1;
+  uint8_t state = 0;
+
+  void newchildren(unsigned short size)
   {
     children_size = size;
     children = (OwnedPtr<TravPos>*)malloc(sizeof(OwnedPtr<TravPos>) * size);
   }
 
-  void newqueue(int size)
+  void newqueue(unsigned int size)
   {
     if (size == 0)
       return;
@@ -147,12 +148,12 @@ class TravPos
     state = copy.state;
     parent = copy.parent;
     newchildren(copy.children_size);
-    for (int i = 0; i < copy.children_size; ++i)
+    for (unsigned short i = 0; i < copy.children_size; ++i)
       children[i] = OwnedPtr<TravPos>(false, copy.children[i].ptr());
     if (copyqueue)
     {
       newqueue(copy.queue_size);
-      for (int i = 0; i < copy.queue_size; ++i)
+      for (unsigned int i = 0; i < copy.queue_size; ++i)
         queue[i] = OwnedPtr<TravPos>(false, copy.queue[i].ptr());
     }
   }
@@ -162,7 +163,7 @@ class TravPos
     if (!children)
       return;
     // Only deallocate any memory we own.
-    for (int i = 0; i < children_size; ++i)
+    for (short i = 0; i < children_size; ++i)
     {
       auto& child = children[i];
       //assert(!isdone() || !child.second || child.second->isdone());
@@ -178,10 +179,12 @@ class TravPos
 
   explicit TravPos(bool _done = false) : state(16) { if (_done) makedone(); }
 
-  TravPos(int __min, int limit) : _min(__min)
+  TravPos(unsigned int __min, unsigned int limit)
   {
+    assert(__min < std::numeric_limits<unsigned short>::max());
+    assert(limit < std::numeric_limits<unsigned short>::max());
     newchildren(limit);
-    for (int i = 0; i < limit; ++i)
+    for (short i = 0; i < limit; ++i)
       children[i] = OwnedPtr<TravPos>(true, nullptr);
   }
 
@@ -206,13 +209,13 @@ class TravPos
       //   copy, of course.
 
       const std::shared_ptr<const TravPos> ropos(new TravPos(std::move(copy)));
-      for (int i = 0; i < ropos->children_size; ++i)
+      for (unsigned short i = 0; i < ropos->children_size; ++i)
       {
         auto& child = ropos->children[i];
         if (child.owned() && child)
           child->makereadonly();
       }
-      for (int i = 0; i < ropos->queue_size; ++i)
+      for (unsigned int i = 0; i < ropos->queue_size; ++i)
         if (ropos->queue[i].owned())
           ropos->queue[i]->makereadonly();
       copy.~TravPos();
@@ -286,20 +289,24 @@ class TravPos
     emptyqueue();
   }
 
-  inline int pos() const { return val; }
+  inline unsigned short pos() const { return val; }
 
-  inline int min() const { if (inqueue()) return 0; else return _min; }
+  inline unsigned int min() const { if (inqueue()) return 0; else return _min; }
 
-  inline void setmin(int newmin) { _min = newmin; }
+  inline void setmin(unsigned int newmin)
+  {
+    assert(newmin < std::numeric_limits<unsigned short>::max());
+    _min = newmin;
+  }
 
-  inline int childmin() const { return _min; }
-  inline int queuemin() const { return 0; }
+  inline unsigned short childmin() const { return _min; }
+  inline unsigned int queuemin() const { return 0; }
 
-  inline int limit() const
+  inline unsigned int limit() const
   { return inqueue() ? queue_size : children_size; }
 
-  inline int childlimit() const { return children_size; }
-  inline int queuelimit() const { return queue_size; }
+  inline unsigned short childlimit() const { return children_size; }
+  inline unsigned int queuelimit() const { return queue_size; }
 
   void nextpos()
   {
@@ -315,7 +322,7 @@ class TravPos
 
   void prevpos()
   {
-    int _limit = limit();
+    unsigned int _limit = limit();
     if (val > _limit)
       val = _limit;
     --val;
@@ -326,8 +333,9 @@ class TravPos
   operator CircularInt() const
   { return CircularInt(min(), pos(), limit()); }
 
-  inline const TravPos& childat(int pos) const
+  inline const TravPos& childat(unsigned int pos) const
   {
+    assert(pos < std::numeric_limits<unsigned short>::max());
     if (isdone() && pos >= children_size)
       pos = 0;
     auto& child = children[pos];
@@ -340,6 +348,7 @@ class TravPos
 
   inline TravPos& childat(int pos)
   {
+    assert(pos < std::numeric_limits<unsigned short>::max());
     if (isdone() && pos >= children_size)
       pos = 0;
     auto& child = children[pos];
@@ -364,12 +373,12 @@ class TravPos
     child.setptr(&done_pos);
   }
 
-  inline const TravPos& queueat(int pos) const
+  inline const TravPos& queueat(unsigned int pos) const
   {
     return *queue[pos];
   }
 
-  inline TravPos& queueat(int pos)
+  inline TravPos& queueat(unsigned int pos)
   {
     assert(queue[pos]);
     if (!queue[pos].owned())
@@ -386,7 +395,7 @@ class TravPos
       if (queue_cap == 0)
         queue_cap = children_size;
       else
-        queue_cap *= 2;
+        queue_cap += children_size * 8;
       queue = (OwnedPtr<TravPos>*)realloc(queue, sizeof(OwnedPtr<TravPos>) * queue_cap);
     }
     queue[queue_size - 1] = OwnedPtr<TravPos>(true, newpos);
@@ -396,7 +405,7 @@ class TravPos
   {
     if (!queue)
       return;
-    for (int i = 0; i < queue_size; ++i)
+    for (unsigned int i = 0; i < queue_size; ++i)
     {
       //assert(!isdone() || !que.second || que.second->isdone());
       if (queue[i].owned())

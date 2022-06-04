@@ -453,7 +453,7 @@ class NewTrav : public Traversal
       {
         travpos.nextpos();
         bool done = true;
-        for (int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
+        for (unsigned int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
           done &= constpos.queueat(i).isdone();
         if (done)
         {
@@ -477,11 +477,8 @@ class NewTrav : public Traversal
       if (travpos.inqueue())
       {
         ParseTree ret(NULL);
-        int startpos = travpos.pos();
         while (constpos.queueat(travpos.pos()).isdone())
-        {
           travpos.queuepop();
-        }
 
         ret = std::move(newtrav(root, travpos.queueat(travpos.pos()),
           currdepth, localqvars, currnt));
@@ -489,7 +486,7 @@ class NewTrav : public Traversal
           return std::move(newtrav(root, travpos, currdepth, qvars, currnt));
 
         bool done = true;
-        for (int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
+        for (unsigned int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
           done &= constpos.queueat(i).isdone();
         if (done)
         {
@@ -582,7 +579,7 @@ class NewTrav : public Traversal
           break;
         }
       if (done)
-        for (int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
+        for (unsigned int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
           if (!constpos.queueat(i).isdone())
           {
             done = false;
