@@ -238,10 +238,7 @@ class NewTrav : public Traversal
           --travpos.pos;
       }
 
-      // We're just checking, use const version of queueat()
-      CircularInt checkpos = constpos.pos;
-
-      int startpos = checkpos;
+      int startpos = travpos.pos;
       /*while (constpos.childat(checkpos).isdone() ||
       (gram.isRecursive(prods[checkpos], root) &&
        currdepth == currmaxdepth))
@@ -260,17 +257,20 @@ class NewTrav : public Traversal
       int newdepth;
       for (;;)
       {
-        while (constpos.childat(checkpos).isdone() ||
-         (checkprio && shoulddefer(root, prods[checkpos])) ||
-         (gram.isRecursive(prods[checkpos], root) &&
+        while (constpos.childat(travpos.pos).isdone() ||
+         (checkprio && shoulddefer(root, prods[travpos.pos])) ||
+         (gram.isRecursive(prods[travpos.pos], root) &&
          currdepth == currmaxdepth))
         {
-          if (params.order == TPOrder::FOR)
-            ++checkpos;
-          else if (params.order == TPOrder::REV)
-            --checkpos;
+          if (constpos.childat(travpos.pos).isdone())
+            travpos.childpop();
 
-          if (checkpos == startpos)
+          if (params.order == TPOrder::FOR)
+            ++travpos.pos;
+          else if (params.order == TPOrder::REV)
+            --travpos.pos;
+
+          if (travpos.pos == startpos)
           {
             if (checkprio)
               // All productions must be deferred; pick first one
@@ -283,8 +283,6 @@ class NewTrav : public Traversal
             }
           }
         }
-
-        travpos.pos = checkpos;
 
         if (gram.isRecursive(prods[travpos.pos], root))
           newdepth = currdepth + 1;
@@ -303,7 +301,7 @@ class NewTrav : public Traversal
       }
 
       // Check to see if we're done.
-      checkpos = travpos.pos;
+      CircularInt checkpos = travpos.pos;
       while (constpos.childat(checkpos).isdone() ||
       (gram.isRecursive(prods[checkpos], root) &&
        currdepth == currmaxdepth))
@@ -487,13 +485,10 @@ class NewTrav : public Traversal
         ParseTree ret(NULL);
         ++travpos.pos;
         int startpos = travpos.pos;
-        CircularInt checkpos = travpos.pos;
-        while (constpos.queueat(checkpos).isdone())
+        while (constpos.queueat(travpos.pos).isdone())
         {
-          ++checkpos;
-          assert(checkpos != startpos);
+          travpos.queuepop();
         }
-        travpos.pos = checkpos;
 
         ret = newtrav(root, travpos.queueat(travpos.pos),
           currdepth, localqvars, currnt);
@@ -501,7 +496,6 @@ class NewTrav : public Traversal
           return std::move(newtrav(root, travpos, currdepth, qvars, currnt));
 
         bool done = true;
-        checkpos = travpos.pos;
         for (int i = 0; i < constpos.queuesize(); ++i)
           done &= constpos.queueat(i).isdone();
         if (done)

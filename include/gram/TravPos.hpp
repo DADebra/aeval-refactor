@@ -87,6 +87,8 @@ struct CircularInt
 struct TravPos
 {
   private:
+  static TravPos uninitialized_pos, done_pos;
+
   // Pair is <we_own, object>; we_own is true if we can modify w/o CoW
   vector<pair<bool,TravPos*>> children;
   deque<pair<bool,TravPos*>> queue; // For STRIPED traversal
@@ -98,13 +100,29 @@ struct TravPos
     pos = copy.pos;
     children.reserve(copy.children.size());
     for (auto &child : copy.children)
-      children.push_back(std::move(make_pair(false, child.second)));
+      children.emplace_back(false, child.second);
     if (copyqueue)
     {
       oldmin = copy.oldmin;
       for (auto &que : copy.queue)
-        queue.push_back(std::move(make_pair(false, que.second)));
+        queue.emplace_back(false, que.second);
     }
+  }
+
+  void clearchildren()
+  {
+    // Only deallocate any memory we own.
+    for (auto &child : children)
+    {
+      //assert(!isdone() || !child.second || child.second->isdone());
+      if (child.first && child.second)
+      {
+        delete child.second;
+        child.second = NULL;
+      }
+    }
+    children.clear();
+    children.shrink_to_fit();
   }
 
   public:
@@ -115,9 +133,12 @@ struct TravPos
 
   TravPos(int min, int limit) : pos(min, -1, limit)
   {
-    children.reserve(limit);
-    for (int i = 0; i < limit; ++i)
-      children.push_back(std::move(make_pair(true, new TravPos())));
+    if (limit > 0)
+    {
+      children.reserve(limit);
+      for (int i = 0; i < limit; ++i)
+        children.emplace_back(true, nullptr);
+    }
   }
 
   TravPos(const TravPos& copy) : parent(copy.parent)
@@ -143,7 +164,7 @@ struct TravPos
 
       const std::shared_ptr<const TravPos> ropos(new TravPos(std::move(copy)));
       for (auto &child : ropos->children)
-        if (child.first)
+        if (child.first && child.second)
           child.second->readonly = true;
       for (auto &que : ropos->queue)
         if (que.first)
@@ -161,21 +182,7 @@ struct TravPos
     oldmin(move.oldmin), parent(std::move(move.parent)) {}
 
   ~TravPos()
-  {
-    // Only deallocate any memory we own.
-    for (auto &child : children)
-      if (child.first)
-      {
-        delete child.second;
-        child.second = NULL;
-      }
-    for (auto &que : queue)
-      if (que.first)
-      {
-        delete que.second;
-        que.second = NULL;
-      }
-  }
+  { clearchildren(); emptyqueue(); }
 
   TravPos& operator=(const TravPos& copy)
   {
@@ -199,15 +206,27 @@ struct TravPos
 
   inline const TravPos& childat(int pos) const
   {
-    return *children[pos].second;
+    if (isdone() && pos >= children.size())
+      pos = 0;
+    auto& child = children[pos];
+    if (!child.second)
+    {
+      return uninitialized_pos;
+    }
+    return *child.second;
   }
 
   inline TravPos& childat(int pos)
   {
-    if (!children[pos].first)
-      children[pos] = std::move(
-        make_pair(true, new TravPos(*children[pos].second)));
-    return *children[pos].second;
+    if (isdone() && pos >= children.size())
+      pos = 0;
+    auto& child = children[pos];
+    if (!child.second)
+      child.second = new TravPos();
+    else if (!child.first)
+      child.second = new TravPos(*child.second);
+    child.first = true;
+    return *child.second;
   }
 
   inline int childrensize() const
@@ -215,13 +234,26 @@ struct TravPos
     return children.size();
   }
 
+  // For NTs
+  inline void childpop()
+  {
+    auto& child = children[pos];
+    if (child.first)
+      delete child.second;
+    child.first = false;
+    child.second = &done_pos;
+  }
+
   inline const TravPos& queueat(int pos) const
   {
+    if (!queue[pos].second)
+      return done_pos;
     return *queue[pos].second;
   }
 
   inline TravPos& queueat(int pos)
   {
+    assert(queue[pos].second);
     if (!queue[pos].first)
       queue[pos] = std::move(
         make_pair(true, new TravPos(*queue[pos].second)));
@@ -236,12 +268,46 @@ struct TravPos
   inline void queuepush_back(TravPos* newpos)
   {
     // Takes ownership of newpos
-    return queue.push_back(std::move(make_pair(true, newpos)));
+    return queue.emplace_back(true, newpos);
   }
 
   inline void emptyqueue()
   {
+    for (auto &que : queue)
+    {
+      //assert(!isdone() || !que.second || que.second->isdone());
+      if (que.first)
+      {
+        delete que.second;
+        que.second = NULL;
+      }
+    }
     queue.clear();
+    queue.shrink_to_fit();
+  }
+
+  inline void queuepop()
+  {
+    if (queue[pos].first)
+      delete queue[pos].second;
+    if (pos == 0)
+    {
+      queue.pop_front();
+      --pos.limit;
+    }
+    else if (pos == queue.size() - 1)
+    {
+      queue.pop_back();
+      --pos.limit;
+      pos = 0;
+    }
+    else
+    {
+      queue[pos].second = NULL;
+      ++pos;
+    }
+    if (queue.size() == 0)
+      queue.shrink_to_fit();
   }
 
   inline bool isdone() const
@@ -251,6 +317,8 @@ struct TravPos
 
   inline void makedone()
   {
+    if (!inqueue())
+      emptyqueue();
     pos.limit = -2;
   }
 
@@ -271,6 +339,11 @@ struct TravPos
     pos.limit = -1;
     oldmin = -1;
   }
+  friend class NewTrav;
 };
+
+TravPos TravPos::uninitialized_pos;
+TravPos TravPos::done_pos(0, -2);
+
 }
 #endif
