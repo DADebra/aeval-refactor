@@ -56,8 +56,9 @@ int main(int argc, char** argv)
   ExprFactory efac;
   EZ3 z3(efac);
   SMTUtils u(efac);
+  CFGUtils cfgutils;
   SynthProblem prob;
-  yy::parser sygusparser(prob, efac, z3);
+  yy::parser sygusparser(prob, efac, z3, cfgutils);
 
   if (debug >= 5)
     sygusparser.set_debug_level(1);

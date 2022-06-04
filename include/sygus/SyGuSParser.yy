@@ -16,7 +16,7 @@
   #include "gram/AllHeaders.hpp"
 }
 
-%parse-param {ufo::SynthProblem& prob} {ufo::ExprFactory& efac} {ufo::EZ3& z3}
+%parse-param {ufo::SynthProblem& prob} {ufo::ExprFactory& efac} {ufo::EZ3& z3} {ufo::CFGUtils cfgutils}
 
 %token <char> LPAR
 %token <char> RPAR
@@ -25,6 +25,8 @@
 %token <std::string> ID
 %token <std::string> ARRAY
 %token <std::string> BITVEC
+%token <std::string> CONSTANT
+%token <std::string> VARIABLE
 %token <std::string> COMMENT
 %token <std::string> SETLOGIC
 %token <std::string> SYNTHFUN
@@ -49,6 +51,9 @@ std::ostringstream toparse; /* Everything we'll eventually send to Z3 parser */
 std::unordered_set<std::string> funcs; /* Defined functions */
 std::vector<expr::Expr> funcvars; /* Variables for current function */
 Grammar gram; /* Current grammar */
+std::ostringstream gram_toparse; /* Standard decls we need inside grammar */
+bool gram_toparse_hasglobals = false; /* If we've added 'toparse' to 'gram_toparse' */
+bool gram_uses_anyconst = false;
 
 yy::location loc;
 FILE *infile;
@@ -102,6 +107,10 @@ yy::parser::symbol_type yylex()
     return yy::parser::make_ARRAY(s, loc);
   if (s == "BitVec")
     return yy::parser::make_BITVEC(s, loc);
+  if (s == "Constant")
+    return yy::parser::make_CONSTANT(s, loc);
+  if (s == "Variable")
+    return yy::parser::make_VARIABLE(s, loc);
   if (s == "constraint")
     return yy::parser::make_CONSTRAINT(s, loc);
   if (s == "inv-constraint")
@@ -155,7 +164,7 @@ ufo::SynthFunc addFunc(ufo::EZ3& z3, std::string name,
   if (gram.nts.size() != 0)
     ret = ufo::SynthFunc(type,
       expr::op::bind::fdecl(expr::mkTerm<std::string>(name, sort->efac()),
-      declArgs), vardecls, gram);
+      declArgs), vardecls, gram, gram_uses_anyconst);
   else
     ret = ufo::SynthFunc(type,
       expr::op::bind::fdecl(expr::mkTerm<std::string>(name, sort->efac()),
@@ -164,12 +173,32 @@ ufo::SynthFunc addFunc(ufo::EZ3& z3, std::string name,
   // Reset Grammar
   gram.~Grammar();
   new (&gram) Grammar();
+  gram_toparse = ostringstream();
+  gram_toparse_hasglobals = false;
+  gram_uses_anyconst = false;
 
   return std::move(ret);
 }
 
+expr::Expr prodToExpr(EZ3& z3, const std::string& prodstr)
+{
+  std::ostringstream parseprod;
+  parseprod << gram_toparse.str();
+  parseprod << "(assert (= " << prodstr << " " << prodstr << "))";
+  Expr ret = z3_from_smtlib(z3, parseprod.str());
+  if (!ret)
+    return NULL;
+  if (isOpX<AND>(ret))
+  {
+    assert(ret->arity() == 1);
+    ret = ret->left();
+  }
+  assert(isOpX<EQ>(ret));
+  assert(ret->arity() == 2);
+  return ret->left();
 }
 }
+};
 
 %%
 
@@ -242,7 +271,15 @@ funcvars: vardecls
               std::swap($$, $1);
               funcvars = $$;
               for (const Expr& var : funcvars)
+              {
                 gram.addVar(expr::op::bind::fapp(var));
+                if (!gram_toparse_hasglobals)
+                {
+                  gram_toparse << toparse.str();
+                  gram_toparse_hasglobals = true;
+                }
+                gram_toparse << z3.toSmtLib(var) << std::endl;
+              }
             }
 
 /* Will be parsed by Expr/Z3's parser */
@@ -256,43 +293,40 @@ expr:
 gramnts:
         LPAR vardecls RPAR
           {
-            gram.setRoot(gram.addNt(expr::op::bind::fapp($2[0])));
-            for (int i = 1; i < $2.size(); ++i)
-              gram.addNt(expr::op::bind::fapp($2[i]));
+            for (int i = 0; i < $2.size(); ++i)
+            {
+              NT nt = gram.addNt(expr::op::bind::fapp($2[i]));
+              if (i == 0)
+                gram.setRoot(nt);
+              if (!gram_toparse_hasglobals)
+              {
+                gram_toparse << toparse.str();
+                gram_toparse_hasglobals = true;
+              }
+              gram_toparse << z3.toSmtLib(nt->left()) << std::endl;
+            }
           }
         ;
 
-%nterm <std::vector<std::string>> eithers;
+%nterm <expr::Expr> prod_expr;
+prod_expr:
+          expr  { $$ = prodToExpr(z3, $1); }
+          | LPAR CONSTANT sort RPAR { $$ = CFGUtils::constsNtName($3); gram_uses_anyconst = true; }
+          | LPAR VARIABLE sort RPAR { $$ = CFGUtils::varsNtName($3, ufo::VarType::NONE); }
+          ;
+
+%nterm <std::vector<expr::Expr>> eithers;
 eithers:
-        expr eithers  { std::swap($$, $2); $$.push_back($1); }
-        | expr        { $$.push_back($1); }
+        prod_expr eithers  { std::swap($$, $2); $$.push_back($1); }
+        | prod_expr        { $$.push_back($1); }
         ;
 
 gramprod:
          LPAR ID sort LPAR eithers RPAR RPAR
            {
               NT nt = gram.addNt($2, $3);
-              std::string ntname = expr::getTerm<std::string>(nt->left()->left());
-              std::ostringstream parseprods;
-              parseprods << toparse.str();
-
-              for (const Expr& nt : gram.nts)
-                parseprods << z3.toSmtLib(nt->left()) << "\n";
-
-              for (const Expr& var : funcvars)
-                parseprods << z3.toSmtLib(var) << "\n";
-              
-              for (int i = $5.size() - 1; i >= 0; --i)
-              {
-                if ($5[i].find("(Constant") == 0)
-                  assert(0 && "(Constant *) currently unsupported");
-                if ($5[i].find("(Variable") == 0)
-                  assert(0 && "(Variable *) currently unsupported");
-                parseprods << "(assert (= " << ntname << " " << $5[i] << "))";
-              }
-              Expr prods = z3_from_smtlib(z3, parseprods.str());
-              for (int i = 0; i < prods->arity(); ++i)
-                gram.addProd(nt, prods->arg(i)->right());
+              for (const Expr& prod : $5)
+                gram.addProd(nt, prod);
            }
          ;
 

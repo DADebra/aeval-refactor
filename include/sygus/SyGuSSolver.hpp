@@ -25,8 +25,6 @@ class SyGuSSolver
   SMTUtils u;
   SyGuSParams params;
 
-  unordered_map<Expr, const SynthFunc*> declToFunc; // K: FDECL, V: SynthFunc
-
   string _errmsg; // Non-empty if Solve() returned false
   DefMap _foundfuncs;
   vector<const SynthFunc*> _foundfuncsorder; // see findFoundOrdering()
@@ -59,7 +57,7 @@ class SyGuSSolver
           inserter(fapps, fapps.begin()));
         bool dobreak = false;
         for (const Expr &f : fapps)
-          if (declToFunc.count(f->left()) != 0 && found.count(f->left()) == 0)
+          if (prob.declToFunc.count(f->left()) != 0 && found.count(f->left()) == 0)
           {
             dobreak = true;
             break; // We haven't included this fapp's dependencies yet
@@ -138,10 +136,11 @@ class SyGuSSolver
       {
         if (isOpX<FAPP>(e))
         {
-          auto funcitr = declToFunc.find(e->left());
-          if (funcitr != declToFunc.end())
+          auto funcitr = prob.declToFunc.find(e->left());
+          if (funcitr != prob.declToFunc.end())
           {
             e = applyDefinition(e, *funcitr->second, defs.at(funcitr->second));
+            e = replaceFapps(e, defs);
           }
         }
         return e;
@@ -158,7 +157,7 @@ class SyGuSSolver
   // Check the found functions against the constraints
   bool sanityCheck()
   {
-    const bool doExtraCheck = false;
+    bool doExtraCheck = false;
     Expr checkcons = conjoin(prob.constraints, efac);
     checkcons = replaceFapps(checkcons, foundfuncs);
 
@@ -180,12 +179,13 @@ class SyGuSSolver
       }
     }
 
-    if (doExtraCheck)
+    if (doExtraCheck || ret)
     {
       int noz3 = system("z3 -version >&-");
       if (noz3)
       {
-        errs() << "Warning: Extra check requested but Z3 not installed. Skipping.\n";
+        if (doExtraCheck)
+          errs() << "Warning: Extra check requested but Z3 not installed. Skipping.\n";
         return bool(!ret);
       }
 
@@ -205,7 +205,7 @@ class SyGuSSolver
         inserter(fapps, fapps.begin()));
 
       for (const Expr &f : fapps)
-        if (declToFunc.count(f->left()) == 0)
+        if (prob.declToFunc.count(f->left()) == 0)
           os << z3.toSmtLibDecls(f) << "\n";
 
       os << "(assert "; u.print(negconsts, os); os << ")\n(check-sat)\n";
@@ -259,7 +259,7 @@ class SyGuSSolver
     {
       Expr funcsort = func.decl->last();
       Expr funcvar = mkConst(mkTerm<string>(getTerm<string>(func.decl->first()) + "_out", efac), funcsort);
-      Expr singlefapp = prob.singleapps.at(func.decl);
+      Expr singlefapp = prob.singleapps.at(&func);
       replaceMap[singlefapp] = funcvar;
       replaceRevMap[funcvar] = singlefapp;
       exArgs.push_back(funcvar->first());
@@ -330,7 +330,10 @@ class SyGuSSolver
     tparams.SetDefaults();
     // TODO: To be changed when NewTrav is quicker and more memory efficient.
     tparams.method = TPMethod::CORO;
-    tparams.maxrecdepth = TOTALMAXRECDEPTH;
+    tparams.type = TPType::STRIPED;
+    tparams.prio = TPPrio::BFS;
+    tparams.dir = TPDir::RTL;
+    tparams.maxrecdepth = -1;
     tparams.iterdeepen = true;
 
     // Create a "super" grammar which will synthesize permutations of
@@ -391,6 +394,7 @@ class SyGuSSolver
 
     GramEnum ge(supergram, &tparams, false, params.debug);
     DefMap cands;
+    mpz_class candnum = 0;
     auto parseExpr = [&] (Expr cand)
     {
       if (prob.synthfuncs.size() > 1)
@@ -402,20 +406,31 @@ class SyGuSSolver
     while (!ge.IsDone())
     {
       Expr newcand = ge.Increment();
+      ++candnum;
       if (!newcand)
         break;
       parseExpr(newcand);
       if (checkCands(cands))
       {
         _foundfuncs = cands;
-        if (params.debug) outs() << "Candidate found at recursion depth " + to_string(ge.GetCurrDepth()) << endl;
+        if (params.debug) errs() << "Candidate found at recursion depth " + to_string(ge.GetCurrDepth()) << endl;
+        if (params.debug) errs() << "after " << candnum << " iterations" << endl;
         return true;
       }
     }
 
+    bool hasanyconst = false;
+    for (const auto& func : prob.synthfuncs)
+      hasanyconst |= func.hasanyconst;
+
     if (supergram.isInfinite())
     {
       _errmsg = "Unable to find solution for max recursion depth " + to_string(tparams.maxrecdepth);
+      return indeterminate;
+    }
+    else if (hasanyconst)
+    {
+      _errmsg = "Unable to find solution with generated constants";
       return indeterminate;
     }
     else
@@ -426,11 +441,9 @@ class SyGuSSolver
   }
 
   public:
-  SyGuSSolver(SynthProblem _prob, ExprFactory &_efac, EZ3 &_z3, SyGuSParams p) :
-    prob(_prob), efac(_efac), z3(_z3), u(efac), params(p)
+  SyGuSSolver(SynthProblem&& _prob, ExprFactory &_efac, EZ3 &_z3, SyGuSParams p) :
+    prob(std::move(_prob)), efac(_efac), z3(_z3), u(efac), params(p)
   {
-    for (const auto &func : prob.synthfuncs)
-      declToFunc.emplace(func.decl, &func);
     allcons = conjoin(prob.constraints, efac);
   }
 

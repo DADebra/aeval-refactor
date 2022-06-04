@@ -9,6 +9,7 @@ int main(int argc, const char** argv)
 {
   expr::ExprFactory efac;
   ufo::EZ3 z3(efac);
+  ufo::CFGUtils cfgutils;
   ufo::SynthProblem prob;
 
   if (argc > 2 || (argc > 1 && !strcmp(argv[1], "--help")))
@@ -22,7 +23,7 @@ int main(int argc, const char** argv)
   else
     yy::infile = stdin;
 
-  yy::parser parse(prob, efac, z3);
+  yy::parser parse(prob, efac, z3, cfgutils);
   int ret;
 
   //parse.set_debug_level(9);
