@@ -30,6 +30,7 @@ class NewTrav : public Traversal
     std::shared_ptr<ExprUSet> qvars,Expr currnt,bool& needdefer,bool getfirst)
   {
     CircularInt pos = travpos;
+    pos.min = 0;
     const TravPos *nextpos = &travpos;
 
     if (!getfirst && travpos.isnull())

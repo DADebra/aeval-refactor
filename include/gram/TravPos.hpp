@@ -310,13 +310,14 @@ class TravPos
 
   void nextpos()
   {
-    if (val < min())
-      val = min();
+    unsigned int __min = min();
+    if (val < __min)
+      val = __min;
     else
     {
       ++val;
-      if (val >= limit())
-        val = min();
+      if (val >= limit() || val < __min)
+        val = __min;
     }
   }
 
@@ -326,7 +327,7 @@ class TravPos
     if (val > _limit)
       val = _limit;
     --val;
-    if (val < min())
+    if (val < min() || val >= _limit)
       val = _limit - 1;
   }
 

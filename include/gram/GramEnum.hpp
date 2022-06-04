@@ -173,14 +173,14 @@ class GramEnum
     params = _params;
     if (params.iterdeepen && !gram.isInfinite())
     {
-      if (debug > 1)
+      if (debug > 2)
         outs() << "NOTE: Finite grammar but iterative deepening enabled. Disabling iterative deepening (as it does nothing here)" << endl;
       params.iterdeepen = false;
     }
-    if (params.maxrecdepth > 0 && !gram.isInfinite())
+    if (params.maxrecdepth != -2 && !gram.isInfinite())
     {
       params.maxrecdepth = 0;
-      if (debug > 1)
+      if (debug > 2)
         outs() << "NOTE: Finite grammar but maxrecdepth > 0. Setting maxrecdepth = 0 (as it does nothing here)" << endl;
     }
     if (needInitTrav)
