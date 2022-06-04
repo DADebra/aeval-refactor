@@ -29,11 +29,10 @@ class NewTrav : public Traversal
   ParseTree gettrav(const Expr& root, const TravPos& travpos, int currdepth,
     std::shared_ptr<ExprUSet> qvars,Expr currnt,bool& needdefer,bool getfirst)
   {
-    CircularInt pos(travpos.pos);
-    pos.min = 0;
+    CircularInt pos = travpos;
     const TravPos *nextpos = &travpos;
 
-    if (!getfirst && travpos.pos == -3)
+    if (!getfirst && travpos.isnull())
       return NULL;
 
     if (gram.isVar(root) || bind::isLit(root) || isOpX<FDECL>(root))
@@ -49,9 +48,9 @@ class NewTrav : public Traversal
         currnt = root;
       }
       const auto& prods = gram.prods.at(root);
-      pos.limit = prods.size();
       if (getfirst)
       {
+        pos.limit = prods.size();
         if (params.order == TPOrder::FOR)
           pos = 0;
         else if (params.order == TPOrder::REV)
@@ -115,7 +114,6 @@ class NewTrav : public Traversal
     }
 
     // Root is a Z3 function (e.g. (and ...))
-    pos.limit = root->arity();
     std::shared_ptr<ExprUSet> localqvars(new ExprUSet());
 
     if (qvars != NULL)
@@ -131,8 +129,6 @@ class NewTrav : public Traversal
       }
     }
 
-    if (!getfirst)
-      assert(travpos.childrensize() == root->arity());
     vector<ParseTree> newexpr(root->arity());
 
     // To reverse ('rtl'), we just invert newexpr and root->arg(i)
@@ -155,7 +151,7 @@ class NewTrav : public Traversal
       return ParseTree(root, std::move(newexpr), false);
     }
 
-    if (travpos.inqueue() && travpos.pos.limit != -1)
+    if (travpos.inqueue())
     {
       assert(!getfirst);
 
@@ -168,7 +164,7 @@ class NewTrav : public Traversal
 
     for (int i = 0; i < root->arity(); ++i)
     {
-      if (i >= travpos.pos.min && i != pos)
+      if (i >= travpos.min() && i != pos)
       {
         newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos,
           currdepth, localqvars, currnt, needdefer, true);
@@ -191,6 +187,7 @@ class NewTrav : public Traversal
     int currdepth, std::shared_ptr<ExprUSet> qvars, Expr currnt)
   {
     assert(("Cannot increment TravPos which is done!" && !travpos.isdone()));
+    assert(("Cannot increment TravPos which is r/o!" && !travpos.readonly()));
 
     // Some operations should not cause copy-up; use constpos for these.
     const TravPos &constpos = travpos;
@@ -198,8 +195,6 @@ class NewTrav : public Traversal
     if (gram.isVar(root) || bind::isLit(root) || isOpX<FDECL>(root))
     {
       // Root is a symbolic variable
-      travpos = TravPos(0, 1);
-      ++travpos.pos;
       travpos.makedone();
       return ParseTree(root);
     }
@@ -217,28 +212,27 @@ class NewTrav : public Traversal
         return NULL; // Unreachable
       }
 
-      if (travpos.pos < 0)
+      if (travpos.isnew())
       {
         // First-time initialize
         travpos = TravPos(0, prods.size());
         if (params.type != TPType::STRIPED)
         {
           if (params.order == TPOrder::FOR)
-            ++travpos.pos;
+            travpos.nextpos();
           else if (params.order == TPOrder::REV)
-            --travpos.pos;
+            travpos.prevpos();
         }
       }
 
       if (params.type == TPType::STRIPED)
       {
         if (params.order == TPOrder::FOR)
-          ++travpos.pos;
+          travpos.nextpos();
         else if (params.order == TPOrder::REV)
-          --travpos.pos;
+          travpos.prevpos();
       }
 
-      int startpos = travpos.pos;
       /*while (constpos.childat(checkpos).isdone() ||
       (gram.isRecursive(prods[checkpos], root) &&
        currdepth == currmaxdepth))
@@ -255,44 +249,44 @@ class NewTrav : public Traversal
       bool checkprio = true;
       ParseTree ret(NULL);
       int newdepth;
+      int startpos = travpos.pos();
       for (;;)
       {
-        while (constpos.childat(travpos.pos).isdone() ||
-         (checkprio && shoulddefer(root, prods[travpos.pos])) ||
-         (gram.isRecursive(prods[travpos.pos], root) &&
+        while (constpos.childat(travpos.pos()).isdone() ||
+         (checkprio && shoulddefer(root, prods[travpos.pos()])) ||
+         (gram.isRecursive(prods[travpos.pos()], root) &&
          currdepth == currmaxdepth))
         {
-          if (constpos.childat(travpos.pos).isdone())
+          if (constpos.childat(travpos.pos()).isdone())
             travpos.childpop();
 
           if (params.order == TPOrder::FOR)
-            ++travpos.pos;
+            travpos.nextpos();
           else if (params.order == TPOrder::REV)
-            --travpos.pos;
+            travpos.prevpos();
 
-          if (travpos.pos == startpos)
+          if (travpos.pos() == startpos)
           {
             if (checkprio)
               // All productions must be deferred; pick first one
               checkprio = false;
             else
             {
-              travpos.pos = -3;
-              travpos.makedone();
+              travpos.makenull();
               return NULL;
             }
           }
         }
 
-        if (gram.isRecursive(prods[travpos.pos], root))
+        if (gram.isRecursive(prods[travpos.pos()], root))
           newdepth = currdepth + 1;
         else
           newdepth = currdepth;
 
         assert(newdepth <= currmaxdepth);
 
-        ret = ParseTree(root, std::move(newtrav(prods[travpos.pos],
-          travpos.childat(travpos.pos), newdepth, qvars, currnt)), true);
+        ret = ParseTree(root, std::move(newtrav(prods[travpos.pos()],
+          travpos.childat(travpos.pos()), newdepth, qvars, currnt)), true);
 
         if (!ret.children()[0])
           // The either we picked is done at that recursive depth. Pick another.
@@ -301,7 +295,8 @@ class NewTrav : public Traversal
       }
 
       // Check to see if we're done.
-      CircularInt checkpos = travpos.pos;
+      startpos = travpos.pos();
+      CircularInt checkpos = travpos;
       while (constpos.childat(checkpos).isdone() ||
       (gram.isRecursive(prods[checkpos], root) &&
        currdepth == currmaxdepth))
@@ -311,7 +306,7 @@ class NewTrav : public Traversal
         else if (params.order == TPOrder::REV)
           --checkpos;
 
-        if (checkpos == travpos.pos)
+        if (checkpos == startpos)
         {
           // We're done with this either; move 'pos' past end.
           travpos.makedone();
@@ -321,8 +316,8 @@ class NewTrav : public Traversal
 
       assert(ret);
       bool unused = false;
-      ParseTree getpt(root, std::move(gettrav(prods[constpos.pos],
-        constpos.childat(constpos.pos), newdepth, qvars, currnt,
+      ParseTree getpt(root, std::move(gettrav(prods[constpos.pos()],
+        constpos.childat(constpos.pos()), newdepth, qvars, currnt,
         unused, false)), true);
       assert(getpt == ret);
       return std::move(ret);
@@ -332,8 +327,6 @@ class NewTrav : public Traversal
       if (qvars != NULL && qvars->find(root->left()) != qvars->end())
       {
         // Root is a closed (quantified) variable
-        travpos = TravPos(0, 1);
-        ++travpos.pos;
         travpos.makedone();
         return ParseTree(root);
       }
@@ -379,7 +372,7 @@ class NewTrav : public Traversal
       { return travpos.childat(dind(i)); };
     constposchildat = [&] (int i) -> const TravPos& { return constpos.childat(dind(i)); };
 
-    if (travpos.pos == -2 && !travpos.inqueue())
+    if (travpos.isnew())
     {
       // First-time initialize
       travpos = TravPos(0, root->arity());
@@ -388,33 +381,32 @@ class NewTrav : public Traversal
       {
         bool done = true;
         bool foundnull = false;
-        for (int i = 0; i < travpos.childrensize(); ++i)
+        for (int i = 0; i < travpos.childlimit(); ++i)
         {
           newexprat(i) = newtrav(rootarg(i), travposchildat(i),
             currdepth, localqvars, currnt);
           if (!newexprat(i))
             foundnull = true;
           bool idone = constposchildat(i).isdone();
-          if (idone && i == travpos.pos)
-            ++travpos.pos;
+          if (idone && i == travpos.pos())
+            travpos.nextpos();
           done &= idone;
         }
         if (done)
           travpos.makedone();
         else if (params.prio == TPPrio::DFS)
-          ++travpos.pos;
+          travpos.nextpos();
 
         if (foundnull)
         {
-          travpos.pos = -3;
-          travpos.makedone();
+          travpos.makenull();
           return NULL;
         }
 
         return ParseTree(root, std::move(newexpr), false);
       }
       else
-        ++travpos.pos;
+        travpos.nextpos();
     }
 
     // Traversal
@@ -425,78 +417,79 @@ class NewTrav : public Traversal
       {
         if (params.prio != TPPrio::DFS)
         {
-          ++travpos.pos;
-          if (travpos.pos == travpos.pos.min &&
+          travpos.nextpos();
+          if (travpos.pos() == travpos.min() &&
           params.prio == TPPrio::BFS &&
-          constpos.queuesize() != 0)
+          constpos.queuelimit() != 0)
             travpos.makeinqueue();
           else
           {
-            int startpos = travpos.pos;
-            while (constposchildat(travpos.pos).isdone())
+            int startpos = travpos.pos();
+            while (constposchildat(travpos.pos()).isdone())
             {
-              ++travpos.pos;
-              if (travpos.pos == startpos ||
+              travpos.nextpos();
+              if (travpos.pos() == startpos ||
               (params.prio == TPPrio::BFS &&
-              travpos.pos == travpos.pos.min))
+              travpos.pos() == travpos.min()))
               {
-                if (constpos.queuesize() != 0)
+                if (constpos.queuelimit() != 0)
                   travpos.makeinqueue();
                 break;
               }
             }
           }
         }
-        else if (constposchildat(travpos.pos).isdone())
+        else if (constposchildat(travpos.pos()).isdone())
         {
-          ++travpos.pos;
-          if (travpos.pos == travpos.pos.min)
+          travpos.nextpos();
+          if (travpos.pos() == travpos.min())
           {
-            assert(constpos.queuesize() != 0);
+            assert(constpos.queuelimit() != 0);
             travpos.makeinqueue();
           }
         }
       }
       else
       {
+        travpos.nextpos();
         bool done = true;
-        for (int i = 0; i < constpos.queuesize(); ++i)
+        for (int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
           done &= constpos.queueat(i).isdone();
         if (done)
         {
-          for (int i = travpos.oldmin; i < travpos.childrensize(); ++i)
+          for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
             done &= constposchildat(i).isdone();
           if (done)
           {
-            travpos.pos = -3;
-            travpos.makedone();
+            travpos.makenull();
             return NULL;
           }
           travpos.makenotinqueue();
+          while (constposchildat(travpos.pos()).isdone())
+          {
+            travpos.nextpos();
+            assert(travpos.pos() != travpos.min());
+          }
         }
       }
 
 
       if (travpos.inqueue())
       {
-        if (travpos.pos.limit == -1)
-          travpos.pos = CircularInt(0, -1, travpos.queuesize());
-        assert(travpos.pos.min == 0);
         ParseTree ret(NULL);
-        ++travpos.pos;
-        int startpos = travpos.pos;
-        while (constpos.queueat(travpos.pos).isdone())
+        int startpos = travpos.pos();
+        while (constpos.queueat(travpos.pos()).isdone())
         {
           travpos.queuepop();
         }
 
-        ret = newtrav(root, travpos.queueat(travpos.pos),
-          currdepth, localqvars, currnt);
+        ret = std::move(newtrav(root, travpos.queueat(travpos.pos()),
+          currdepth, localqvars, currnt));
         if (!ret)
           return std::move(newtrav(root, travpos, currdepth, qvars, currnt));
 
         bool done = true;
-        for (int i = 0; i < constpos.queuesize(); ++i)
+        for (int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
           done &= constpos.queueat(i).isdone();
         if (done)
         {
@@ -504,7 +497,7 @@ class NewTrav : public Traversal
             travpos.makedone();
           else
           {
-            for (int i = travpos.oldmin; i < travpos.childrensize(); ++i)
+            for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
               done &= constposchildat(i).isdone();
             if (done)
               travpos.makedone();
@@ -518,25 +511,14 @@ class NewTrav : public Traversal
         assert(getpt == ret);
         return std::move(ret);
       }
-      else if (travpos.pos.limit == -1)
-      {
-        travpos.pos = travpos.pos.min;
-        travpos.pos.limit = root->arity();
-        while (constposchildat(travpos.pos).isdone())
-        {
-          ++travpos.pos;
-          assert(travpos.pos != travpos.pos.min);
-        }
-        travpos.emptyqueue();
-      }
 
-      for (int i = 0; i < root->arity(); ++i)
+      for (int i = 0; i < travpos.childlimit(); ++i)
       {
-        if (i != travpos.pos)
+        if (i != travpos.pos())
         {
-          assert(constposchildat(i).pos != -2);
+          assert(!constposchildat(i).isnew());
           bool needdefer = false;
-          if (i >= travpos.pos.min || constposchildat(i).pos == -2)
+          if (i >= travpos.childmin())
           {
             newexprat(i) = gettrav(rootarg(i), travpos,
               currdepth, localqvars, currnt, needdefer, true);
@@ -559,19 +541,18 @@ class NewTrav : public Traversal
           newexprat(i) = newtrav(rootarg(i), travposchildat(i),
             currdepth, localqvars, currnt);
 
-          if (travpos.pos < root->arity() - 1)
+          if (travpos.pos() < travpos.childlimit() - 1)
           {
             TravPos *childpos = new TravPos(travpos, false);
 
-            childpos->pos = CircularInt(travpos.pos + 1,
-                travpos.pos, root->arity());
+            childpos->setmin(travpos.pos() + 1);
 
             if (params.prio == TPPrio::DFS)
-              ++childpos->pos;
+              childpos->nextpos();
 
-            for (int i = travpos.pos.min; i < travpos.pos.limit; ++i)
+            for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
             {
-              if (i == travpos.pos)
+              if (i == travpos.pos())
                 continue;
               childpos->childat(dind(i)) = TravPos();
               newtrav(rootarg(i), childpos->childat(dind(i)),
@@ -580,7 +561,7 @@ class NewTrav : public Traversal
 
             bool done = true;
             const TravPos *constchild = (const TravPos*)childpos;
-            for (int i= childpos->pos.min; i < childpos->pos.limit; ++i)
+            for (int i= childpos->childmin(); i < childpos->childlimit(); ++i)
               if (!constchild->childat(dind(i)).isdone())
               {
                 done = false;
@@ -594,14 +575,14 @@ class NewTrav : public Traversal
       }
 
       bool done = true;
-      for (int i = constpos.pos.min; i < constpos.childrensize(); ++i)
+      for (int i = constpos.childmin(); i < constpos.childlimit(); ++i)
         if (!constposchildat(i).isdone())
         {
           done = false;
           break;
         }
       if (done)
-        for (int i = 0; i < constpos.queuesize(); ++i)
+        for (int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
           if (!constpos.queueat(i).isdone())
           {
             done = false;
@@ -633,7 +614,7 @@ class NewTrav : public Traversal
     else if (params.type == TPType::ORDERED)
     {
       int i;
-      for (i = 0; i < root->arity(); ++i)
+      for (i = 0; i < constpos.childlimit(); ++i)
       {
         bool wasdone = false;
         for (;;)
@@ -652,11 +633,10 @@ class NewTrav : public Traversal
         }
         if (wasdone)
         {
-          if (!newexprat(i) || i == root->arity() - 1)
+          if (!newexprat(i) || i == constpos.childlimit() - 1)
           {
             // Everything done. Return NULL.
-            travpos.pos = -3;
-            travpos.makedone();
+            travpos.makenull();
             return NULL;
           }
           // Increment next position
@@ -666,9 +646,9 @@ class NewTrav : public Traversal
           break;
       }
       ++i;
-      for (; i < root->arity(); ++i)
+      for (; i < constpos.childlimit(); ++i)
       {
-        if (constposchildat(i).pos == -2)
+        if (constposchildat(i).isnew())
         {
           newtrav(rootarg(i), travposchildat(i), currdepth, localqvars,currnt);
         }
@@ -685,7 +665,7 @@ class NewTrav : public Traversal
       }
 
       bool done = true;
-      for (int i = 0; i < root->arity(); ++i)
+      for (int i = 0; i < constpos.childlimit(); ++i)
         done &= constposchildat(i).isdone();
       if (done)
         travpos.makedone();
@@ -694,8 +674,7 @@ class NewTrav : public Traversal
     for (const auto& p : newexpr)
       if (!p)
       {
-        travpos.pos = -3;
-        travpos.makedone();
+        travpos.makenull();
         return NULL;
       }
 
