@@ -235,6 +235,16 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
       exit(10);
     }
 
+    if (!egram)
+    {
+      errs() << "Invalid grammar file format: No assertions provided" << endl;
+      exit(11);
+    }
+
+    if (!isOpX<AND>(egram))
+      // Just for ease of use; WON'T MARSHAL
+      egram = mk<AND>(egram);
+
     // Find root of grammar and fill in `defs` map.
     for (auto iter = egram->args_begin(); iter != egram->args_end(); ++iter)
     {

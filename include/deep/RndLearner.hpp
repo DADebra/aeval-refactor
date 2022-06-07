@@ -1015,7 +1015,15 @@ namespace ufo
         outs() << "Skipping reading lemmas." << endl;
         return false;
       }
-      assert(isOpX<AND>(lemmas));
+
+      if (!lemmas)
+        // No lemmas in file
+        return false;
+
+      if (!isOpX<AND>(lemmas))
+        // Just for ease of use; WON'T MARSHAL
+        lemmas = mk<AND>(lemmas);
+
       for (int i = 0; i < lemmas->arity(); ++i)
       {
         assert(isOpX<EQ>(lemmas->arg(i)));
