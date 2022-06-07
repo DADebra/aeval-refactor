@@ -26,6 +26,12 @@ void Grammar::generateGraph()
   _graph.clear();
   _isRecCache.clear();
   generateGraph(root);
+
+  // Also generate graph entries for NTs unreachable from root
+  for (const NT& nt : nts)
+    if (_graph.count(nt) == 0)
+      generateGraph(nt);
+
   graphIsOld = false;
 }
 
