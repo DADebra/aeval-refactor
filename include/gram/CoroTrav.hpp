@@ -155,6 +155,8 @@ class CoroTrav : public Traversal
   bool grammodified = false;
   TravParams params;
 
+  ExprUSet uniqvars; // Always empty
+
   ParseTree nextcand; // Coroutines will destroy last cand once generated.
   ParseTree lastcand;
 
@@ -188,6 +190,8 @@ class CoroTrav : public Traversal
       //currnumcandcoros--;
       return;
     }
+    else if (gram.isUniqueVar(root))
+      assert(0 && "Coro traversal doesn't currently support unique variables");
     else if (gram.isNt(root))
     {
       if (root != currnt && !gram.pathExists(root, currnt))
@@ -854,6 +858,12 @@ class CoroTrav : public Traversal
   virtual int GetCurrDepth()
   {
     return currmaxdepth;
+  }
+
+  // Always empty
+  virtual const ExprUSet& GetCurrUniqueVars()
+  {
+    return uniqvars;
   }
 
   virtual ParseTree GetCurrCand()

@@ -213,6 +213,9 @@ class GramEnum
     return traversal->GetCurrDepth();
   }
 
+  const ExprUSet& GetCurrUniqueVars() const
+  { return traversal->GetCurrUniqueVars(); }
+
   Expr Increment()
   {
     Expr nextcand = NULL;

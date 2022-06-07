@@ -211,7 +211,7 @@ ConstMap::mapped_type::iterator Grammar::delConst(
   bool delret = delProd(CFGUtils::constsNtName(itr1->first), *itr2);
   assert(delret);
   notifyListeners(ModClass::CONST, ModType::DEL);
-  return newitr;
+  return std::move(newitr);
 }
 
 bool Grammar::addVar(Var var, mpq_class prio)
@@ -263,7 +263,47 @@ VarMap::mapped_type::iterator Grammar::delVar(VarMap::iterator itr1,
   bool delret = delProd(CFGUtils::varsNtName(itr1->first, itr2->type), *itr2);
   assert(delret);
   notifyListeners(ModClass::VAR, ModType::DEL);
-  return newitr;
+  return std::move(newitr);
+}
+
+Expr Grammar::addUniqueVar(Expr sort)
+{
+  Expr ret = CFGUtils::uniqueVarNtName(sort);
+  bool newvar = _uniqueVars.insert(ret).second;
+  if (newvar)
+    // I'm not really sure why you'd need to listen for this, but just in case.
+    notifyListeners(ModClass::UNIQUE_VAR, ModType::ADD);
+  return ret;
+}
+
+template <typename Sort>
+Expr Grammar::addUniqueVar(ExprFactory& efac)
+{
+  return addUniqueVar(mk<Sort>(efac));
+}
+
+unordered_set<Expr>::iterator Grammar::delUniqueVar(
+  unordered_set<Expr>::const_iterator itr)
+{
+  auto newitr = _uniqueVars.erase(itr);
+  notifyListeners(ModClass::UNIQUE_VAR, ModType::DEL);
+  return std::move(newitr);
+}
+
+bool Grammar::delUniqueVar(Expr sort)
+{
+  Expr var = CFGUtils::uniqueVarNtName(sort);
+  auto itr = _uniqueVars.find(var);
+  if (itr == _uniqueVars.end())
+    return false;
+  delUniqueVar(itr);
+  return true;
+}
+
+template <typename Sort>
+bool Grammar::delUniqueVar(ExprFactory& efac)
+{
+  return delUniqueVar(CFGUtils::uniqueVarNtName(mk<Sort>(efac)));
 }
 
 bool Grammar::addModListener(std::shared_ptr<ModListener> listener)

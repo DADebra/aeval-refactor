@@ -12,9 +12,15 @@
 namespace ufo
 {
 
+typedef size_t Path;
 class NewTrav : public Traversal
 {
   private:
+
+  // The hash of the root path
+  static Path rootpath;
+
+  enum PathClass { C = 1, Q = 2 };
 
   CFGUtils cfgutils;
 
@@ -24,23 +30,57 @@ class NewTrav : public Traversal
   TravPos rootpos;
   function<bool(const Expr&, const Expr&)> shoulddefer;
 
+  ExprFactory& efac;
+
+  ExprUSet uniqvars; // Per-candidate
+  ExprUMap uniqvardecls; // K: Sort, V: FDECL
+  unordered_map<Path, mpz_class> uniqvarnums; // Nicer unique numbers
+  mpz_class lastuniqvarnum = -1;
+
   ParseTree lastcand; // Not strictly necessary, but for efficiency.
 
   int currmaxdepth = -1;
 
   unordered_map<const TravPos*,ParseTree> gettravCache;
-  unordered_map<std::tuple<Expr,int,Expr>,ParseTree> getfirstCache;
+  unordered_map<std::tuple<Expr,int,Expr,Path>,ParseTree> getfirstCache;
+
+  // Extend the hash of the current path 'currhash' by position 'index'
+  //   and class (queue or child) 'class'.
+  // This number is used to uniquely identify where we are
+  //   in the recursive invocations of 'newtrav'.
+  // Note that this is the TRAVERSAL path (note the inclusion of the queue)
+  //   and not the GRAMMAR path (which would mean that queue items have the
+  //   same path).
+  inline Path np(Path currhash, PathClass pclass, unsigned index)
+  {
+    hash_combine(currhash, pclass);
+    hash_combine(currhash, index + 1);
+    return currhash;
+  }
+
+  inline void ptshoulddefer(const ParseTree& pt, bool& needdefer)
+  {
+    pt.foreachPt([&] (const Expr& nt, const ParseTree& expand)
+    { needdefer |= shoulddefer(nt, expand.data()); });
+  }
 
   ParseTree gettrav(const Expr& root, const TravPos& travpos, int currdepth,
-    std::shared_ptr<ExprUSet> qvars,Expr currnt,bool& needdefer,bool getfirst)
+    std::shared_ptr<ExprUSet> qvars, Expr currnt, Path path,
+    bool& needdefer, bool getfirst)
   {
     if (!getfirst && travpos.isnull())
       return NULL;
 
     if (gram.isVar(root) || bind::isLit(root) || isOpX<FDECL>(root))
-    {
       // Root is a symbolic variable
       return ParseTree(root);
+    if (gram.isUniqueVar(root))
+    {
+      auto itr = uniqvarnums.find(path);
+      assert(itr != uniqvarnums.end());
+      Expr uniqvar = mk<FAPP>(uniqvardecls.at(typeOf(root)),
+        mkTerm(itr->second, efac));
+      return ParseTree(root, uniqvar, false);
     }
 
     bool isNt = gram.isNt(root);
@@ -48,10 +88,8 @@ class NewTrav : public Traversal
     if (!isNt && isOpX<FAPP>(root))
     {
       if (qvars != NULL && qvars->find(root->left()) != qvars->end())
-      {
         // Root is a closed (quantified) variable
         return ParseTree(root);
-      }
       else if (root->arity() == 1)
       {
         // Should never happen
@@ -61,20 +99,28 @@ class NewTrav : public Traversal
       }
     }
 
-    std::tuple<Expr,int,Expr> firstkey;
+    std::tuple<Expr,int,Expr,Path> firstkey;
     if (!getfirst)
     {
       auto itr = gettravCache.find(&travpos);
       if (itr != gettravCache.end())
+      {
+        if (itr->second)
+          ptshoulddefer(itr->second, needdefer);
         return itr->second;
+      }
     }
     else
     {
       // Will be used when we return
-      firstkey = std::move(make_tuple(root, currdepth, currnt));
+      firstkey = std::move(make_tuple(root, currdepth, currnt, path));
       auto itr = getfirstCache.find(firstkey);
       if (itr != getfirstCache.end())
+      {
+        if (itr->second)
+          ptshoulddefer(itr->second, needdefer);
         return itr->second;
+      }
     }
 
     CircularInt pos = travpos;
@@ -123,7 +169,7 @@ class NewTrav : public Traversal
       while (!ret)
       {
         ret = std::move(gettrav(prods[pos], *nextpos, newdepth,
-          qvars, currnt, needdefer, getfirst));
+          qvars, currnt, np(path,C,pos), needdefer, getfirst));
         if (!getfirst) assert(ret);
         if (!ret)
         {
@@ -141,7 +187,7 @@ class NewTrav : public Traversal
         }
       }
       assert(ret);
-      needdefer= needdefer || shoulddefer(root, prods[pos]);
+      needdefer = needdefer || shoulddefer(root, prods[pos]);
       ret = ParseTree(root, std::move(ret), true);
       if (getfirst)
         getfirstCache[firstkey] = ret;
@@ -158,13 +204,9 @@ class NewTrav : public Traversal
         localqvars->insert(var);
 
     if (isOpX<FORALL>(root) || isOpX<EXISTS>(root))
-    {
       // Add quantifier variables to qvars
       for (int i = 0; i < root->arity() - 1; ++i)
-      {
         localqvars->insert(root->arg(i));
-      }
-    }
 
     vector<ParseTree> newexpr(root->arity());
 
@@ -181,9 +223,16 @@ class NewTrav : public Traversal
       {
         if (!getfirst)
           nextpos = &travpos.childat(dind(i));
-        newexpr[dind(i)] = gettrav(root->arg(dind(i)), *nextpos,
-          currdepth, localqvars, currnt, needdefer, getfirst);
-        if (!newexpr[dind(i)]) return NULL;
+        newexpr[dind(i)] = gettrav(root->arg(dind(i)), *nextpos, currdepth,
+          localqvars, currnt, np(path,C,dind(i)), needdefer, getfirst);
+        if (!newexpr[dind(i)])
+        {
+          if (getfirst)
+            getfirstCache[firstkey] = NULL;
+          else
+            gettravCache[&travpos] = NULL;
+          return NULL;
+        }
       }
       ParseTree ret(root, std::move(newexpr), false);
 
@@ -199,7 +248,7 @@ class NewTrav : public Traversal
       assert(!getfirst);
 
       ParseTree ret(std::move(gettrav(root, travpos.queueat(pos), currdepth,
-        localqvars, currnt, needdefer, getfirst)));
+        localqvars, currnt, np(path,Q,pos), needdefer, getfirst)));
       gettravCache[&travpos] = ret;
       return std::move(ret);
     }
@@ -212,7 +261,7 @@ class NewTrav : public Traversal
       if (i >= travpos.min() && i != pos)
       {
         newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos,
-          currdepth, localqvars, currnt, needdefer, true);
+          currdepth, localqvars, currnt, np(path,C,dind(i)), needdefer, true);
         if (!newexpr[dind(i)])
         {
           if (getfirst)
@@ -226,8 +275,8 @@ class NewTrav : public Traversal
       {
         if (!getfirst)
           nextpos = &travpos.childat(dind(i));
-        newexpr[dind(i)] = gettrav(root->arg(dind(i)), *nextpos,
-          currdepth, localqvars, currnt, needdefer, getfirst);
+        newexpr[dind(i)] = gettrav(root->arg(dind(i)), *nextpos, currdepth,
+          localqvars, currnt, np(path,C,dind(i)), needdefer, getfirst);
         if (!newexpr[dind(i)])
         {
           if (getfirst)
@@ -249,7 +298,7 @@ class NewTrav : public Traversal
   }
 
   ParseTree newtrav(const Expr& root, TravPos& travpos,
-    int currdepth, std::shared_ptr<ExprUSet> qvars, Expr currnt)
+    int currdepth, std::shared_ptr<ExprUSet> qvars, Expr currnt, Path path)
   {
     assert(("Cannot increment TravPos which is done!" && !travpos.isdone()));
     assert(("Cannot increment TravPos which is r/o!" && !travpos.readonly()));
@@ -264,6 +313,17 @@ class NewTrav : public Traversal
       // Root is a symbolic variable
       travpos.makedone();
       return ParseTree(root);
+    }
+    else if (gram.isUniqueVar(root))
+    {
+      assert(uniqvarnums.count(path) == 0);
+      auto itr = uniqvarnums.emplace(path, ++lastuniqvarnum).first;
+      Expr uniqvar = mk<FAPP>(uniqvardecls.at(typeOf(root)),
+        mkTerm(itr->second, efac));
+      bool isnewvar = uniqvars.insert(uniqvar).second;
+      assert(isnewvar);
+      travpos.makedone();
+      return ParseTree(root, uniqvar, false);
     }
     else if (gram.isNt(root))
     {
@@ -353,7 +413,8 @@ class NewTrav : public Traversal
         assert(newdepth <= currmaxdepth);
 
         ret = ParseTree(root, std::move(newtrav(prods[travpos.pos()],
-          travpos.childat(travpos.pos()), newdepth, qvars, currnt)), true);
+          travpos.childat(travpos.pos()), newdepth, qvars, currnt,
+          np(path,C,travpos.pos()))), true);
 
         if (!ret.children()[0])
           // The either we picked is done at that recursive depth. Pick another.
@@ -383,9 +444,8 @@ class NewTrav : public Traversal
 
       assert(ret);
       bool unused = false;
-      ParseTree getpt(root, std::move(gettrav(prods[constpos.pos()],
-        constpos.childat(constpos.pos()), newdepth, qvars, currnt,
-        unused, false)), true);
+      ParseTree getpt(std::move(gettrav(root, constpos, currdepth,
+        qvars, currnt, path, unused, false)));
       assert(getpt == ret);
       return std::move(ret);
     }
@@ -414,13 +474,9 @@ class NewTrav : public Traversal
         localqvars->insert(var);
 
     if (isOpX<FORALL>(root) || isOpX<EXISTS>(root))
-    {
       // Add quantifier variables to qvars
       for (int i = 0; i < root->arity() - 1; ++i)
-      {
         localqvars->insert(root->arg(i));
-      }
-    }
 
     // To reverse ('rtl'), we just invert newexpr and root->arg(i)
     function<ParseTree&(int)> newexprat;
@@ -451,7 +507,7 @@ class NewTrav : public Traversal
         for (int i = 0; i < travpos.childlimit(); ++i)
         {
           newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-            currdepth, localqvars, currnt);
+            currdepth, localqvars, currnt, np(path,C,dind(i)));
           if (!newexprat(i))
             foundnull = true;
           bool idone = constposchildat(i).isdone();
@@ -548,9 +604,10 @@ class NewTrav : public Traversal
           travpos.queuepop();
 
         ret = std::move(newtrav(root, travpos.queueat(travpos.pos()),
-          currdepth, localqvars, currnt));
+          currdepth, localqvars, currnt, np(path,Q,travpos.pos())));
         if (!ret)
-          return std::move(newtrav(root, travpos, currdepth, qvars, currnt));
+          return std::move(newtrav(root, travpos, currdepth,
+            qvars, currnt, np(path,Q,travpos.pos())));
 
         bool done = true;
         for (unsigned int i = constpos.queuemin(); i < constpos.queuelimit(); ++i)
@@ -571,7 +628,7 @@ class NewTrav : public Traversal
         assert(ret);
         bool unused = false;
         ParseTree getpt = std::move(gettrav(root, travpos, currdepth,
-          localqvars, currnt, unused, false));
+          localqvars, currnt, path, unused, false));
         assert(getpt == ret);
         return std::move(ret);
       }
@@ -584,18 +641,18 @@ class NewTrav : public Traversal
           bool needdefer = false;
           if (i >= travpos.childmin())
           {
-            newexprat(i) = gettrav(rootarg(i), travpos,
-              currdepth, localqvars, currnt, needdefer, true);
+            newexprat(i) = gettrav(rootarg(i), travpos, currdepth,
+              localqvars, currnt, np(path,C,dind(i)), needdefer, true);
           }
           else
-            newexprat(i) = gettrav(rootarg(i), constposchildat(i),
-              currdepth, localqvars, currnt, needdefer, false);
+            newexprat(i) = gettrav(rootarg(i), constposchildat(i), currdepth,
+              localqvars, currnt, np(path,C,dind(i)), needdefer, false);
           /*if (needdefer)
           {
             if (constposchildat(i).isdone())
               travposchildat(i) = TravPos();
             newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-              currdepth, localqvars, currnt);
+              currdepth, localqvars, currnt, np(path,C,dind(i)));
           }*/
         }
         else
@@ -603,11 +660,12 @@ class NewTrav : public Traversal
           assert(!constposchildat(i).isdone());
 
           newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-            currdepth, localqvars, currnt);
+            currdepth, localqvars, currnt, np(path,C,dind(i)));
 
           if (travpos.pos() < travpos.childlimit() - 1)
           {
             TravPos *childpos = new TravPos(travpos, false);
+            Path childpath = np(path,Q,travpos.queuelimit());
 
             childpos->setmin(travpos.pos() + 1);
 
@@ -620,7 +678,7 @@ class NewTrav : public Traversal
                 continue;
               childpos->childat(dind(i)) = TravPos();
               newtrav(rootarg(i), childpos->childat(dind(i)),
-                currdepth, localqvars, currnt);
+                currdepth, localqvars, currnt, np(childpath,C,dind(i)));
             }
 
             bool done = true;
@@ -690,7 +748,7 @@ class NewTrav : public Traversal
             travposchildat(i) = TravPos();
           }
           newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-            currdepth, localqvars, currnt);
+            currdepth, localqvars, currnt, np(path,C,dind(i)));
           if (!newexprat(i) && !wasdone)
             continue;
           break;
@@ -714,17 +772,18 @@ class NewTrav : public Traversal
       {
         if (constposchildat(i).isnew())
         {
-          newtrav(rootarg(i), travposchildat(i), currdepth, localqvars,currnt);
+          newtrav(rootarg(i), travposchildat(i), currdepth, localqvars,
+            currnt, np(path,C,dind(i)));
         }
         bool needdefer = false;
         newexprat(i) = gettrav(rootarg(i), constposchildat(i),
-          currdepth, localqvars, currnt, needdefer, false);
+          currdepth, localqvars, currnt, np(path,C,dind(i)), needdefer, false);
         /*if (needdefer)
         {
           if (constposchildat(i).isdone())
             travposchildat(i) = TravPos();
           newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-            currdepth, localqvars, currnt);
+            currdepth, localqvars, currnt, np(path,C,dind(i)));
         }*/
       }
 
@@ -745,7 +804,7 @@ class NewTrav : public Traversal
     ParseTree ret = ParseTree(root, std::move(newexpr), false);
     bool unused = false;
     ParseTree getret = std::move(gettrav(root, travpos, currdepth,
-      localqvars, currnt, unused, false));
+      localqvars, currnt, path, unused, false));
     assert(getret == ret);
     return std::move(ret);
   }
@@ -769,7 +828,7 @@ class NewTrav : public Traversal
 
   NewTrav(Grammar &_gram, const TravParams &tp,
     function<bool(const Expr&, const Expr&)> sd) :
-    gram(_gram), params(tp), shoulddefer(sd)
+    gram(_gram), params(tp), shoulddefer(sd), efac(gram.root->efac())
   {
     if (params.iterdeepen)
       currmaxdepth = 0;
@@ -781,6 +840,13 @@ class NewTrav : public Traversal
     mlp.reset(new ModListener([&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); }));
     bool ret = gram.addModListener(mlp);
     assert(ret);
+
+    for (const Expr& uniqvar : gram.uniqueVars)
+    {
+      Expr sort = typeOf(uniqvar);
+      uniqvardecls[sort] = mk<FDECL>(
+        mkTerm(string("Unique-Var"), efac), mk<INT_TY>(efac), sort);
+    }
   }
 
   virtual ~NewTrav()
@@ -805,6 +871,11 @@ class NewTrav : public Traversal
     return currmaxdepth;
   }
 
+  virtual const ExprUSet& GetCurrUniqueVars()
+  {
+    return uniqvars;
+  }
+
   virtual ParseTree GetCurrCand()
   {
     return lastcand;
@@ -818,11 +889,17 @@ class NewTrav : public Traversal
     if (IsDepthDone())
     {
       rootpos = TravPos();
+      gettravCache.clear();
+      getfirstCache.clear();
+      uniqvarnums.clear();
+      lastuniqvarnum = -1;
       currmaxdepth++;
     }
-    lastcand = std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root));
+    uniqvars.clear();
+    lastcand = std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root, rootpath));
     return lastcand;
   }
 };
+Path NewTrav::rootpath = std::hash<int>()(1);
 }
 #endif

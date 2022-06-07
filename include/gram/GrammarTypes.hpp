@@ -51,7 +51,7 @@ typedef unordered_map<Expr, set<Var, varless>> VarMap;
 typedef unordered_map<Expr, set<Expr, constless>> ConstMap;
 
 // Class of modification made to the grammar
-enum class ModClass { NONE, PROD, CONSTRAINT, VAR, CONST, PRIO };
+enum class ModClass { NONE, PROD, CONSTRAINT, VAR, CONST, PRIO, UNIQUE_VAR };
 // Type of modification made
 enum class ModType  { NONE, ADD, DEL, MOD };
 

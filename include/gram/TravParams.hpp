@@ -45,7 +45,7 @@ struct TravParams
     if (dir == TPDir::NONE)       dir = TPDir::LTR;
     if (order == TPOrder::NONE)   order = TPOrder::FOR;
     if (type == TPType::NONE)     type = TPType::STRIPED;
-    if (prio == TPPrio::NONE)     prio = TPPrio::SFS;
+    if (prio == TPPrio::NONE)     prio = TPPrio::BFS;
     if (indeterminate(iterdeepen)) iterdeepen = false;
     if (maxrecdepth == -2)
     {

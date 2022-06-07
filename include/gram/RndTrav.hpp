@@ -23,6 +23,12 @@ class RndTrav : public Traversal
 
   ParseTree lastcand;
 
+  ExprFactory& efac;
+
+  ExprUSet uniqvars; // Per-candidate
+  mpz_class uniqvarnum = -1; // Per-candidate
+  ExprUMap uniqvardecls; // K: Sort, V: FDECL
+
   default_random_engine randgenerator;
   // K: NT, V: Distribution of priorities, same order as prods[NT]
   unordered_map<NT, discrete_distribution<int>> distmap;
@@ -66,8 +72,15 @@ class RndTrav : public Traversal
       std::shared_ptr<ExprUSet> qvars, Expr currnt)
   {
     if (gram.isVar(root) || bind::isLit(root) || isOpX<FDECL>(root))
-        // Root is a symbolic variable or constant; don't expand.
-        return ParseTree(root);
+      // Root is a symbolic variable or constant; don't expand.
+      return ParseTree(root);
+    else if (gram.isUniqueVar(root))
+    {
+      Expr uniqvar = mk<FAPP>(uniqvardecls.at(typeOf(root)),
+        mkTerm(++uniqvarnum, efac));
+      uniqvars.insert(uniqvar);
+      return ParseTree(uniqvar);
+    }
     else if (gram.isNt(root))
     {
       if (root != currnt && !gram.pathExists(root, currnt))
@@ -155,13 +168,17 @@ class RndTrav : public Traversal
 
   public:
 
-  RndTrav(Grammar &_gram, const TravParams& tp) : gram(_gram), params(tp)
+  RndTrav(Grammar &_gram, const TravParams& tp) : gram(_gram), params(tp),
+    efac(gram.root->efac())
   {
     if (params.iterdeepen)
     {
       errs() << "Warning: Random traversal doesn't support iterative deepening. Ignoring and starting at maximum recursion depth." << endl;
-      params.maxrecdepth = -2;
-      params.SetDefaults();
+      if (params.maxrecdepth == -1)
+      {
+        params.maxrecdepth = -2;
+        params.SetDefaults();
+      }
     }
     else
       assert(params.maxrecdepth >= 0);
@@ -170,6 +187,9 @@ class RndTrav : public Traversal
     bool ret = gram.addModListener(mlp);
     assert(ret);
     regendistmap();
+    for (const Expr& uniqvar : gram.uniqueVars)
+      uniqvardecls[typeOf(uniqvar)] = mk<FDECL>(
+        mkTerm(string("Unique-Var"), efac), mk<INT_TY>(efac), typeOf(uniqvar));
     Increment();
   }
 
@@ -187,8 +207,12 @@ class RndTrav : public Traversal
 
   virtual ParseTree GetCurrCand() { return lastcand; }
 
+  virtual const ExprUSet& GetCurrUniqueVars() { return uniqvars; }
+
   virtual ParseTree Increment()
   {
+    uniqvars.clear();
+    uniqvarnum = -1;
     if (grammodified) handleGramMod();
     ParseTree ret = lastcand;
     lastcand = getRandCand(gram.root, 0, NULL, gram.root);

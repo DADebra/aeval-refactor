@@ -15,21 +15,24 @@ class Traversal
   virtual ~Traversal() {}
 
   // Returns true if all candidates in the grammar have been enumerated.
-  virtual bool IsDone() { return true; }
+  virtual bool IsDone() = 0;
 
   // Returns true if all candidates at the current recursion depth.
   // have been enumerated.
-  virtual bool IsDepthDone() { return true; }
+  virtual bool IsDepthDone() = 0;
 
   // Get the recursion depth currently used as maximum.
-  virtual int GetCurrDepth() { return -1; }
+  virtual int GetCurrDepth() = 0;
 
   // Returns the candidate at the current traversal position.
-  virtual ParseTree GetCurrCand() { return NULL; }
+  virtual ParseTree GetCurrCand() = 0;
+
+  // Returns the set of unique variables that appear in the current candidate.
+  virtual const ExprUSet& GetCurrUniqueVars() = 0;
 
   // Increments the position of this traversal, returning the next candidate
   // (i.e. the candidate at the new position).
-  virtual ParseTree Increment() { return NULL; }
+  virtual ParseTree Increment() = 0;
 };
 
 }

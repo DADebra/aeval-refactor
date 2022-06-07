@@ -27,6 +27,9 @@ class Grammar
   ConstMap _consts;
   ExprUSet _constsCache;
 
+  // Special variables which get a new instance each time they're used
+  unordered_set<Expr> _uniqueVars;
+
   // K: NT, V: NTs transitively reachable from K
   unordered_map<NT,unordered_set<NT>> _graph;
   bool graphIsOld = true; // Does _graph need to be re-generated?
@@ -69,6 +72,7 @@ class Grammar
   const decltype(_vars)& vars = _vars;
   const decltype(_consts)& consts = _consts;
   const decltype(_graph)& graph = _graph;
+  const decltype(_uniqueVars)& uniqueVars = _uniqueVars;
 
   /*** MODIFIERS ***/
 
@@ -103,6 +107,18 @@ class Grammar
   VarMap::mapped_type::iterator delVar(VarMap::iterator itr1,
     VarMap::mapped_type::const_iterator itr2);
 
+  // Special variables which get a new instance each time they're used.
+  // These need to be registered so the traversal knows to expand them.
+  Expr addUniqueVar(Expr sort);
+  template <typename Sort>
+  Expr addUniqueVar(ExprFactory& efac);
+
+  bool delUniqueVar(Expr sort);
+  template <typename Sort>
+  bool delUniqueVar(ExprFactory& efac);
+  unordered_set<Expr>::iterator delUniqueVar(
+    unordered_set<Expr>::const_iterator itr);
+
   bool addModListener(std::shared_ptr<ModListener> listener);
   bool delModListener(std::shared_ptr<ModListener> listener);
 
@@ -117,6 +133,10 @@ class Grammar
   inline bool isConst(Expr e) const
   {
     return _constsCache.count(e) != 0;
+  }
+  inline bool isUniqueVar(Expr e) const
+  {
+    return _uniqueVars.count(e) != 0;
   }
 
   inline bool isRecursive(Expr prod, NT nt)
@@ -147,20 +167,23 @@ class Grammar
     _root(g._root),_nts(g._nts),_prods(g._prods),
     _priomap(g._priomap),_vars(g._vars),_consts(g._consts),
     _varsCache(g._varsCache),_constsCache(g._constsCache),
+    _uniqueVars(g._uniqueVars),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
-    vars(_vars),consts(_consts),priomap(_priomap),graph(_graph)
+    vars(_vars),consts(_consts),priomap(_priomap),graph(_graph),
+    uniqueVars(_uniqueVars)
   {
     for (const Constraint& c : g._constraints)
       _constraints.push_back(Constraint(c, this));
   }
   Grammar(Grammar&& g) :
     _root(std::move(g._root)),_nts(std::move(g._nts)),
-    _prods(std::move(g._prods)),
-    _priomap(std::move(g._priomap)),
+    _prods(std::move(g._prods)), _priomap(std::move(g._priomap)),
     _vars(std::move(g._vars)),_consts(std::move(g._consts)),
     _varsCache(std::move(g._varsCache)),_constsCache(std::move(g._constsCache)),
+    _uniqueVars(std::move(g._uniqueVars)),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
-    vars(_vars),consts(_consts),priomap(_priomap),graph(_graph)
+    vars(_vars),consts(_consts),priomap(_priomap),graph(_graph),
+    uniqueVars(_uniqueVars)
   {
     for (const Constraint& c : g._constraints)
       _constraints.push_back(Constraint(std::move(c), this));

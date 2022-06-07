@@ -110,7 +110,7 @@ class ParseTree
       return data();
     else if (children().size() == 1)
     {
-      if (!isNt())
+      if (!isNt() && !isOpX<FAPP>(data()))
         return mk(data()->op(), children()[0].toExpr());
       return children()[0].toExpr();
     }
