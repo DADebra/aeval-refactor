@@ -311,7 +311,13 @@ gramnts:
 %nterm <expr::Expr> prod_expr;
 prod_expr:
           expr  { $$ = prodToExpr(z3, $1); }
-          | LPAR CONSTANT sort RPAR { $$ = CFGUtils::constsNtName($3); gram_uses_anyconst = true; }
+          | LPAR CONSTANT sort RPAR
+            {
+              $$ = mk<FAPP>(mk<FDECL>(mkTerm(std::string("ANY_CONST"), efac),
+                mk<INT_TY>(efac), $3),
+                mkTerm(mpz_class(-1), efac));
+              gram_uses_anyconst = true;
+            }
           | LPAR VARIABLE sort RPAR { $$ = CFGUtils::varsNtName($3, ufo::VarType::NONE); }
           ;
 

@@ -25,6 +25,10 @@ class SyGuSSolver
   SMTUtils u;
   SyGuSParams params;
 
+  ExprUSet allFuncVars;
+  ExprVector faArgs; // Arguments to the FORALL used for '(Constant *)'
+  bool hasanyconst = false; // True if some synth function uses '(Constant *)'
+
   string _errmsg; // Non-empty if Solve() returned false
   DefMap _foundfuncs;
   vector<const SynthFunc*> _foundfuncsorder; // see findFoundOrdering()
@@ -128,6 +132,32 @@ class SyGuSSolver
       return replaceAllCust(def, replaceMap);
   }
 
+  // Replaces '(ANY_CONST -1)' with a unique MPZ for each application in 'defs'
+  void replaceAnyConsts(DefMap& defs, ExprUSet& anyConsts)
+  {
+    mpz_class constNum = -1;
+    RW<function<Expr(Expr)>> constrw(new function<Expr(Expr)>(
+      [&] (Expr e) -> Expr
+      {
+        if (!isOpX<FAPP>(e))
+          return e;
+
+        const string& fname = getTerm<string>(e->left()->left());
+        if (fname == "ANY_CONST" && getTerm<mpz_class>(e->last()) == -1)
+        {
+          Expr constapp = fapp(e->left(), {mkTerm(++constNum, e->efac())});
+          anyConsts.insert(constapp);
+          return constapp;
+        }
+
+        return e;
+      }
+    ));
+    for (auto& kv : defs)
+      if (kv.first->hasanyconst)
+        kv.second = dagVisit(constrw, kv.second);
+  }
+
   // Replace applications of synth-fun's with their definitions
   Expr replaceFapps(Expr e, const DefMap& defs)
   {
@@ -148,10 +178,38 @@ class SyGuSSolver
     return dagVisit(recrw, e);
   }
 
-  tribool checkCands(const DefMap& cands)
+  // True = Candidate definitions are always true
+  tribool checkCands(DefMap& cands)
   {
+    ExprUSet anyConsts;
+    if (hasanyconst)
+      replaceAnyConsts(cands, anyConsts);
     Expr tocheck = replaceFapps(allcons, cands);
-    return !u.isSat(mk<NEG>(tocheck));
+    if (anyConsts.size() == 0)
+      return !u.isSat(mk<NEG>(tocheck));
+
+    if (faArgs.size() != 1)
+    {
+      faArgs.back() = tocheck;
+      tocheck = mknary<FORALL>(faArgs);
+    }
+    tribool ret = u.isSat(tocheck);
+    if (!ret)
+      return false;
+    else if (indeterminate(ret))
+      assert(0 && "Handling unknowns from Z3 for (Constant *) is unimplemented");
+
+    ExprUMap constReplaceMap;
+    for (const Expr& c : anyConsts)
+    {
+      Expr foundConst = u.getModel(c);
+      if (!foundConst)
+        assert(0 && "Handling no model from Z3 for (Constant *) is unimplemented");
+      constReplaceMap[c] = foundConst;
+    }
+    for (auto& kv : cands)
+      kv.second = replaceAll(kv.second, constReplaceMap);
+    return true;
   }
 
   // Check the found functions against the constraints
@@ -159,6 +217,7 @@ class SyGuSSolver
   {
     bool doExtraCheck = false;
     Expr checkcons = conjoin(prob.constraints, efac);
+    ExprUSet unused;
     checkcons = replaceFapps(checkcons, foundfuncs);
 
     ZSolver<EZ3> smt(z3);
@@ -253,7 +312,6 @@ class SyGuSSolver
 
     unordered_map<Expr,const SynthFunc*> varToFunc; // K: funcvar (below)
 
-    vector<Expr> faArgs, exArgs;
     ExprSet exVars;
     for (const SynthFunc& func : prob.synthfuncs)
     {
@@ -262,24 +320,15 @@ class SyGuSSolver
       Expr singlefapp = prob.singleapps.at(&func);
       replaceMap[singlefapp] = funcvar;
       replaceRevMap[funcvar] = singlefapp;
-      exArgs.push_back(funcvar->first());
       exVars.insert(funcvar);
       varToFunc[funcvar] = &func;
     }
     allcons = replaceAll(allcons, replaceMap);
-
-    for (const auto& kv : prob.singleapps)
-      for (int i = 1; i < kv.second->arity(); ++i)
-        faArgs.push_back(kv.second->arg(i)->left());
-    exArgs.push_back(allcons);
-    faArgs.push_back(mknary<EXISTS>(exArgs));
-    Expr aeProb = mknary<FORALL>(faArgs);
-    aeProb = regularizeQF(aeProb);
-    aeProb = convertIntsToReals<DIV>(aeProb);
+    allcons = convertIntsToReals<DIV>(allcons);
     if (params.debug > 1)
-      { outs() << "Sending to aeval: "; u.print(aeProb); outs() << endl; }
+      { outs() << "Sending to aeval: "; u.print(allcons); outs() << endl; }
 
-    AeValSolver ae(mk<TRUE>(efac), aeProb->last()->last(), exVars, params.debug, true);
+    AeValSolver ae(mk<TRUE>(efac), allcons, exVars, params.debug, true);
 
     tribool aeret = ae.solve();
     if (indeterminate(aeret))
@@ -419,10 +468,6 @@ class SyGuSSolver
       }
     }
 
-    bool hasanyconst = false;
-    for (const auto& func : prob.synthfuncs)
-      hasanyconst |= func.hasanyconst;
-
     if (supergram.isInfinite())
     {
       _errmsg = "Unable to find solution for max recursion depth " + to_string(tparams.maxrecdepth);
@@ -445,6 +490,15 @@ class SyGuSSolver
     prob(std::move(_prob)), efac(_efac), z3(_z3), u(efac), params(p)
   {
     allcons = conjoin(prob.constraints, efac);
+    for (const auto& func : prob.synthfuncs)
+      for (const Expr& var : func.vars)
+      {
+        allFuncVars.insert(var);
+        faArgs.push_back(var);
+      }
+    faArgs.push_back(NULL); // To be filled in 'checkCands'
+    for (const auto& func : prob.synthfuncs)
+      hasanyconst |= func.hasanyconst;
   }
 
   // Returns success: true == solved, false == infeasible, indeterminate == fail
