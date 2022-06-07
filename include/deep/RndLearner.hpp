@@ -310,13 +310,14 @@ namespace ufo
       return kind_succeeded;
     }
 
-    void bootstrapBoundedProofs (int bnd, ExprSet& cands)
+    // True = No solution, False = Unknown
+    bool bootstrapBoundedProofs (int bnd, ExprSet& cands)
     {
       for (auto &hr: ruleManager.chcs)
         if (findNonlin(hr.body))
       {
         outs () << "Nonlinear arithmetic detected.\nInterpolation is skipped\n";
-        return;
+        return false;
       }
 
       BndExpl be(ruleManager, printLog);
@@ -329,7 +330,7 @@ namespace ufo
         if (cand == NULL)
         {
           outs () << "Counterexample is found.\nThe system does not have a solution.\n";
-          exit(0);
+          return true;
         }
 
         ExprSet cnjs;
@@ -337,6 +338,7 @@ namespace ufo
 
         for (auto & a : cnjs) cands.insert(a);
       }
+      return false;
     }
 
     bool checkBoundedProofs (ExprSet& itpCandidates)
@@ -988,18 +990,16 @@ namespace ufo
       lemmaFile << flush;
     }
 
-    void readLemmas()
+    // True = Invariant found, False = Unknown
+    bool readLemmas()
     {
       if (!saveLemmas)
-        return;
+        return false;
       string lemmaFilename = getLemmaFilename();
       ifstream lemmaFile(lemmaFilename);
       if (!lemmaFile)
       {
-        outs() << "WARNING: Couldn't open lemma file \"" << lemmaFilename <<
-          "\" for reading in current directory.\n";
-        outs() << "Skipping reading lemmas." << endl;
-        return;
+        return false;
       }
       Expr lemmas;
       try
@@ -1013,7 +1013,7 @@ namespace ufo
         outs() << e.msg();
         outs() << endl;
         outs() << "Skipping reading lemmas." << endl;
-        return;
+        return false;
       }
       assert(isOpX<AND>(lemmas));
       for (int i = 0; i < lemmas->arity(); ++i)
@@ -1031,7 +1031,7 @@ namespace ufo
         outs() << "WARNING: Lemma file is not inductive. Ignoring.\n";
         for (int i = 0; i < lemmas->arity(); ++i)
           curCandidates[i] = NULL;
-        return;
+        return false;
       }
 
       // Add to learned lemmas
@@ -1054,11 +1054,12 @@ namespace ufo
         outs() << "Success after reading known lemmas from file\n";
         saveLemmas = false;
         printSolution();
-        exit(0);
+        return true;
       }
 
       for (int i = 0; i < lemmas->arity(); ++i)
         curCandidates[i] = NULL;
+      return false;
     }
 
     // True == all safe
@@ -1136,7 +1137,7 @@ namespace ufo
     }
   };
 
-  inline void learnInvariants(string smt, unsigned to, int maxAttempts,
+  inline bool learnInvariants(string smt, unsigned to, int maxAttempts,
                               bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, bool sl, string gramfile, TravParams gramparams, bool b4simpl)
   {
     ExprFactory m_efac;
@@ -1160,7 +1161,8 @@ namespace ufo
       outs () << "WARNING: For more efficient itp-based bootstrapping,\n"
               << "         it is recommended to run --v2\n";
       // current limitation: ruleManager.decls.size() == 0
-      ds.bootstrapBoundedProofs(itp, itpCands);
+      if (ds.bootstrapBoundedProofs(itp, itpCands))
+        return false;
     }
 
     for (auto& dcl: ruleManager.decls)
@@ -1171,11 +1173,12 @@ namespace ufo
     }
 
     ds.calculateStatistics();
-    ds.readLemmas();
+    if (ds.readLemmas())
+      return true;
     bool success = ds.synthesize(maxAttempts, itpCands);
     if (!success)
       ds.writeAllLemmas();
-    exit(success ? 0 : 1);
+    return success;
   };
 }
 

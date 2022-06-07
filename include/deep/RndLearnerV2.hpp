@@ -334,7 +334,7 @@ namespace ufo
     }
   };
   
-  inline void learnInvariants2(string smt, unsigned to, int maxAttempts,
+  inline bool learnInvariants2(string smt, unsigned to, int maxAttempts,
                                int itp, int batch, int retry, bool freqs, bool aggp, int debug, bool dBoot, int sw, bool sl, string gramfile, TravParams gramps, bool b4simpl)
   {
     ExprFactory m_efac;
@@ -352,7 +352,7 @@ namespace ufo
     {
       outs() << "WARNING: learning multiple invariants is unsupported in --v2.\n"
              << "         Run --v3\n";
-      return;
+      return false;
     }
 
     for (auto& dcl: ruleManager.decls)
@@ -360,7 +360,7 @@ namespace ufo
 
     ExprSet cands;
 
-    if (itp > 0) ds.bootstrapBoundedProofs(itp, cands);
+    if (itp > 0) if (ds.bootstrapBoundedProofs(itp, cands)) return 1;
 
     for (auto& dcl: ruleManager.decls) ds.prepareSeeds(dcl->arg(0), cands); // cands isn't used
 
@@ -378,7 +378,8 @@ namespace ufo
     {
       ds.calculateStatistics();
       ds.prioritiesDeferred();
-      ds.readLemmas();
+      if (ds.readLemmas())
+        return true;
 
       int iters = -1;
       success = ds.synthesize(maxAttempts, batch, retry, iters);
@@ -391,7 +392,7 @@ namespace ufo
 
     if (success) ds.printSolution();
     else ds.writeAllLemmas();
-    exit(success ? 0 : 1);
+    return success;
   }
 }
 

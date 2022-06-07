@@ -2058,7 +2058,7 @@ namespace ufo
     }
   };
 
-  inline void learnInvariants3(string smt, unsigned maxAttempts, unsigned to,
+  inline bool learnInvariants3(string smt, unsigned maxAttempts, unsigned to,
        bool freqs, bool aggp, int dat, int mut, bool doElim, bool doArithm,
        bool doDisj, int doProp, int mbpEqs, bool dAllMbp, bool dAddProp, bool dAddDat,
        bool dStrenMbp, int dFwd, bool dRec, bool dGenerous, bool dSee, bool ser, int debug, bool dBoot, int sw, bool sl, bool printSygus, string gramfile, TravParams gramps, bool b4simpl)
@@ -2072,19 +2072,19 @@ namespace ufo
     if (ser)
     {
       ruleManager.serialize();
-      return;
+      return true;
     }
-    if (!res) return;
+    if (!res) return false;
 
     if (ruleManager.hasBV)
     {
       outs() << "Bitvectors currently not supported. Try `bnd/expl`.\n";
-      return;
+      return true;
     }
 
     BndExpl bnd(ruleManager, to, debug);
     if (!ruleManager.hasCycles())
-      return (void)bnd.exploreTraces(1, ruleManager.chcs.size(), true);
+      return bnd.exploreTraces(1, ruleManager.chcs.size(), true) ? 0 : 1;
 
     RndLearnerV3 ds(m_efac, z3, ruleManager, to, freqs, aggp, mut, dat,
                     doDisj, mbpEqs, dAllMbp, dAddProp, dAddDat, dStrenMbp,
@@ -2122,20 +2122,21 @@ namespace ufo
     if (printSygus)
     {
       ds.printSygus();
-      exit(0);
+      return true;
     }
 
     if (dBoot)
-      if (ds.bootstrap()) exit(0);
+      if (ds.bootstrap()) return true;
 
     ds.calculateStatistics();
     ds.deferredPriorities();
-    ds.readLemmas();
+    if (ds.readLemmas())
+      return true;
     std::srand(std::time(0));
     bool success = ds.synthesize(maxAttempts);
     if (!success)
       ds.writeAllLemmas();
-    exit(success ? 0 : 1);
+    return success;
   }
 }
 

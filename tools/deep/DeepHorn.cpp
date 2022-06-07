@@ -258,19 +258,19 @@ int main (int argc, char ** argv)
     getIntValue(OPT_GRAM_MAXREC, -2, argc, argv));
   gramparams.SetDefaults();
 
- 
+  bool ret;
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
-    learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
+    ret = learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
                      do_dl, do_mu, do_elim, do_arithm, do_disj, do_prop, mbp_eqs,
                      d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot, templ, saveLemmas, printSygus,
                      gramfile, gramparams, b4simpl);
   else if (vers2) // run the TACAS'18 algorithm
-    learnInvariants2(string(argv[argc-1]), to, max_attempts,
+    ret = learnInvariants2(string(argv[argc-1]), to, max_attempts,
                   itp, batch, retry, densecode, aggressivepruning, debug, do_boot, templ, saveLemmas,
                   gramfile, gramparams, b4simpl);
   else            // run the FMCAD'17 algorithm
-    learnInvariants(string(argv[argc-1]), to, max_attempts,
+    ret = learnInvariants(string(argv[argc-1]), to, max_attempts,
                   kinduction, itp, densecode, addepsilon, aggressivepruning, debug, templ, saveLemmas,
                   gramfile, gramparams, b4simpl);
-  return 0;
+  return ret ? 0 : 1;
 }
