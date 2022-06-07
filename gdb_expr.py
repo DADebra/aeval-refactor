@@ -132,7 +132,13 @@ def getvec(vec):
         vecend = vecstr.find("}")
         contents = vecstr[vecstart+1:vecend]
         contents = contents.split(", ")
-        vec = [ gdb.Value(int(c, base=16)).cast(valtype) for c in contents ]
+        vec = []
+        for c in contents:
+            try:
+                ptr = int(c.split(" ")[0], base=16)
+            except:
+                continue
+            vec.append(gdb.Value(ptr).cast(valtype))
         return vec
 
 def mpzToInt(mpz):
@@ -195,9 +201,13 @@ class ENodePrinter:
                     if "mpz_struct" in str(op0type) and "BvSort" in str(op1type):
                         val0 = op0.cast(op0type)['val'].cast(mpz_struct)
                         valint = mpzToInt(val0)
-                        return "#x" + hex(valint)[2:]
+                        hexstr = hex(valint)
+                        if hexstr[0] == "-":
+                            return "-#x" + hexstr[3:]
+                        else:
+                            return "#x" + hexstr[2:]
                         #width = op1.cast(op1type)['val']['m_width']
-                        #return "#x" + valint.to_bytes(width, 'big').hex()
+                        #return "#x" + valint.to_bytes(width, 'big', signed=True).hex()
             if op not in OpTypeToSymbol:
                 raise ValueError("Unknown DefOp type \"{}\"".format(op))
             sym = OpTypeToSymbol[op]
