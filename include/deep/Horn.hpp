@@ -380,7 +380,12 @@ namespace ufo
         else if (c->isQuery && c->isFact)
           if (u.isSat(c->body))
           {
-            outs () << "Counterexample found (during preprocessing)\n";
+            outs () << "Counterexample found (during preprocessing)";
+            Expr model = u.getModel();
+            if (model)
+              outs () << ":\n" << model << "\n";
+            else
+              outs () << "\n(Model unknown)\n";
             return false;
           }
       }

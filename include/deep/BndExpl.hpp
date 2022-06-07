@@ -221,7 +221,15 @@ namespace ufo
       if (debug || print)
       {
         if (indeterminate(res)) outs () << "unknown\n";
-        else if (res) outs () << "Counterexample of length " << (cur_bnd - 1) << " found\n";
+        else if (res)
+        {
+          outs () << "Counterexample of length " << (cur_bnd - 1) << " found";
+          Expr model = u.getModel();
+          if (model)
+            outs () << ":\n" << model << "\n";
+          else
+            outs () << "\n(Model unknown)\n";
+        }
         else if (ruleManager.hasCycles())
           outs () << "No counterexample found up to length " << cur_bnd << "\n";
         else
