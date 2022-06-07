@@ -562,7 +562,9 @@ namespace ufo
       Expr tmp = fla;
       while (isSat(tmp, false))
       {
-        prjcts.push_back(qe(getTrueLiterals(fla, splitEqs), vars)); // if qe is identity, then it's pure DNF
+        Expr tlits = getTrueLiterals(fla, splitEqs);
+        if (tlits == NULL) return false;
+        prjcts.push_back(qe(tlits, vars)); // if qe is identity, then it's pure DNF
         if (prjcts.back() == NULL) return false;
         tmp = mk<NEG>(prjcts.back());
       }
