@@ -171,6 +171,7 @@ bool Grammar::addConst(Expr c, mpq_class prio)
   bool ret = _consts[bind::typeOf(c)].insert(c).second;
   if (ret)
   {
+    _constsCache.insert(c);
     Expr constNt = CFGUtils::constsNtName(bind::typeOf(c));
     if (_prods.count(constNt) == 0)
       _prods[constNt].push_back(c);
@@ -206,6 +207,7 @@ ConstMap::mapped_type::iterator Grammar::delConst(
     ConstMap::iterator itr1, ConstMap::mapped_type::const_iterator itr2)
 {
   auto newitr = itr1->second.erase(itr2);
+  _constsCache.erase(*itr2);
   bool delret = delProd(CFGUtils::constsNtName(itr1->first), *itr2);
   assert(delret);
   notifyListeners(ModClass::CONST, ModType::DEL);
@@ -217,6 +219,7 @@ bool Grammar::addVar(Var var, mpq_class prio)
   bool ret = _vars[bind::typeOf(var)].insert(var).second;
   if (ret)
   {
+    _varsCache.insert(var.expr);
     Expr varsTypeNt = CFGUtils::varsNtName(bind::typeOf(var), var.type);
     Expr varsAllNt = CFGUtils::varsNtName(bind::typeOf(var), VarType::NONE);
     for (const auto &varsNt : { varsTypeNt, varsAllNt })
@@ -256,6 +259,7 @@ VarMap::mapped_type::iterator Grammar::delVar(VarMap::iterator itr1,
   VarMap::mapped_type::const_iterator itr2)
 {
   auto newitr = itr1->second.erase(itr2);
+  _varsCache.erase(itr2->expr);
   bool delret = delProd(CFGUtils::varsNtName(itr1->first, itr2->type), *itr2);
   assert(delret);
   notifyListeners(ModClass::VAR, ModType::DEL);

@@ -5,6 +5,8 @@
 #error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
 #endif
 
+#include "gram/TupleHash.hpp"
+
 #include <boost/coroutine2/coroutine.hpp>
 #include <boost/optional.hpp>
 #include <boost/optional/optional_io.hpp>
@@ -136,18 +138,6 @@ PTCoroCacheIter PTCoroCache::end()
   return PTCoroCacheIter(-1, *this);
 }
 
-class tuplehash
-{
-  public:
-  size_t operator()(const std::tuple<Expr,int,std::shared_ptr<ExprUSet>,Expr>& tup) const
-  {
-    return std::hash<Expr>()(std::get<0>(tup)) *
-      std::hash<int>()(std::get<1>(tup)) *
-      std::hash<std::shared_ptr<ExprUSet>>()(std::get<2>(tup)) *
-      std::hash<Expr>()(std::get<3>(tup));
-  }
-};
-
 class CoroTrav : public Traversal
 {
   private:
@@ -157,7 +147,7 @@ class CoroTrav : public Traversal
 
   // The sub-candidates previously generated with root == key
   unordered_map<std::tuple<Expr,int,std::shared_ptr<ExprUSet>,Expr>,
-    PTCoroCache,tuplehash> ptcorocache;
+    PTCoroCache> ptcorocache;
 
   CFGUtils cfgutils;
 

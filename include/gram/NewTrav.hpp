@@ -5,6 +5,8 @@
 #error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
 #endif
 
+#include "gram/TupleHash.hpp"
+
 #include "gram/TravPos.hpp"
 
 namespace ufo
@@ -26,13 +28,12 @@ class NewTrav : public Traversal
 
   int currmaxdepth = -1;
 
+  unordered_map<const TravPos*,ParseTree> gettravCache;
+  unordered_map<std::tuple<Expr,int,Expr>,ParseTree> getfirstCache;
+
   ParseTree gettrav(const Expr& root, const TravPos& travpos, int currdepth,
     std::shared_ptr<ExprUSet> qvars,Expr currnt,bool& needdefer,bool getfirst)
   {
-    CircularInt pos = travpos;
-    pos.min = 0;
-    const TravPos *nextpos = &travpos;
-
     if (!getfirst && travpos.isnull())
       return NULL;
 
@@ -41,7 +42,46 @@ class NewTrav : public Traversal
       // Root is a symbolic variable
       return ParseTree(root);
     }
-    else if (gram.isNt(root))
+
+    bool isNt = gram.isNt(root);
+
+    if (!isNt && isOpX<FAPP>(root))
+    {
+      if (qvars != NULL && qvars->find(root->left()) != qvars->end())
+      {
+        // Root is a closed (quantified) variable
+        return ParseTree(root);
+      }
+      else if (root->arity() == 1)
+      {
+        // Should never happen
+        // There's no definition, we're expanding an empty *_VARS
+        CFGUtils::noNtDefError(root, gram.root);
+        return NULL;
+      }
+    }
+
+    std::tuple<Expr,int,Expr> firstkey;
+    if (!getfirst)
+    {
+      auto itr = gettravCache.find(&travpos);
+      if (itr != gettravCache.end())
+        return itr->second;
+    }
+    else
+    {
+      // Will be used when we return
+      firstkey = std::move(make_tuple(root, currdepth, currnt));
+      auto itr = getfirstCache.find(firstkey);
+      if (itr != getfirstCache.end())
+        return itr->second;
+    }
+
+    CircularInt pos = travpos;
+    pos.min = 0;
+    const TravPos *nextpos = &travpos;
+
+    if (isNt)
     {
       if (root != currnt && !gram.pathExists(root, currnt))
       {
@@ -63,7 +103,10 @@ class NewTrav : public Traversal
           if (params.order == TPOrder::FOR) ++pos;
           else if (params.order == TPOrder::REV) --pos;
           if (pos == startpos)
+          {
+            getfirstCache[firstkey] = NULL;
             return NULL;
+          }
         }
       }
       else
@@ -87,7 +130,10 @@ class NewTrav : public Traversal
           if (params.order == TPOrder::FOR) ++pos;
           else if (params.order == TPOrder::REV) --pos;
           if (pos == startpos)
+          {
+            getfirstCache[firstkey] = NULL;
             return NULL;
+          }
           if (gram.isRecursive(prods[pos], root))
             newdepth = currdepth + 1;
           else
@@ -96,22 +142,12 @@ class NewTrav : public Traversal
       }
       assert(ret);
       needdefer= needdefer || shoulddefer(root, prods[pos]);
-      return ParseTree(root, std::move(ret), true);
-    }
-    else if (isOpX<FAPP>(root))
-    {
-      if (qvars != NULL && qvars->find(root->left()) != qvars->end())
-      {
-        // Root is a closed (quantified) variable
-        return ParseTree(root);
-      }
-      else if (root->arity() == 1)
-      {
-        // Should never happen
-        // There's no definition, we're expanding an empty *_VARS
-        CFGUtils::noNtDefError(root, gram.root);
-        return NULL;
-      }
+      ret = ParseTree(root, std::move(ret), true);
+      if (getfirst)
+        getfirstCache[firstkey] = ret;
+      else
+        gettravCache[&travpos] = ret;
+      return std::move(ret);
     }
 
     // Root is a Z3 function (e.g. (and ...))
@@ -149,15 +185,23 @@ class NewTrav : public Traversal
           currdepth, localqvars, currnt, needdefer, getfirst);
         if (!newexpr[dind(i)]) return NULL;
       }
-      return ParseTree(root, std::move(newexpr), false);
+      ParseTree ret(root, std::move(newexpr), false);
+
+      if (getfirst)
+        getfirstCache[firstkey] = ret;
+      else
+        gettravCache[&travpos] = ret;
+      return std::move(ret);
     }
 
     if (travpos.inqueue())
     {
       assert(!getfirst);
 
-      return gettrav(root, travpos.queueat(pos), currdepth,
-        localqvars, currnt, needdefer, getfirst);
+      ParseTree ret(std::move(gettrav(root, travpos.queueat(pos), currdepth,
+        localqvars, currnt, needdefer, getfirst)));
+      gettravCache[&travpos] = ret;
+      return std::move(ret);
     }
 
     if (getfirst)
@@ -169,7 +213,14 @@ class NewTrav : public Traversal
       {
         newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos,
           currdepth, localqvars, currnt, needdefer, true);
-        if (!newexpr[dind(i)]) return NULL;
+        if (!newexpr[dind(i)])
+        {
+          if (getfirst)
+            getfirstCache[firstkey] = NULL;
+          else
+            gettravCache[&travpos] = NULL;
+          return NULL;
+        }
       }
       else
       {
@@ -177,11 +228,24 @@ class NewTrav : public Traversal
           nextpos = &travpos.childat(dind(i));
         newexpr[dind(i)] = gettrav(root->arg(dind(i)), *nextpos,
           currdepth, localqvars, currnt, needdefer, getfirst);
-        if (!newexpr[dind(i)]) return NULL;
+        if (!newexpr[dind(i)])
+        {
+          if (getfirst)
+            getfirstCache[firstkey] = NULL;
+          else
+            gettravCache[&travpos] = NULL;
+          return NULL;
+        }
       }
     }
 
-    return ParseTree(root, std::move(newexpr), false);
+    ParseTree ret(root, std::move(newexpr), false);
+
+    if (getfirst)
+      getfirstCache[firstkey] = ret;
+    else
+      gettravCache[&travpos] = ret;
+    return std::move(ret);
   }
 
   ParseTree newtrav(const Expr& root, TravPos& travpos,
@@ -189,6 +253,8 @@ class NewTrav : public Traversal
   {
     assert(("Cannot increment TravPos which is done!" && !travpos.isdone()));
     assert(("Cannot increment TravPos which is r/o!" && !travpos.readonly()));
+
+    gettravCache.erase(&travpos);
 
     // Some operations should not cause copy-up; use constpos for these.
     const TravPos &constpos = travpos;

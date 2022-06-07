@@ -15,15 +15,17 @@ class Grammar
   CFGUtils cfgutils;
 
   NT _root;
-  set<NT> _nts;
+  unordered_set<NT> _nts;
   unordered_map<NT, vector<Expr>> _prods;
   vector<Constraint> _constraints;
   unordered_map<NT, unordered_map<Expr, mpq_class>> _priomap;
 
   // Key: Sort, Value: Variables
   VarMap _vars;
+  ExprUSet _varsCache;
 
   ConstMap _consts;
+  ExprUSet _constsCache;
 
   // K: NT, V: NTs transitively reachable from K
   unordered_map<NT,unordered_set<NT>> _graph;
@@ -110,13 +112,11 @@ class Grammar
   inline bool isNt(Expr e) const { return isOpX<FAPP>(e) && _prods.count(e) != 0; }
   inline bool isVar(Expr e) const
   {
-    return isOpX<FAPP>(e) &&
-      _vars.count(typeOf(e)) != 0 && _vars.at(typeOf(e)).count(e) != 0;
+    return _varsCache.count(e) != 0;
   }
   inline bool isConst(Expr e) const
   {
-    return bind::isLit(e) &&
-      _consts.count(typeOf(e)) != 0 && _consts.at(typeOf(e)).count(e) != 0;
+    return _constsCache.count(e) != 0;
   }
 
   inline bool isRecursive(Expr prod, NT nt)
@@ -146,6 +146,7 @@ class Grammar
   Grammar(const Grammar& g) :
     _root(g._root),_nts(g._nts),_prods(g._prods),
     _priomap(g._priomap),_vars(g._vars),_consts(g._consts),
+    _varsCache(g._varsCache),_constsCache(g._constsCache),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
     vars(_vars),consts(_consts),priomap(_priomap),graph(_graph)
   {
@@ -157,6 +158,7 @@ class Grammar
     _prods(std::move(g._prods)),
     _priomap(std::move(g._priomap)),
     _vars(std::move(g._vars)),_consts(std::move(g._consts)),
+    _varsCache(std::move(g._varsCache)),_constsCache(std::move(g._constsCache)),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
     vars(_vars),consts(_consts),priomap(_priomap),graph(_graph)
   {
