@@ -22,7 +22,7 @@ void CFGUtils::noNtDefError(NT nt, NT root)
 
 decltype(CFGUtils::varsNtNameCache) CFGUtils::varsNtNameCache = NULL;
 decltype(CFGUtils::constsNtNameCache) CFGUtils::constsNtNameCache = NULL;
-decltype(CFGUtils::uniqueVarNtNameCache) CFGUtils::uniqueVarNtNameCache = NULL;
+decltype(CFGUtils::uniqueVarDeclCache) CFGUtils::uniqueVarDeclCache = NULL;
 decltype(CFGUtils::refcnt) CFGUtils::refcnt = 0;
 string CFGUtils::sortName(Expr sort)
 {
@@ -76,12 +76,12 @@ Expr CFGUtils::constsNtName(Expr sort)
   return constsNtNameCache->at(sort);
 }
 
-Expr CFGUtils::uniqueVarNtName(Expr sort)
+Expr CFGUtils::uniqueVarDecl(Expr sort)
 {
-  if (uniqueVarNtNameCache->count(sort) == 0)
-    return uniqueVarNtNameCache->emplace(sort,
-      mkConst(mkTerm("UNIQUE_" + sortName(sort) + "_VAR", sort->efac()), sort)).first->second;
-  return uniqueVarNtNameCache->at(sort);
+  if (uniqueVarDeclCache->count(sort) == 0)
+    return uniqueVarDeclCache->emplace(sort,
+      mk<FDECL>(mkTerm(string("Unique-Var"), sort->efac()), sort, sort)).first->second;
+  return uniqueVarDeclCache->at(sort);
 }
 
 bool CFGUtils::isEither(const Expr& exp)
@@ -154,10 +154,6 @@ Grammar CFGUtils::parseGramFile(string gram_file, string inv_fname, EZ3 &z3,
 
       // Generate *_CONSTS declaration
       aug_gram << z3.toSmtLib(bind::fname(constsNtName(sort))) << "\n";
-
-      // Generate UNIQUE_*_VAR declaration
-      aug_gram << z3.toSmtLib(bind::fname(uniqueVarNtName(sort))) << "\n";
-      gram.addUniqueVar(sort);
 
       // Generate *_prio declarations
       aug_gram << "(declare-fun prio (" <<

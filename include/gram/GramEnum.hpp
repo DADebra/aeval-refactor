@@ -213,7 +213,7 @@ class GramEnum
     return traversal->GetCurrDepth();
   }
 
-  const ExprUSet& GetCurrUniqueVars() const
+  const UniqVarMap& GetCurrUniqueVars() const
   { return traversal->GetCurrUniqueVars(); }
 
   Expr Increment()

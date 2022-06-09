@@ -32,8 +32,7 @@ class NewTrav : public Traversal
 
   ExprFactory& efac;
 
-  ExprUSet uniqvars; // Per-candidate
-  ExprUMap uniqvardecls; // K: Sort, V: FDECL
+  UniqVarMap uniqvars; // Per-candidate
   unordered_map<Path, mpz_class> uniqvarnums; // Nicer unique numbers
   mpz_class lastuniqvarnum = -1;
 
@@ -78,7 +77,7 @@ class NewTrav : public Traversal
     {
       auto itr = uniqvarnums.find(path);
       assert(itr != uniqvarnums.end());
-      Expr uniqvar = mk<FAPP>(uniqvardecls.at(typeOf(root)),
+      Expr uniqvar = mk<FAPP>(CFGUtils::uniqueVarDecl(typeOf(root)),
         mkTerm(itr->second, efac));
       return ParseTree(root, uniqvar, false);
     }
@@ -316,12 +315,11 @@ class NewTrav : public Traversal
     }
     else if (gram.isUniqueVar(root))
     {
-      assert(uniqvarnums.count(path) == 0);
-      auto itr = uniqvarnums.emplace(path, ++lastuniqvarnum).first;
-      Expr uniqvar = mk<FAPP>(uniqvardecls.at(typeOf(root)),
+      auto itr = uniqvarnums.find(path);
+      if (itr == uniqvarnums.end())
+        itr = uniqvarnums.emplace(path, ++lastuniqvarnum).first;
+      Expr uniqvar = mk<FAPP>(CFGUtils::uniqueVarDecl(typeOf(root)),
         mkTerm(itr->second, efac));
-      bool isnewvar = uniqvars.insert(uniqvar).second;
-      assert(isnewvar);
       travpos.makedone();
       return ParseTree(root, uniqvar, false);
     }
@@ -809,6 +807,18 @@ class NewTrav : public Traversal
     return std::move(ret);
   }
 
+  void fillUniqVars(const ParseTree& pt)
+  {
+    if (gram.isUniqueVar(pt.data()) != 0)
+    {
+      bool isnewvar=uniqvars[pt.data()].insert(pt.children()[0].data()).second;
+      assert(isnewvar);
+    }
+    else
+      for (const ParseTree& child : pt.children())
+        fillUniqVars(child);
+  }
+
   void handleGramMod()
   {
     assert(0 && "NewTrav doesn't support modifying Grammar mid-traversal!");
@@ -840,13 +850,6 @@ class NewTrav : public Traversal
     mlp.reset(new ModListener([&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); }));
     bool ret = gram.addModListener(mlp);
     assert(ret);
-
-    for (const Expr& uniqvar : gram.uniqueVars)
-    {
-      Expr sort = typeOf(uniqvar);
-      uniqvardecls[sort] = mk<FDECL>(
-        mkTerm(string("Unique-Var"), efac), mk<INT_TY>(efac), sort);
-    }
   }
 
   virtual ~NewTrav()
@@ -871,7 +874,7 @@ class NewTrav : public Traversal
     return currmaxdepth;
   }
 
-  virtual const ExprUSet& GetCurrUniqueVars()
+  virtual const UniqVarMap& GetCurrUniqueVars()
   {
     return uniqvars;
   }

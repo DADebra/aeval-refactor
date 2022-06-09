@@ -155,7 +155,7 @@ class CoroTrav : public Traversal
   bool grammodified = false;
   TravParams params;
 
-  ExprUSet uniqvars; // Always empty
+  UniqVarMap uniqvars; // Always empty
 
   ParseTree nextcand; // Coroutines will destroy last cand once generated.
   ParseTree lastcand;
@@ -861,7 +861,7 @@ class CoroTrav : public Traversal
   }
 
   // Always empty
-  virtual const ExprUSet& GetCurrUniqueVars()
+  virtual const UniqVarMap& GetCurrUniqueVars()
   {
     return uniqvars;
   }

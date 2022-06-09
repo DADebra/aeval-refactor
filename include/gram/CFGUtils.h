@@ -21,7 +21,7 @@ class CFGUtils
 {
   static unordered_map<pair<Expr,VarType>,Expr>* varsNtNameCache;
   static unordered_map<Expr,Expr>* constsNtNameCache;
-  static unordered_map<Expr,Expr>* uniqueVarNtNameCache;
+  static unordered_map<Expr,Expr>* uniqueVarDeclCache;
   static int refcnt;
 
   void increment()
@@ -30,7 +30,7 @@ class CFGUtils
     {
       varsNtNameCache = new unordered_map<pair<Expr,VarType>,Expr>();
       constsNtNameCache = new ExprUMap();
-      uniqueVarNtNameCache = new ExprUMap();
+      uniqueVarDeclCache = new ExprUMap();
     }
     ++refcnt;
   }
@@ -44,8 +44,8 @@ class CFGUtils
       varsNtNameCache = NULL;
       delete constsNtNameCache;
       constsNtNameCache = NULL;
-      delete uniqueVarNtNameCache;
-      uniqueVarNtNameCache = NULL;
+      delete uniqueVarDeclCache;
+      uniqueVarDeclCache = NULL;
     }
   }
 
@@ -67,7 +67,7 @@ class CFGUtils
 
   static Expr varsNtName(Expr sort, VarType type);
   static Expr constsNtName(Expr sort);
-  static Expr uniqueVarNtName(Expr sort);
+  static Expr uniqueVarDecl(Expr sort); // 1-ary, Int argument
 
   static void noNtDefError(NT nt, NT root);
   static bool isEither(const Expr&);

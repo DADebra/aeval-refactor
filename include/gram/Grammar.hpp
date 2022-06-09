@@ -266,20 +266,13 @@ VarMap::mapped_type::iterator Grammar::delVar(VarMap::iterator itr1,
   return std::move(newitr);
 }
 
-Expr Grammar::addUniqueVar(Expr sort)
+bool Grammar::addUniqueVar(Expr var)
 {
-  Expr ret = CFGUtils::uniqueVarNtName(sort);
-  bool newvar = _uniqueVars.insert(ret).second;
+  bool newvar = _uniqueVars.insert(var).second;
   if (newvar)
     // I'm not really sure why you'd need to listen for this, but just in case.
     notifyListeners(ModClass::UNIQUE_VAR, ModType::ADD);
-  return ret;
-}
-
-template <typename Sort>
-Expr Grammar::addUniqueVar(ExprFactory& efac)
-{
-  return addUniqueVar(mk<Sort>(efac));
+  return newvar;
 }
 
 unordered_set<Expr>::iterator Grammar::delUniqueVar(
@@ -290,20 +283,13 @@ unordered_set<Expr>::iterator Grammar::delUniqueVar(
   return std::move(newitr);
 }
 
-bool Grammar::delUniqueVar(Expr sort)
+bool Grammar::delUniqueVar(Expr var)
 {
-  Expr var = CFGUtils::uniqueVarNtName(sort);
   auto itr = _uniqueVars.find(var);
   if (itr == _uniqueVars.end())
     return false;
   delUniqueVar(itr);
   return true;
-}
-
-template <typename Sort>
-bool Grammar::delUniqueVar(ExprFactory& efac)
-{
-  return delUniqueVar(CFGUtils::uniqueVarNtName(mk<Sort>(efac)));
 }
 
 bool Grammar::addModListener(std::shared_ptr<ModListener> listener)

@@ -109,13 +109,9 @@ class Grammar
 
   // Special variables which get a new instance each time they're used.
   // These need to be registered so the traversal knows to expand them.
-  Expr addUniqueVar(Expr sort);
-  template <typename Sort>
-  Expr addUniqueVar(ExprFactory& efac);
+  bool addUniqueVar(Expr var);
 
-  bool delUniqueVar(Expr sort);
-  template <typename Sort>
-  bool delUniqueVar(ExprFactory& efac);
+  bool delUniqueVar(Expr var);
   unordered_set<Expr>::iterator delUniqueVar(
     unordered_set<Expr>::const_iterator itr);
 

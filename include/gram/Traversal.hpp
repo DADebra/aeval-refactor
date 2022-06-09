@@ -8,6 +8,25 @@
 namespace ufo
 {
 
+struct uniqvarless
+{
+  bool operator()(const Expr& l, const Expr& r) const
+  {
+    assert(isOpX<FAPP>(l) && isOpX<FAPP>(r));
+    const string& lstr = getTerm<string>(l->left()->left());
+    const string& rstr = getTerm<string>(r->left()->left());
+    assert(lstr == rstr);
+
+    assert(l->arity() == 2 && r->arity() == 2);
+    assert(isOpX<MPZ>(l->right()) && isOpX<MPZ>(r->right()));
+    const mpz_class& lnum = getTerm<mpz_class>(l->right());
+    const mpz_class& rnum = getTerm<mpz_class>(r->right());
+    return lnum < rnum;
+  }
+};
+
+typedef unordered_map<Expr,set<Expr,uniqvarless>> UniqVarMap;
+
 class Traversal
 {
   public:
@@ -28,7 +47,9 @@ class Traversal
   virtual ParseTree GetCurrCand() = 0;
 
   // Returns the set of unique variables that appear in the current candidate.
-  virtual const ExprUSet& GetCurrUniqueVars() = 0;
+  // Key: Variable (added with 'Grammar::addUniqueVar')
+  // Value: Set of unique FAPPS that Key expands to.
+  virtual const UniqVarMap& GetCurrUniqueVars() = 0;
 
   // Increments the position of this traversal, returning the next candidate
   // (i.e. the candidate at the new position).
