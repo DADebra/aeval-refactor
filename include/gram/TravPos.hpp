@@ -271,6 +271,17 @@ class TravPos
     if (!inqueue())
       emptyqueue();
     makereadonly(); // done => readonly (we'll never increment it again)
+    // Additionally, none of our children will ever change
+    for (int i = 0; i < children_size; ++i)
+      if (children[i].owned() && children[i])
+        children[i]->makereadonly();
+    // Nor our queue items
+    for (int i = 0; i < queue_size; ++i)
+      if (queue[i].owned() && queue[i])
+        queue[i]->makereadonly();
+    // Shrink the queue to its real size
+    queue = (OwnedPtr<TravPos>*)realloc(queue, sizeof(OwnedPtr<TravPos>) * queue_size);
+    queue_cap = queue_size;
     state |= 2;
     state &= ~16;
   }

@@ -73,6 +73,8 @@ class ParseTree
 
   bool operator ==(const ParseTree& other) const
   {
+    if (!ptr && !other.ptr)
+      return true;
     if (!ptr || !other.ptr)
       return false;
     if (ptr->data != other.ptr->data)
