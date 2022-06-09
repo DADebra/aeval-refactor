@@ -124,7 +124,13 @@ class TravPos
   unsigned int queue_size = 0, queue_cap = 0;
   unsigned short children_size = 0;
   unsigned short _min = 0, val = -1;
-  uint8_t state = 0;
+  struct {
+    bool uninit : 1;
+    bool ro : 1;
+    bool done : 1;
+    bool inqueue : 1;
+    bool null : 1;
+  } state;
 
   void newchildren(unsigned short size)
   {
@@ -177,9 +183,13 @@ class TravPos
 
   public:
 
-  explicit TravPos(bool _done = false) : state(16) { if (_done) makedone(); }
+  explicit TravPos(bool _done = false) : state()
+  {
+    state.uninit = true;
+    if (_done) makedone();
+  }
 
-  TravPos(unsigned int __min, unsigned int limit)
+  TravPos(unsigned int __min, unsigned int limit) : state()
   {
     assert(__min < std::numeric_limits<unsigned short>::max());
     assert(limit < std::numeric_limits<unsigned short>::max());
@@ -188,7 +198,7 @@ class TravPos
       children[i] = OwnedPtr<TravPos>(true, nullptr);
   }
 
-  TravPos(const TravPos& copy)
+  TravPos(const TravPos& copy) : state()
   {
     copyother(copy, true);
   }
@@ -224,7 +234,7 @@ class TravPos
       copyother(*ropos, copyqueue);
       parent = ropos;
     }
-    state &= ~1;
+    state.ro = false;
   }
 
   TravPos(TravPos&& move) : _min(move._min), val(move.val), state(move.state),
@@ -259,13 +269,23 @@ class TravPos
     return *this;
   }
 
-  inline bool readonly() const { return state & 1; }
-  inline bool isdone() const { return state & 2; }
-  inline bool inqueue() const { return state & 4; }
-  inline bool isnull() const { return state & 8; }
-  inline bool isnew() const { return state & 16; } // Really 'uninitialized'
+  inline bool readonly() const { return state.ro; }
+  inline bool isdone() const { return state.done; }
+  inline bool inqueue() const { return state.inqueue; }
+  inline bool isnull() const { return state.null; }
+  inline bool isnew() const { return state.uninit; } // Really 'uninitialized'
 
-  inline void makereadonly() { state |= 1; }
+  inline void makereadonly()
+  {
+    state.ro = true;
+    for (int i = 0; i < children_size; ++i)
+      if (children[i].owned() && children[i])
+        children[i]->makereadonly();
+    for (int i = 0; i < queue_size; ++i)
+      if (queue[i].owned() && queue[i])
+        queue[i]->makereadonly();
+  }
+
   inline void makedone()
   {
     if (!inqueue())
@@ -282,19 +302,19 @@ class TravPos
     // Shrink the queue to its real size
     queue = (OwnedPtr<TravPos>*)realloc(queue, sizeof(OwnedPtr<TravPos>) * queue_size);
     queue_cap = queue_size;
-    state |= 2;
-    state &= ~16;
+    state.done = true;
+    state.uninit = false;
   }
-  inline void makeinqueue() { state |= 4; val = 0; }
+  inline void makeinqueue() { state.inqueue = true; val = 0; }
   inline void makenotinqueue()
   {
-    state &= ~4;
+    state.inqueue = false;
     val = _min;
     emptyqueue();
   }
   inline void makenull()
   {
-    state |= 8;
+    state.null = true;
     makedone();
     emptychildren();
     emptyqueue();
@@ -306,6 +326,7 @@ class TravPos
 
   inline void setmin(unsigned int newmin)
   {
+    assert(!state.ro);
     assert(newmin < std::numeric_limits<unsigned short>::max());
     _min = newmin;
   }
@@ -321,6 +342,7 @@ class TravPos
 
   void nextpos()
   {
+    assert(!state.ro);
     unsigned int __min = min();
     if (val < __min)
       val = __min;
@@ -334,6 +356,7 @@ class TravPos
 
   void prevpos()
   {
+    assert(!state.ro);
     unsigned int _limit = limit();
     if (val > _limit)
       val = _limit;
@@ -360,6 +383,7 @@ class TravPos
 
   inline TravPos& childat(int pos)
   {
+    assert(!state.ro);
     assert(pos < std::numeric_limits<unsigned short>::max());
     if (isdone() && pos >= children_size)
       pos = 0;
@@ -369,7 +393,7 @@ class TravPos
     else if (!child.owned())
       child.setptr(new TravPos(*child));
     child.setowned(true);
-    child->state &= ~1;
+    child->state.ro = false;
     return *child;
   }
 
@@ -392,9 +416,13 @@ class TravPos
 
   inline TravPos& queueat(unsigned int pos)
   {
+    assert(!state.ro);
     assert(queue[pos]);
     if (!queue[pos].owned())
+    {
       queue[pos] = OwnedPtr<TravPos>(true, new TravPos(*queue[pos]));
+      queue[pos]->state.ro = false;
+    }
     return *queue[pos];
   }
 

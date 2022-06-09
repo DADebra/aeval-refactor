@@ -705,7 +705,7 @@ class NewTrav : public Traversal
         assert(ret);
         bool unused = false;
         ParseTree getpt = std::move(gettrav(root,
-          travpos.queueat(travpos.pos()), currdepth,
+          constpos.queueat(travpos.pos()), currdepth,
           localqvars, currnt, np(path,Q,travpos.pos()), unused, false));
         assert(getpt == ret);
         return std::move(ret);
