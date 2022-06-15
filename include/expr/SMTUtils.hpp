@@ -18,6 +18,7 @@ namespace ufo
     ZSolver<EZ3> smt;
     bool can_get_model;
     ZSolver<EZ3>::Model* m;
+    Expr lastCand;
 
   public:
 
@@ -26,6 +27,16 @@ namespace ufo
 
     SMTUtils (ExprFactory& _efac, unsigned _to) :
       efac(_efac), z3(efac), smt (z3, _to), can_get_model(0), m(NULL) {}
+
+    void reset()
+    {
+      if (m)
+        delete m;
+      m = NULL;
+      can_get_model = false;
+      lastCand = NULL;
+      smt.reset();
+    }
 
     boost::tribool eval(Expr v, ZSolver<EZ3>::Model* m1)
     {
@@ -77,7 +88,6 @@ namespace ufo
       return conjoin (eqs, efac);
     }
 
-    Expr lastCand;
     Expr getModel()
     {
       if (!can_get_model)
