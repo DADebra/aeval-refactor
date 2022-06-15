@@ -3301,11 +3301,24 @@ namespace expr
           {
             return bvsort (width(typeOf(v->arg(0))) + width(typeOf(v->arg(1))), v->efac ());
           }
-          if (isOpX<BEXTRACT>(v) || isOpX<BREPEAT>(v) ||
-              isOpX<INT2BV>(v) || isOpX<BV2INT>(v))
+          if (isOpX<BEXTRACT>(v))
           {
-            assert(0 && "not implemented");
+            int high = getTerm<unsigned>(v->arg(0)),
+                low = getTerm<unsigned>(v->arg(1));
+            int newwidth = high - low;
+            newwidth = newwidth < 0 ? -newwidth : newwidth;
+            return bvsort(newwidth, v->efac());
           }
+          if (isOpX<BREPEAT>(v))
+          {
+            unsigned coef = getTerm<unsigned>(v->arg(0));
+            return bvsort(coef * width(typeOf(v->arg(1))), v->efac());
+          }
+          if (isOpX<INT2BV>(v))
+          {
+            return bvsort(getTerm<unsigned>(v->arg(0)), v->efac());
+          }
+          if (isOpX<BV2INT>(v)) { return mk<INT_TY>(v->efac()); }
 
           return typeOf(v->left());
         }
