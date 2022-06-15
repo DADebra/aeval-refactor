@@ -4621,7 +4621,11 @@ namespace ufo
       if (isBoolConst(el))
         lits.insert(exp);
       else
-        getLiterals(mkNeg(el), lits, splitEqs);
+      {
+        Expr neg = mkNeg(el);
+        if (neg != exp)
+          getLiterals(neg, lits, splitEqs);
+      }
     }
     else if (isOpX<IMPL>(exp))
     {
