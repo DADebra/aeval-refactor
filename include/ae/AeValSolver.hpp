@@ -32,6 +32,7 @@ namespace ufo
     ZSolver<EZ3> smt;
     SMTUtils u;
 
+    // NOTE: Update definition of 'reset()' if adding fields!
     unsigned partitioning_size;
     ExprVector projections;
     ExprVector instantiations;
@@ -44,10 +45,18 @@ namespace ufo
     bool skol;
     int debug;
     unsigned fresh_var_ind;
+    unique_ptr<AeValSolver> subae;
+
+    void fillVars()
+    {
+      filter (boolop::land(s,t), bind::IsConst (), inserter (stVars, stVars.begin()));
+      sVars = stVars;
+      minusSets(stVars, v);
+    }
 
   public:
 
-    AeValSolver (Expr _s, Expr _t, ExprSet &_v, int _debug, bool _skol) :
+    AeValSolver (Expr _s, Expr _t, const ExprSet &_v, int _debug, bool _skol) :
       s(_s), t(_t), v(_v),
       efac(s->getFactory()),
       z3(efac),
@@ -56,11 +65,36 @@ namespace ufo
       fresh_var_ind(0),
       partitioning_size(0),
       skol(_skol),
-      debug(_debug)
+      debug(_debug),
+      subae(nullptr)
     {
-      filter (boolop::land(s,t), bind::IsConst (), inserter (stVars, stVars.begin()));
-      sVars = stVars;
-      minusSets(stVars, v);
+      fillVars();
+    }
+
+    void reset (Expr _s, Expr _t, const ExprSet &_v, int _debug, bool _skol)
+    {
+      s = _s; t = _t; debug = _debug; skol = _skol;
+      sVars.clear(); stVars.clear();
+      modelInvalid.clear(); separateSkols.clear();
+      projections.clear(); instantiations.clear();
+      skolMaps.clear(); someEvals.clear(); skolemConstraints.clear();
+      sensitiveVars.clear(); bestIndexes.clear(); doneIndexes.clear();
+      partitioning_size = 0;
+      fresh_var_ind = 0;
+      smt.reset(); u.reset();
+
+      if (subae)
+        subae->reset(NULL, NULL, ExprSet(), 0, false);
+
+      fillVars();
+    }
+
+    void subaereset (Expr _s, Expr _t, const ExprSet &_v, int _debug, bool _skol)
+    {
+      if (!subae)
+        subae.reset(new AeValSolver(_s, _t, _v, _debug, _skol));
+      else
+        subae->reset(_s, _t, _v, _debug, _skol);
     }
 
     void splitDefs (ExprMap &m1, ExprMap &m2, int curCnt = 0)
@@ -877,16 +911,16 @@ namespace ufo
         outs() << "Post set:\n";
         pprint(post);
       }
-      AeValSolver ae(disjoin(pre, efac), conjoin(post, efac), quant, false, false);
+      subaereset(disjoin(pre, efac), conjoin(post, efac), quant, false, false);
 
-      if (!ae.solve())
+      if (!subae->solve())
       {
         if (bestIndexes.size() < indexes.size()) bestIndexes = indexes;
         return;
       }
       else
       {
-        Expr subs = ae.getValidSubset(false);
+        Expr subs = subae->getValidSubset(false);
         if(debug >= 3) outs() << "subset: " << subs << "\n";
         if (isOpX<FALSE>(subs))
         {
@@ -957,9 +991,9 @@ namespace ufo
           outs() << "Post set:\n";
           pprint(post);
         }
-      AeValSolver ae(disjoin(pre, efac), conjoin(post, efac), quant, false, false);
+      subaereset(disjoin(pre, efac), conjoin(post, efac), quant, false, false);
 
-      if (!ae.solve())
+      if (!subae->solve())
       {
         if (bestIndexes.size() < indexes.size()) bestIndexes = indexes;
         for (int i = 0; i < partitioning_size; i++)
