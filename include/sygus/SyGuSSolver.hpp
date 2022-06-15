@@ -11,7 +11,10 @@ namespace ufo
 using namespace std;
 using namespace boost;
 
-const int TOTALMAXRECDEPTH = 5; // The absolute deepest to go before terminating
+// The maximum partitioning size at which to compact the produced formula
+//  (since the compaction algorithm currently scales with the partitioning size)
+// Determined empirically
+const int MAX_ITERS_FOR_COMPACT = 14;
 
 class SyGuSSolver
 {
@@ -346,8 +349,11 @@ class SyGuSSolver
     }
     else
     {
+      // TODO: Make option?
+      // TODO: Disable when AE-VAL's compaction is better?
+      bool compact = ae.getPartitioningSize() <= MAX_ITERS_FOR_COMPACT;
+      Expr funcs_conj = ae.getSkolemFunction(compact);
       // AE-VAL returns (= fname def)
-      Expr funcs_conj = ae.getSkolemFunction(true);
       if (isOpX<EQ>(funcs_conj))
         // Just for ease of use; WON'T MARSHAL
         funcs_conj = mk<AND>(funcs_conj);
@@ -378,7 +384,7 @@ class SyGuSSolver
     TravParams tparams;
     tparams.SetDefaults();
     // TODO: To be changed when NewTrav is quicker and more memory efficient.
-    tparams.method = TPMethod::CORO;
+    tparams.method = TPMethod::NEWTRAV;
     tparams.type = TPType::STRIPED;
     tparams.prio = TPPrio::BFS;
     tparams.dir = TPDir::RTL;
