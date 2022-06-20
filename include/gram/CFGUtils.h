@@ -19,7 +19,7 @@ const int NUMEITHERS = 100;
 // Not thread-safe
 class CFGUtils
 {
-  static unordered_map<pair<Expr,VarType>,Expr>* varsNtNameCache;
+  static unordered_map<Expr,Expr>* varsNtNameCache;
   static unordered_map<Expr,Expr>* constsNtNameCache;
   static unordered_map<Expr,Expr>* uniqueVarDeclCache;
   static int refcnt;
@@ -28,7 +28,7 @@ class CFGUtils
   {
     if (refcnt == 0)
     {
-      varsNtNameCache = new unordered_map<pair<Expr,VarType>,Expr>();
+      varsNtNameCache = new unordered_map<Expr,Expr>();
       constsNtNameCache = new ExprUMap();
       uniqueVarDeclCache = new ExprUMap();
     }
@@ -65,7 +65,7 @@ class CFGUtils
   // To uppercase, translate e.g. (Array Int Int) to $ARRAY_INT_INT$
   static string sortName(Expr sort);
 
-  static Expr varsNtName(Expr sort, VarType type);
+  static Expr varsNtName(Expr sort);
   static Expr constsNtName(Expr sort);
   static Expr uniqueVarDecl(Expr sort); // 1-ary, Int argument
 

@@ -27,6 +27,8 @@ class Grammar
   ConstMap _consts;
   ExprUSet _constsCache;
 
+  ExprUMap _strcache; // For constraints
+
   // Special variables which get a new instance each time they're used
   unordered_set<Expr> _uniqueVars;
 
@@ -102,8 +104,8 @@ class Grammar
   ConstMap::mapped_type::iterator delConst(ConstMap::iterator itr1,
     ConstMap::mapped_type::const_iterator itr2);
 
-  bool addVar(Var var, mpq_class prio = 1);
-  bool delVar(Var var);
+  bool addVar(Expr var, mpq_class prio = 1);
+  bool delVar(Expr var);
   VarMap::mapped_type::iterator delVar(VarMap::iterator itr1,
     VarMap::mapped_type::const_iterator itr2);
 
@@ -163,7 +165,7 @@ class Grammar
     _root(g._root),_nts(g._nts),_prods(g._prods),
     _priomap(g._priomap),_vars(g._vars),_consts(g._consts),
     _varsCache(g._varsCache),_constsCache(g._constsCache),
-    _uniqueVars(g._uniqueVars),
+    _uniqueVars(g._uniqueVars),_strcache(g._strcache),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
     vars(_vars),consts(_consts),priomap(_priomap),graph(_graph),
     uniqueVars(_uniqueVars)
@@ -176,7 +178,7 @@ class Grammar
     _prods(std::move(g._prods)), _priomap(std::move(g._priomap)),
     _vars(std::move(g._vars)),_consts(std::move(g._consts)),
     _varsCache(std::move(g._varsCache)),_constsCache(std::move(g._constsCache)),
-    _uniqueVars(std::move(g._uniqueVars)),
+    _uniqueVars(std::move(g._uniqueVars)),_strcache(std::move(g._strcache)),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
     vars(_vars),consts(_consts),priomap(_priomap),graph(_graph),
     uniqueVars(_uniqueVars)
@@ -192,20 +194,9 @@ class Grammar
   { this->~Grammar(); new (this) Grammar(std::move(g)); return *this; }
 
   friend class CFGUtils;
+  friend class Constraint;
 };
 
-}
-
-namespace std
-{
-template<>
-struct hash<ufo::VarType>
-{
-    size_t operator()(const ufo::VarType& vt) const
-    {
-        return std::hash<long>()((long)vt);
-    }
-};
 }
 
 #endif

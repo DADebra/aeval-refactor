@@ -6,7 +6,7 @@ namespace ufo
 
 typedef Expr NT;
 
-enum class VarType { NONE, UNK, INC, DEC, CONST };
+/*enum class VarType { NONE, UNK, INC, DEC, CONST };
 
 struct Var {
   VarType type;
@@ -19,14 +19,14 @@ struct Var {
   {
     return expr;
   }
-};
+};*/
 
 struct varless
 {
-  bool operator()(const Var& l, const Var& r) const
+  bool operator()(const Expr& l, const Expr& r) const
   {
-    string lstr = lexical_cast<string>(fname(l.expr)->left());
-    string rstr = lexical_cast<string>(fname(r.expr)->left());
+    string lstr = lexical_cast<string>(fname(l)->left());
+    string rstr = lexical_cast<string>(fname(r)->left());
     return lstr < rstr;
   }
 };
@@ -47,7 +47,7 @@ struct constless
   }
 };
 
-typedef unordered_map<Expr, set<Var, varless>> VarMap;
+typedef unordered_map<Expr, set<Expr, varless>> VarMap;
 typedef unordered_map<Expr, set<Expr, constless>> ConstMap;
 
 // Class of modification made to the grammar
@@ -58,5 +58,17 @@ enum class ModType  { NONE, ADD, DEL, MOD };
 typedef function<void(ModClass,ModType)> ModListener;
 
 }
+
+/*namespace std
+{
+template<>
+struct hash<ufo::VarType>
+{
+    size_t operator()(const ufo::VarType& vt) const
+    {
+        return std::hash<long>()((long)vt);
+    }
+};
+}*/
 
 #endif

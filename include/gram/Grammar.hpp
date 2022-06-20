@@ -214,27 +214,23 @@ ConstMap::mapped_type::iterator Grammar::delConst(
   return std::move(newitr);
 }
 
-bool Grammar::addVar(Var var, mpq_class prio)
+bool Grammar::addVar(Expr var, mpq_class prio)
 {
   bool ret = _vars[bind::typeOf(var)].insert(var).second;
   if (ret)
   {
-    _varsCache.insert(var.expr);
-    Expr varsTypeNt = CFGUtils::varsNtName(bind::typeOf(var), var.type);
-    Expr varsAllNt = CFGUtils::varsNtName(bind::typeOf(var), VarType::NONE);
-    for (const auto &varsNt : { varsTypeNt, varsAllNt })
+    _varsCache.insert(var);
+    Expr varsNt = CFGUtils::varsNtName(bind::typeOf(var));
+    if (_prods.count(varsNt) == 0)
+      _prods[varsNt].push_back(var);
+    else
     {
-      if (_prods.count(varsNt) == 0)
-        _prods[varsNt].push_back(var);
-      else
-      {
-        varless vl;
-        auto itr = _prods[varsNt].begin();
-        for (; itr != _prods[varsNt].end(); ++itr) if (!vl(*itr, var)) break;
-        _prods[varsNt].insert(itr, var);
-      }
-      _priomap[varsNt][var] = prio;
+      varless vl;
+      auto itr = _prods[varsNt].begin();
+      for (; itr != _prods[varsNt].end(); ++itr) if (!vl(*itr, var)) break;
+      _prods[varsNt].insert(itr, var);
     }
+    _priomap[varsNt][var] = prio;
   }
   if (ret)
   {
@@ -244,7 +240,7 @@ bool Grammar::addVar(Var var, mpq_class prio)
   return ret;
 }
 
-bool Grammar::delVar(Var var)
+bool Grammar::delVar(Expr var)
 {
   auto itr1 = _vars.find(bind::typeOf(var));
   if (itr1 == _vars.end())
@@ -259,8 +255,8 @@ VarMap::mapped_type::iterator Grammar::delVar(VarMap::iterator itr1,
   VarMap::mapped_type::const_iterator itr2)
 {
   auto newitr = itr1->second.erase(itr2);
-  _varsCache.erase(itr2->expr);
-  bool delret = delProd(CFGUtils::varsNtName(itr1->first, itr2->type), *itr2);
+  _varsCache.erase(*itr2);
+  bool delret = delProd(CFGUtils::varsNtName(itr1->first), *itr2);
   assert(delret);
   notifyListeners(ModClass::VAR, ModType::DEL);
   return std::move(newitr);
