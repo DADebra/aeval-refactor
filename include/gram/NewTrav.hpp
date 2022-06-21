@@ -995,7 +995,7 @@ class NewTrav : public Traversal
       currmaxdepth++;
     }
     uniqvars.clear();
-    lastcand = std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root, rootpath, ntparams[gram.root], rootpath, false));
+    lastcand = std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root, rootpath, gparams, rootpath, false));
     lastcand.fixchildren();
     bool unused = false;
     if (lastcand)
