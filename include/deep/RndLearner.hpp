@@ -206,7 +206,12 @@ namespace ufo
               }
             }
             curCandidates[ind2] = mk<TRUE>(m_efac);
-            return checkCandidates();
+            bool res = false;
+            for (auto &cand : curCandidates) res = !isOpX<TRUE>(cand);
+            if (!res)
+              return false;
+            else
+              return checkCandidates();
           }
         }
       }
