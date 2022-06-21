@@ -816,6 +816,7 @@ class CoroTrav : public Traversal
           std::bind(&CoroTrav::getNextCandTrav_fn, this,
           std::placeholders::_1, gram.root, currdepth, qvars, currnt)));
     nextcand = std::move(getNextCandTrav->get());
+    nextcand.fixchildren();
     (*getNextCandTrav)();
   }
 
@@ -892,6 +893,7 @@ class CoroTrav : public Traversal
       return lastcand;
     }
     nextcand = std::move(getNextCandTrav->get());
+    nextcand.fixchildren();
     (*getNextCandTrav)();
     return lastcand;
   }

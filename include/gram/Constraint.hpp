@@ -96,14 +96,14 @@ optional<cpp_int> Constraint::evaluateArithExpr(Expr arith, const PtExpMap& expm
   auto aritharg = [&] (int i) -> Expr
   {
     if (expmap.count(arith->arg(i)) != 0)
-      return expmap.at(arith->arg(i)).data();
+      return expmap.at(arith->arg(i)).toExpr();
     else
       return arith->arg(i);
   };
   if (isOpX<FAPP>(arith))
   {
     if (expmap.count(arith) != 0)
-      return evaluateArithExpr(expmap.at(arith).data(), expmap, se);
+      return evaluateArithExpr(expmap.at(arith).toExpr(), expmap, se);
     else
       return none;
   }
@@ -157,7 +157,7 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
   auto cmparg = [&] (int i) -> Expr
   {
     if (expmap.count(cmp->arg(i)) != 0)
-      return expmap.at(cmp->arg(i)).data();
+      return expmap.at(cmp->arg(i)).toExpr();
     else
       return cmp->arg(i);
   };
@@ -273,7 +273,7 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
         return true;
 
       bool firstinsert = seenexpans.count(key) == 0;
-      bool res = seenexpans[key].insert(expmap.at(lhs).data()).second;
+      bool res = seenexpans[key].insert(expmap.at(lhs).toExpr()).second;
       return conn == "equal" ? firstinsert || !res : res;
     }
     else if (conn == "equal_under" || conn == "distinct_under")
@@ -295,7 +295,7 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
           return true;
         pair<Expr,ParseTree> key = make_pair(rhs, parent);
         bool firstinsert = seenexpans.count(key) == 0;
-        bool res = seenexpans[key].insert(rhsexp.data()).second;
+        bool res = seenexpans[key].insert(rhsexp.toExpr()).second;
         return conn == "equal_under" ? firstinsert || !res : res;
       }
 
@@ -322,9 +322,9 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
             continue;
           bool res;
           if (conn == "equal_under")
-            res = exp1.data() == exp2.data();
+            res = exp1.toExpr() == exp2.toExpr();
           else
-            res = exp1.data() != exp2.data();
+            res = exp1.toExpr() != exp2.toExpr();
           if (!res)
             return false;
         }

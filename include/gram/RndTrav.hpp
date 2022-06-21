@@ -212,6 +212,7 @@ class RndTrav : public Traversal
     if (grammodified) handleGramMod();
     ParseTree ret = lastcand;
     lastcand = getRandCand(gram.root, 0, NULL, gram.root);
+    lastcand.fixchildren();
     return ret;
   }
 };

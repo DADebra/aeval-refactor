@@ -160,6 +160,15 @@ class ParseTree
     });
   }
 
+  // Fully expands each NT: func(NT, NT.toExpr())
+  void foreachFullExpansion(const function<void(const Expr&,const Expr&)>& func) const
+  {
+    return foreachPt([&] (const Expr& nt, const ParseTree& pt)
+    {
+      return func(nt, pt.toExpr());
+    });
+  }
+
   void print(ostream& os, int depth = 0) const
   {
     for (int i = 0; i < depth; ++i) os << "  ";

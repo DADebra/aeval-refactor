@@ -988,6 +988,7 @@ class NewTrav : public Traversal
     }
     uniqvars.clear();
     lastcand = std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root, rootpath, rootpath, false));
+    lastcand.fixchildren();
     bool unused = false;
     if (lastcand)
       fillUniqVars(lastcand);
