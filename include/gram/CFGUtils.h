@@ -76,11 +76,17 @@ class CFGUtils
   static ExprUSet getQVars(const Grammar&);
   static string toSyGuS(Grammar&, EZ3&);
 
-  static TPMethod strtogenmethod(const char* methodstr);
+  static TPMethod strtogenmethod(const char* str);
   static TPDir strtotravdir(const char* str);
   static TPOrder strtotravord(const char* str);
   static TPType strtotravtype(const char* str);
   static TPPrio strtotravprio(const char* str);
+
+  static TPMethod strtogenmethod(string str) { return strtogenmethod(str.c_str()); }
+  static TPDir strtotravdir(string str) { return strtotravdir(str.c_str()); }
+  static TPOrder strtotravord(string str) { return strtotravord(str.c_str()); }
+  static TPType strtotravtype(string str) { return strtotravtype(str.c_str()); }
+  static TPPrio strtotravprio(string str) { return strtotravprio(str.c_str()); }
 };
 
 }

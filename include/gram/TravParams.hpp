@@ -20,6 +20,7 @@ struct TravParams
   TPPrio prio = TPPrio::NONE;
   boost::tribool iterdeepen = indeterminate;
   int maxrecdepth = -2;
+  boost::tribool propagate = indeterminate;
 
   TravParams() {}
 
@@ -30,23 +31,32 @@ struct TravParams
   {
     return method == oth.method && dir == oth.dir && order == oth.order &&
       type == oth.type && prio == oth.prio && bool(iterdeepen == oth.iterdeepen) &&
-      maxrecdepth == oth.maxrecdepth;
+      maxrecdepth == oth.maxrecdepth && bool(propagate == oth.propagate);
   }
   bool operator!=(const TravParams& oth)
   {
     return method != oth.method || dir != oth.dir || order != oth.order ||
       type != oth.type || prio != oth.prio || bool(iterdeepen != oth.iterdeepen) ||
-      maxrecdepth != oth.maxrecdepth;
+      maxrecdepth != oth.maxrecdepth || bool(propagate != oth.propagate);
+  }
+
+  void CopyIfUnset(const TravParams& oth)
+  {
+    if (method == TPMethod::NONE)   method = oth.method;
+    if (dir == TPDir::NONE)         dir = oth.dir;
+    if (order == TPOrder::NONE)     order = oth.order;
+    if (type == TPType::NONE)       type = oth.type;
+    if (prio == TPPrio::NONE)       prio = oth.prio;
+    if (indeterminate(iterdeepen))  iterdeepen = oth.iterdeepen;
+    if (maxrecdepth == -2)          maxrecdepth = oth.maxrecdepth;
+    if (indeterminate(propagate))   propagate = oth.propagate;
   }
 
   void SetDefaults()
   {
-    if (method == TPMethod::NONE) method = TPMethod::NEWTRAV;
-    if (dir == TPDir::NONE)       dir = TPDir::LTR;
-    if (order == TPOrder::NONE)   order = TPOrder::FOR;
-    if (type == TPType::NONE)     type = TPType::STRIPED;
-    if (prio == TPPrio::NONE)     prio = TPPrio::BFS;
-    if (indeterminate(iterdeepen)) iterdeepen = false;
+    CopyIfUnset(TravParams(TPMethod::NEWTRAV, TPDir::LTR, TPOrder::FOR,
+      TPType::STRIPED, TPPrio::BFS, false, 1));
+    propagate = true;
     if (maxrecdepth == -2)
     {
       if (iterdeepen) maxrecdepth = -1;
@@ -54,6 +64,8 @@ struct TravParams
     }
   }
 };
+
+typedef unordered_map<Expr,TravParams> NTParamMap;
 }
 
 #endif

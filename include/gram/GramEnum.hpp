@@ -36,7 +36,8 @@ class GramEnum
   Grammar& gram;
 
   Traversal *traversal = NULL;
-  TravParams params;
+  TravParams globalparams;
+  NTParamMap ntparams;
 
   ParseTree lastpt;
   Expr lastexpr;
@@ -65,6 +66,14 @@ class GramEnum
     return ret;
   }
 
+  NTParamMap compositeParams()
+  {
+    NTParamMap ret = ntparams;
+    for (const Expr& nt : gram.nts)
+      ret[nt].CopyIfUnset(globalparams);
+    return std::move(ret);
+  }
+
   void gramReset()
   {
     travReset();
@@ -90,16 +99,17 @@ class GramEnum
       traversal = NULL;
       travReset();
     }
-    switch (params.method)
+    NTParamMap compparams = std::move(compositeParams());
+    switch (globalparams.method)
     {
       case TPMethod::RND:
-        traversal = new RndTrav(gram, params);
+        traversal = new RndTrav(gram, globalparams, compparams);
         break;
       case TPMethod::CORO:
-        traversal = new CoroTrav(gram, params);
+        traversal = new CoroTrav(gram, globalparams);
         break;
       case TPMethod::NEWTRAV:
-        traversal = new NewTrav(gram, params,
+        traversal = new NewTrav(gram, globalparams, compparams,
           [&] (const Expr& ei, const Expr& exp)
           { return shoulddefer(gram, ei, exp); });
         break;
@@ -140,7 +150,7 @@ class GramEnum
     gram(_gram), simplify(_simplify), debug(_debug)
   {
     if (_params)
-      SetParams(*_params);
+      SetParams(*_params, NTParamMap());
   }
   ~GramEnum()
   {
@@ -160,26 +170,27 @@ class GramEnum
 
   void Restart()
   {
-    if (params.method != TPMethod::NONE)
+    if (globalparams.method != TPMethod::NONE)
       initTraversal();
   }
 
   const Grammar& GetGrammar() const { return gram; }
 
-  void SetParams(TravParams _params)
+  void SetParams(const TravParams &_params, const NTParamMap &_ntparams)
   {
-    bool needInitTrav = params != _params;
-    TPMethod oldmeth = params.method;
-    params = _params;
-    if (params.iterdeepen && !gram.isInfinite())
+    bool needInitTrav = globalparams != _params;
+    TPMethod oldmeth = globalparams.method;
+    globalparams = _params;
+    ntparams = _ntparams;
+    if (globalparams.iterdeepen && !gram.isInfinite())
     {
       if (debug > 2)
         outs() << "NOTE: Finite grammar but iterative deepening enabled. Disabling iterative deepening (as it does nothing here)" << endl;
-      params.iterdeepen = false;
+      globalparams.iterdeepen = false;
     }
-    if (params.maxrecdepth != -2 && !gram.isInfinite())
+    if (globalparams.maxrecdepth != -2 && !gram.isInfinite())
     {
-      params.maxrecdepth = 0;
+      globalparams.maxrecdepth = 0;
       if (debug > 2)
         outs() << "NOTE: Finite grammar but maxrecdepth > 0. Setting maxrecdepth = 0 (as it does nothing here)" << endl;
     }
@@ -192,9 +203,9 @@ class GramEnum
     }
   }
 
-  TravParams GetParams() const
+  TravParams GetGlobalParams() const
   {
-    return params;
+    return globalparams;
   }
 
   bool IsDone() const

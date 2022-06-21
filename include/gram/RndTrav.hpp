@@ -19,7 +19,8 @@ class RndTrav : public Traversal
 
   Grammar &gram;
   bool grammodified = false;
-  TravParams params;
+  TravParams gparams;
+  NTParamMap ntparams;
 
   ParseTree lastcand;
 
@@ -101,7 +102,7 @@ class RndTrav : public Traversal
         int randindex = distmap[root](randgenerator);
         Expr prod = gram.prods.at(root)[randindex];
         if (gram.isRecursive(prod, root) &&
-            currdepth == params.maxrecdepth)
+            currdepth == gparams.maxrecdepth)
           continue;
         int newdepth = gram.isRecursive(prod, root) ?
                         currdepth + 1 : currdepth;
@@ -167,20 +168,20 @@ class RndTrav : public Traversal
 
   public:
 
-  RndTrav(Grammar &_gram, const TravParams& tp) : gram(_gram), params(tp),
-    efac(gram.root->efac())
+  RndTrav(Grammar &_gram, const TravParams& gp, const NTParamMap& np) :
+    gram(_gram), gparams(gp), ntparams(np), efac(gram.root->efac())
   {
-    if (params.iterdeepen)
+    if (gparams.iterdeepen)
     {
       errs() << "Warning: Random traversal doesn't support iterative deepening. Ignoring and starting at maximum recursion depth." << endl;
-      if (params.maxrecdepth == -1)
+      if (gparams.maxrecdepth == -1)
       {
-        params.maxrecdepth = -2;
-        params.SetDefaults();
+        gparams.maxrecdepth = -2;
+        gparams.SetDefaults();
       }
     }
     else
-      assert(params.maxrecdepth >= 0);
+      assert(gparams.maxrecdepth >= 0);
     mlp.reset(new ModListener(
       [&] (ModClass cl, ModType ty) { return onGramMod(cl, ty); }));
     bool ret = gram.addModListener(mlp);
@@ -199,7 +200,7 @@ class RndTrav : public Traversal
 
   virtual bool IsDepthDone() { return false; }
 
-  virtual int GetCurrDepth() { return params.maxrecdepth; }
+  virtual int GetCurrDepth() { return gparams.maxrecdepth; }
 
   virtual ParseTree GetCurrCand() { return lastcand; }
 

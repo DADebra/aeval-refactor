@@ -43,7 +43,8 @@ namespace ufo
     // Stored for later
     VarMap vars, othervars;
     ConstMap consts;
-    TravParams tparams;
+    TravParams globalparams;
+    NTParamMap ntparams;
     unordered_map<Expr, unordered_map<VarType, VarMap::mapped_type>> vars_analyzed;
 
     // Whether to print debugging information or not.
@@ -143,10 +144,10 @@ namespace ufo
     void setParams(TravParams _params)
     {
       assert(!initialized);
-      tparams = _params;
+      globalparams = _params;
     }
 
-    TravParams getParams() { return tparams; }
+    TravParams getParams() { return globalparams; }
 
     // Parse the grammar file. Must be called after addVar(s).
     void initialize(string gram_file, string inv_fname, bool _b4simpl)
@@ -217,7 +218,7 @@ namespace ufo
         }
 
       initialized = true;
-      gramenum.SetParams(tparams);
+      gramenum.SetParams(globalparams, ntparams);
     }
 
     void printSygusGram()
@@ -245,6 +246,8 @@ namespace ufo
     }
 
     private:
+    bool etob(Expr e) { return isOpX<TRUE>(e); }
+
     void parseGramFile(string gram_file, string inv_fname)
     {
       // gram_file will be empty if we don't pass `--grammar` option
@@ -258,6 +261,23 @@ namespace ufo
 	// The provided grammar, plus variable definitions and special
 	//   variables that we define.
 	ostringstream aug_gram;
+
+        // Generate declarations for the `travopt` function
+        aug_gram << "(declare-sort TravDir 0)\n";
+        aug_gram << "(declare-sort TravOrder 0)\n";
+        aug_gram << "(declare-sort TravType 0)\n";
+        aug_gram << "(declare-sort TravPrio 0)\n";
+
+        // Generate traversal options
+        aug_gram << "(declare-fun ltr () TravDir)\n";
+        aug_gram << "(declare-fun rtl () TravDir)\n";
+        aug_gram << "(declare-fun forward () TravOrder)\n";
+        aug_gram << "(declare-fun reverse () TravOrder)\n";
+        aug_gram << "(declare-fun ordered () TravType)\n";
+        aug_gram << "(declare-fun striped () TravType)\n";
+        aug_gram << "(declare-fun sfs () TravPrio)\n";
+        aug_gram << "(declare-fun bfs () TravPrio)\n";
+        aug_gram << "(declare-fun dfs () TravPrio)\n";
 
 	// Which sorts we've already generated eithers and *_VARS for.
 	ExprSet donesorts;
@@ -278,6 +298,10 @@ namespace ufo
 	      }
 	    };
 	    aug_gram << "(declare-fun either ( ";
+	    gensorts();
+	    aug_gram << ") " << sort_smt << ")\n";
+
+	    aug_gram << "(declare-fun either_inorder ( ";
 	    gensorts();
 	    aug_gram << ") " << sort_smt << ")\n";
 
@@ -318,6 +342,12 @@ namespace ufo
 
 	  // Generate binary `under` constraint declarations
 	  aug_gram << "(declare-fun under (String "<<sort_smt<<") Bool)\n";
+
+          // Generate traversal option declarations
+          aug_gram << "(declare-fun trav_direction ("<<sort_smt<<" TravDir Bool) Bool)\n";
+          aug_gram << "(declare-fun trav_order ("<<sort_smt<<" TravOrder Bool) Bool)\n";
+          aug_gram << "(declare-fun trav_type ("<<sort_smt<<" TravType Bool) Bool)\n";
+          aug_gram << "(declare-fun trav_priority ("<<sort_smt<<" TravPrio Bool) Bool)\n";
 	};
 
         // Generate declarations for the standard sorts
@@ -443,7 +473,8 @@ namespace ufo
 	      if (rfname == "prio")
 		gram->addProd(newnt, prods->right(),
 		  getTerm<mpq_class>(prods->last()));
-	      else if (rfname == "either")
+	      else if (rfname == "either" || rfname == "either_inorder")
+              {
 		for (int i = 1; i < prods->arity(); ++i)
 		{
 		  Expr prod = prods->arg(i);
@@ -458,6 +489,12 @@ namespace ufo
 		      gram->addProd(newnt, prod);
 		  }
 		}
+                if (rfname == "either_inorder")
+                {
+                  ntparams[newnt].type = TPType::ORDERED;
+                  ntparams[newnt].propagate = false;
+                }
+              }
 	      else
 		gram->addProd(newnt, prods);
 	    }
@@ -489,6 +526,32 @@ namespace ufo
 	      };
 	      visitExpr(ex->last());
 	    }
+            else if (ename == "trav_direction")
+            {
+              ntparams[ex->arg(1)].dir = CFGUtils::strtotravdir(getTerm<string>(ex->arg(2)->left()->left()));
+              ntparams[ex->arg(1)].propagate = etob(ex->arg(3));
+            }
+            else if (ename == "trav_order")
+            {
+              ntparams[ex->arg(1)].order = CFGUtils::strtotravord(getTerm<string>(ex->arg(2)->left()->left()));
+              ntparams[ex->arg(1)].propagate = etob(ex->arg(3));
+            }
+            else if (ename == "trav_type")
+            {
+              ntparams[ex->arg(1)].type = CFGUtils::strtotravtype(getTerm<string>(ex->arg(2)->left()->left()));
+              ntparams[ex->arg(1)].propagate = etob(ex->arg(3));
+            }
+            else if (ename == "trav_priority")
+            {
+              ntparams[ex->arg(1)].prio = CFGUtils::strtotravprio(getTerm<string>(ex->arg(2)->left()->left()));
+              ntparams[ex->arg(1)].propagate = etob(ex->arg(3));
+            }
+            else
+            {
+              errs() << "Unknown top-level assertion \"" << z3.toSmtLib(ex) <<
+                "\"" << endl;
+              exit(1);
+            }
 	  }
 	}
       }
