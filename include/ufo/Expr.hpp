@@ -2158,8 +2158,9 @@ namespace expr
       inline Expr adTy (Expr name) {return mk<AD_TY> (name);}
       inline Expr arrayTy (Expr indexTy, Expr valTy)
       {return mk<ARRAY_TY> (indexTy, valTy);}
-
-      inline Expr arrayIndexTy (Expr a) {return a->left ();}
+      inline Expr unintTy (Expr name) {return mk<UNINT_TY> (name);}
+      
+      inline Expr arrayIndexTy (Expr a) {return a->left ();} 
       inline Expr arrayValTy (Expr a) {return a->right ();}
     }
   }
@@ -2237,8 +2238,8 @@ namespace expr
       { return var (name, mk<BOOL_TY>(name->efac ())); }
       inline Expr charVar (Expr name)
       { return var (name, mk<CHAR_TY>(name->efac ())); }
-      inline Expr unintVar (Expr name)
-      { return var (name, mk<UNINT_TY> (name->efac ())); }
+      /*inline Expr unintVar (Expr name)
+      { return var (name, mk<UNINT_TY> (name->efac ())); }*/
 
       template <typename T> bool isVar (Expr v)
       {
@@ -2536,8 +2537,8 @@ namespace expr
       { return boolVar (mkTerm (BoundVar (idx), efac )); }
       inline Expr realBVar (unsigned idx, ExprFactory &efac)
       { return realVar (mkTerm (BoundVar (idx), efac )); }
-      inline Expr unintBVar (unsigned idx, ExprFactory &efac)
-      { return unintVar (mkTerm (BoundVar (idx), efac)); }
+      /*inline Expr unintBVar (unsigned idx, ExprFactory &efac)
+      { return unintVar (mkTerm (BoundVar (idx), efac)); }*/
 
       inline bool isBVar (Expr e)
       {
