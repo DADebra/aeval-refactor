@@ -87,6 +87,8 @@ namespace ufo
       }
       else if (isOpX<BVSORT> (e))
         res = reinterpret_cast<Z3_ast> (Z3_mk_bv_sort (ctx, bv::width (e)));
+      else if (isOpX<UNINT_TY> (e))
+        res = reinterpret_cast<Z3_ast> (Z3_mk_uninterpreted_sort (ctx, Z3_mk_string_symbol (ctx, getTerm<std::string>(e->left()).c_str())));
       
       else if (isOpX<INT>(e))
 	{
@@ -578,8 +580,7 @@ namespace ufo
               std::string symname = Z3_get_symbol_string (ctx, sortsym);
               if (symname == "String")
                 return sort::stringTy (efac);
-
-	      assert (0 && "Unsupported sort");
+              return sort::unintTy (mkTerm(symname, efac));
 	    }
 	}
       else if (kind == Z3_VAR_AST)
