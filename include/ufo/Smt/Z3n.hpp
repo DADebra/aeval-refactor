@@ -459,6 +459,8 @@ namespace ufo
       if (model) Z3_model_dec_ref (ctx, model);
       model = nullptr;
     }
+
+    operator bool () const { return bool(model); }
     
     this_type &operator= (this_type other)
     {swap (*this, other); return *this;}
@@ -697,7 +699,7 @@ namespace ufo
 
     void push () { depth++; solver.push (); }
     void pop (unsigned n = 1) { depth -= n; solver.pop (n); }
-    //void reset () { solver.reset (); }
+    void realreset () { solver.reset (); solver.push (); depth = 1; }
     void reset () { solver.pop (depth); solver.push (); depth = 1; }
   };
 

@@ -250,6 +250,11 @@ namespace ufo
                                        bound.size (), &bound[0],
                                          0, NULL, ast);
       }
+      else if (isOpX<INT2BV> (e))
+      {
+        z3::ast a (ctx, marshal (e->last(), ctx, cache, seen));
+        res = Z3_mk_int2bv (ctx, getTerm<unsigned> (e->first()), a);
+      }
 
       // -- cache the result for unmarshaling
       if (res)
@@ -713,6 +718,15 @@ namespace ufo
         unsigned high = Z3_get_decl_int_parameter (ctx, d, 0);
         unsigned low = Z3_get_decl_int_parameter (ctx, d, 1);
         return bv::extract (high, low, arg);
+      }
+
+      if (dkind == Z3_OP_INT2BV)
+      {
+        Expr arg = unmarshal (z3::ast (ctx, Z3_get_app_arg (ctx, app, 0)),
+                              efac, cache, seen);
+        unsigned width = Z3_get_decl_int_parameter (ctx, fdecl, 0);
+        return mk<INT2BV> (mkTerm<unsigned> (width, efac), arg);
+
       }
 
       if (dkind == Z3_OP_AS_ARRAY)
