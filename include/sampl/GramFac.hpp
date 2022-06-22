@@ -47,6 +47,8 @@ namespace ufo
     NTParamMap ntparams;
     unordered_map<Expr, unordered_map<VarType, VarMap::mapped_type>> vars_analyzed;
 
+    Expr postcond;
+
     // Whether to print debugging information or not.
     int debug;
 
@@ -90,6 +92,56 @@ namespace ufo
 	  vars_name += "_CONST"; break;
       }
       return mkConst(mkTerm(vars_name, sort->efac()), sort);
+    }
+
+    void extract_consts(const CHCs& chcs)
+    {
+      ExprUSet nums;
+      for (const auto &chc : chcs.chcs)
+        filter(chc.body, bind::isNum, inserter(nums, nums.begin()));
+      if (debug) outs() << "extract_consts found: ";
+      for (const auto& num : nums)
+      {
+        if (debug) outs() << num << " (type " << typeOf(num) << ") ";
+        consts[typeOf(num)].insert(num);
+        if (bind::isNum(num))
+        {
+          Expr neg = NULL;
+          if (isOpX<MPZ>(num))
+          {
+            // To help the C++ template deduction.
+            mpz_class negmpz = -getTerm<mpz_class>(num);
+            neg = mkTerm(negmpz, num->efac());
+          }
+          else if (isOpX<MPQ>(num))
+          {
+            mpq_class negmpq = -getTerm<mpq_class>(num);
+            neg = mkTerm(negmpq, num->efac());
+          }
+          else if (is_bvnum(num))
+          {
+            mpz_class negmpz = -bv::toMpz(num);
+            neg = bv::bvnum(negmpz, bv::width(num->right()), num->efac());
+          }
+
+          if (neg)
+          {
+            if (debug) outs() << neg << " (type " << typeOf(neg) << ") ";
+            consts[typeOf(num)].insert(neg);
+          }
+        }
+      }
+      if (debug) outs() << endl;
+    }
+
+    void extract_postcond(const CHCs& chcs)
+    {
+      for (const auto& chc : chcs.chcs)
+        if (chc.isQuery)
+        {
+          assert(!postcond);
+          postcond = mkNeg(getExists(chc.body, chc.locVars));
+        }
     }
 
     public:
@@ -160,44 +212,10 @@ namespace ufo
       gramgiven = true;
     }
 
-    void extract_consts(const CHCs& chcs)
+    void analyze(const CHCs& chcs)
     {
-      ExprUSet nums;
-      for (const auto &chc : chcs.chcs)
-        filter(chc.body, bind::isNum, inserter(nums, nums.begin()));
-      if (debug) outs() << "extract_consts found: ";
-      for (const auto& num : nums)
-      {
-        if (debug) outs() << num << " (type " << typeOf(num) << ") ";
-        consts[typeOf(num)].insert(num);
-        if (bind::isNum(num))
-        {
-          Expr neg = NULL;
-          if (isOpX<MPZ>(num))
-          {
-            // To help the C++ template deduction.
-            mpz_class negmpz = -getTerm<mpz_class>(num);
-            neg = mkTerm(negmpz, num->efac());
-          }
-          else if (isOpX<MPQ>(num))
-          {
-            mpq_class negmpq = -getTerm<mpq_class>(num);
-            neg = mkTerm(negmpq, num->efac());
-          }
-          else if (is_bvnum(num))
-          {
-            mpz_class negmpz = -bv::toMpz(num);
-            neg = bv::bvnum(negmpz, bv::width(num->right()), num->efac());
-          }
-
-          if (neg)
-          {
-            if (debug) outs() << neg << " (type " << typeOf(neg) << ") ";
-            consts[typeOf(num)].insert(neg);
-          }
-        }
-      }
-      if (debug) outs() << endl;
+      extract_consts(chcs);
+      extract_postcond(chcs);
     }
 
     // Properly initialize *_CONSTS now that we've found them
@@ -216,6 +234,8 @@ namespace ufo
           for (const Expr& var : kv2.second)
             gram->addProd(nt, var);
         }
+
+      gram->addProd(gram->addNt<BOOL_TY>("POST_COND", m_efac), postcond);
 
       initialized = true;
       gramenum.SetParams(globalparams, ntparams);
@@ -389,6 +409,8 @@ namespace ufo
 
 	// Generate unary `maxrecdepth` function declaration
 	aug_gram << "(declare-fun maxrecdepth (String) Int)\n";
+
+        aug_gram << "(declare-fun POST_COND () Bool)\n";
 
 	aug_gram << user_cfg.str();
 

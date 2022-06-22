@@ -21,6 +21,9 @@ namespace ufo
 
   public:
 
+    SMTUtils (SMTUtils&& oth) : efac(oth.efac), z3(efac), smt(z3),
+      can_get_model(0), m(NULL) {}
+
     SMTUtils (ExprFactory& _efac) :
       efac(_efac), z3(efac), smt (z3), can_get_model(0), m(NULL) {}
 
@@ -788,6 +791,8 @@ namespace ufo
   // Existentially quantifies e with the given variables
   Expr getExists(Expr e, ExprVector vars)
   {
+    if (vars.size() == 0)
+      return e;
     for (Expr &var : vars)
       if (isOpX<FAPP>(var))
         var = var->left();

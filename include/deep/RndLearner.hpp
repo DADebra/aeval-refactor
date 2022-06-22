@@ -488,6 +488,7 @@ namespace ufo
         sf_after.lf.nonlinVars = sf_before.lf.nonlinVars;
 
         sf_after.gf.setParams(sf_before.gf.getParams());
+        sf_after.gf.analyze(ruleManager);
         sf_after.initialize_gram(gramfile, lexical_cast<string>(decls[ind]), sf_before.gf.b4simpl);
 
         set<cpp_int> progConsts, intCoefs;
@@ -571,7 +572,7 @@ namespace ufo
       arrIterRanges.push_back(ExprSet());
 
       sf.gf.setParams(gramparams);
-      sf.gf.extract_consts(ruleManager);
+      sf.gf.analyze(ruleManager);
       sf.initialize_gram(gramfile, lexical_cast<string>(invDecl), b4simpl);
 
       invNumber++;
