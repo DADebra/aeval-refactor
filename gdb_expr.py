@@ -152,6 +152,9 @@ def mpzToInt(mpz):
 def derefoper(oper):
     return oper.cast(opptrtype).dereference()
 
+def getargs(expr):
+    return getvec(expr['args'])
+
 opptrtype = None
 mpq_struct = None
 mpz_struct = None
@@ -165,7 +168,7 @@ class ENodePrinter:
             mpz_struct = gdb.lookup_type('__mpz_struct')
             mpq_struct = gdb.lookup_type('__mpq_struct')
 
-        args = getvec(self.val['args'])
+        args = getargs(self.val)
         oper = derefoper(self.val['oper'])
         optype = oper.dynamic_type
         if optype.name.find("expr::DefOp") == 0:
@@ -208,6 +211,18 @@ class ENodePrinter:
                             return "#x" + hexstr[2:]
                         #width = op1.cast(op1type)['val']['m_width']
                         #return "#x" + valint.to_bytes(width, 'big', signed=True).hex()
+            elif op == "FORALL" or op == "EXISTS":
+                body = args[-1].dereference()
+                retstr = "(" + op.lower() + " ("
+                isfirst = True
+                for arg in args[:-1]:
+                    argargs = getargs(arg.dereference())
+                    if not isfirst:
+                        retstr += " "
+                    isfirst = False
+                    retstr += "(" + str(argargs[0].dereference()) + " " +\
+                            str(argargs[-1].dereference()) + ")"
+                return retstr + ") " + str(body) + ")"
             if op not in OpTypeToSymbol:
                 raise ValueError("Unknown DefOp type \"{}\"".format(op))
             sym = OpTypeToSymbol[op]
