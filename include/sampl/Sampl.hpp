@@ -88,7 +88,7 @@ namespace ufo
         hasArrays = true;
       }
 
-      gf.addUnknownVar(var);
+      gf.addVar(var);
       added = true;
 
       return added;

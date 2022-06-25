@@ -193,6 +193,11 @@ namespace ufo
       vars_analyzed[bind::typeOf(var)][VarType::UNK].insert(var);
     }
 
+    void addVar(Expr var)
+    {
+      vars[bind::typeOf(var)].insert(var);
+    }
+
     void setParams(TravParams _params)
     {
       assert(!initialized);
@@ -476,6 +481,11 @@ namespace ufo
 	    }
 	    string ex_fname = lexical_cast<string>(bind::fname(ex->left())->left());
 	    NT newnt = gram->addNt(ex_fname, typeOf(ex->left()));
+            if (gram->prods.at(newnt).size() != 0)
+            {
+              errs() << "Invalid grammar file format: NT \"" << ex_fname << "\" is defined twice." << endl;
+              exit(11);
+            }
 	    if (ex_fname == ANY_INV && !gram->root)
 	    {
 	      // Only use ANY_INV if we don't already have a specific one
