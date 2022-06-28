@@ -14,7 +14,7 @@ using namespace boost;
 
 namespace ufo
 {
-  enum class VarType { NONE, UNK, INC, DEC, CONST };
+  enum class VarType { NONE, UNK, INC, DEC, CONST, BITINC, BITDEC };
 }
 
 namespace std
@@ -39,6 +39,7 @@ namespace ufo
     ExprFactory &m_efac;
     EZ3 &z3;
     CFGUtils cfgutils;
+    SMTUtils u;
 
     // Stored for later
     VarMap vars, othervars;
@@ -63,6 +64,42 @@ namespace ufo
     bool done = false;
 
     private:
+
+    void addIncVar(Expr var)
+    {
+      vars[bind::typeOf(var)].insert(var);
+      vars_analyzed[bind::typeOf(var)][VarType::INC].insert(var);
+    }
+
+    void addDecVar(Expr var)
+    {
+      vars[bind::typeOf(var)].insert(var);
+      vars_analyzed[bind::typeOf(var)][VarType::DEC].insert(var);
+    }
+
+    void addConstVar(Expr var)
+    {
+      vars[bind::typeOf(var)].insert(var);
+      vars_analyzed[bind::typeOf(var)][VarType::CONST].insert(var);
+    }
+
+    void addUnknownVar(Expr var)
+    {
+      vars[bind::typeOf(var)].insert(var);
+      vars_analyzed[bind::typeOf(var)][VarType::UNK].insert(var);
+    }
+
+    void addBitIncVar(Expr var)
+    {
+      vars[bind::typeOf(var)].insert(var);
+      vars_analyzed[bind::typeOf(var)][VarType::BITINC].insert(var);
+    }
+
+    void addBitDecVar(Expr var)
+    {
+      vars[bind::typeOf(var)].insert(var);
+      vars_analyzed[bind::typeOf(var)][VarType::BITDEC].insert(var);
+    }
 
     template<typename T>
     void printvec(std::ostream &os, T vec)
@@ -90,8 +127,69 @@ namespace ufo
 	  vars_name += "_DEC"; break;
 	case VarType::CONST:
 	  vars_name += "_CONST"; break;
+	case VarType::BITINC:
+	  vars_name += "_BITINC"; break;
+	case VarType::BITDEC:
+	  vars_name += "_BITDEC"; break;
       }
       return mkConst(mkTerm(vars_name, sort->efac()), sort);
+    }
+
+    // Look for counter variables
+    void analyze_vars(const CHCs& chcs)
+    {
+      for (auto& chc : chcs.chcs)
+      {
+        if (!chc.isInductive)
+          continue; // Not a loop, ignore
+        if (chc.srcRelation != chc.dstRelation)
+          continue; // Not a loop, ignore
+        for (int i = 0; i < chc.srcVars.size(); ++i)
+        {
+          Expr var = chc.srcVars[i], varprime = chc.dstVars[i];
+          Expr vartype = typeOf(var);
+          if (isOpX<INT_TY>(vartype))
+	  {
+            if (u.implies(chc.body, mk<GT>(varprime, var)))
+              addIncVar(var); // Variable which always increments
+            else if (u.implies(chc.body, mk<LT>(varprime, var)))
+              addDecVar(var); // Variable which always decrements
+            else if (u.implies(chc.body, mk<EQ>(varprime, var)))
+              addConstVar(var); // Variable which always stays the same
+            else
+              addUnknownVar(var); // Variable which does none of the above
+          }
+          else if (isOpX<BVSORT>(vartype))
+          {
+            // Check if var is always a power of 2 (or 0)
+            Expr bvzero = bv::bvnum(0, bv::width(vartype), var->efac());
+            Expr bvone = bv::bvnum(1, bv::width(vartype), var->efac());
+            Expr inv = mk<EQ>(bvzero, mk<BAND>(var, mk<BSUB>(var, bvone)));
+            if (u.implies(mk<AND>(chc.body, inv), replaceAll(inv, var, varprime)))
+            {
+              // Is a power of 2 (or 0)
+              if (u.implies(chc.body, mk<EQ>(varprime, mk<BSHL>(var, bvone))))
+                addBitIncVar(var);
+              else if (u.implies(chc.body, mk<EQ>(varprime, mk<BLSHR>(var, bvone))))
+                addBitDecVar(var);
+              else if (u.implies(chc.body, mk<EQ>(varprime, var)))
+                addConstVar(var); // Variable which always stays the same
+              else
+                addUnknownVar(var); // Variable which does none of the above
+            }
+            else if (u.implies(chc.body, mk<BUGT>(varprime, var)))
+              addIncVar(var); // Variable which always increments
+            else if (u.implies(chc.body, mk<BULT>(varprime, var)))
+              addDecVar(var); // Variable which always decrements
+            else if (u.implies(chc.body, mk<EQ>(varprime, var)))
+              addConstVar(var); // Variable which always stays the same
+            else
+              addUnknownVar(var); // Variable which does none of the above
+          }
+          else
+            addUnknownVar(var);
+        }
+      }
     }
 
     void extract_consts(const CHCs& chcs)
@@ -150,14 +248,14 @@ namespace ufo
     bool b4simpl;
 
     GRAMfactory(ExprFactory &_efac, EZ3 &_z3, int _debug) :
-      m_efac(_efac), z3(_z3), debug(_debug), gram(new Grammar()), gramenum(*gram, NULL, true, debug) {}
+      m_efac(_efac), z3(_z3), debug(_debug), gram(new Grammar()), gramenum(*gram, NULL, true, debug), u(_efac) {}
 
     ~GRAMfactory() { Constraint::strcache.clear(); }
 
-    /*void addVar(Expr var)
+    void addVar(Expr var)
     {
       vars[bind::typeOf(var)].insert(var);
-    }*/
+    }
 
     void addOtherVar(Expr var)
     {
@@ -167,35 +265,6 @@ namespace ufo
     void addIntConst(cpp_int iconst)
     {
       consts[mk<INT_TY>(m_efac)].insert(mkMPZ(iconst, m_efac));
-    }
-
-    void addIncVar(Expr var)
-    {
-      vars[bind::typeOf(var)].insert(var);
-      vars_analyzed[bind::typeOf(var)][VarType::INC].insert(var);
-    }
-
-    void addDecVar(Expr var)
-    {
-      vars[bind::typeOf(var)].insert(var);
-      vars_analyzed[bind::typeOf(var)][VarType::DEC].insert(var);
-    }
-
-    void addConstVar(Expr var)
-    {
-      vars[bind::typeOf(var)].insert(var);
-      vars_analyzed[bind::typeOf(var)][VarType::CONST].insert(var);
-    }
-
-    void addUnknownVar(Expr var)
-    {
-      vars[bind::typeOf(var)].insert(var);
-      vars_analyzed[bind::typeOf(var)][VarType::UNK].insert(var);
-    }
-
-    void addVar(Expr var)
-    {
-      vars[bind::typeOf(var)].insert(var);
     }
 
     void setParams(TravParams _params)
@@ -219,6 +288,7 @@ namespace ufo
 
     void analyze(const CHCs& chcs)
     {
+      analyze_vars(chcs);
       extract_consts(chcs);
       extract_postcond(chcs);
     }
@@ -232,10 +302,16 @@ namespace ufo
         for (Expr c : sort_consts.second)
           gram->addConst(c);
 
+      for (const auto& kv : vars)
+        for (VarType ty : { VarType::NONE, VarType::UNK, VarType::INC,
+        VarType::DEC, VarType::CONST, VarType::BITINC, VarType::BITDEC })
+          gram->addNt(anVarsNtName(kv.first, ty));
+
       for (const auto& kv : vars_analyzed)
         for (const auto& kv2 : kv.second)
         {
           Expr nt = anVarsNtName(kv.first, kv2.first);
+          gram->addNt(nt);
           for (const Expr& var : kv2.second)
             gram->addProd(nt, var);
         }
@@ -352,7 +428,7 @@ namespace ufo
 	      << type << " () " << sort_smt << ")\n";*/
 
           for (VarType ty : { VarType::NONE, VarType::UNK, VarType::INC,
-          VarType::DEC, VarType::CONST })
+          VarType::DEC, VarType::CONST, VarType::BITINC, VarType::BITDEC })
             aug_gram << z3.toSmtLib(bind::fname(anVarsNtName(sort, ty))) << "\n";
 
 	  // Generate *_CONSTS declaration

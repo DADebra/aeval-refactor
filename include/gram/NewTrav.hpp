@@ -185,6 +185,11 @@ class NewTrav : public Traversal
       const auto& prods = gram.prods.at(root);
       if (getfirst)
       {
+        if (prods.size() == 0)
+        {
+          getfirstCache[firstkey] = NULL;
+          return NULL;
+        }
         pos.limit = prods.size();
         if (params.order == TPOrder::FOR)
           pos = 0;
@@ -404,8 +409,8 @@ class NewTrav : public Traversal
       const auto &prods = gram.prods.at(root);
       if (prods.size() == 0)
       {
-        CFGUtils::noNtDefError(root, gram.root);
-        return NULL; // Unreachable
+        travpos.makenull();
+        return NULL;
       }
 
       if (travpos.isnew())

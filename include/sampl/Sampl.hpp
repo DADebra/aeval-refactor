@@ -106,30 +106,6 @@ namespace ufo
       gf.addIntConst(iconst);
     }
 
-    // Add variable which is always incrementing
-    void addIncVar(Expr var)
-    {
-      gf.addIncVar(var);
-    }
-
-    // Add variable which is always decrementing
-    void addDecVar(Expr var)
-    {
-      gf.addDecVar(var);
-    }
-
-    // Add variable which always doesn't change
-    void addConstVar(Expr var)
-    {
-      gf.addConstVar(var);
-    }
-
-    // Add variable which is none of the above
-    void addUnknownVar(Expr var)
-    {
-      gf.addUnknownVar(var);
-    }
-
     void initialize(ExprSet& arrCands, ExprVector& arrAccessVars, ExprSet& arrRange)
     {
       bf.initialize();

@@ -543,30 +543,6 @@ namespace ufo
         }
       }
 
-      // Look for (array) counter variables
-      for (auto& chc : ruleManager.chcs)
-      {
-        if (!chc.isInductive)
-          continue; // Not a loop, ignore
-        if (chc.srcRelation != chc.dstRelation)
-          continue; // Not a loop, ignore
-        for (int i = 0; i < chc.srcVars.size(); ++i)
-        {
-          Expr var = chc.srcVars[i], varprime = chc.dstVars[i];
-          if (!isOpX<INT_TY>(typeOf(var)))
-            continue; // Only consider integer counters
-          if (u.implies(chc.body, mk<GT>(varprime, var)))
-            sf.addIncVar(var); // Variable which always increments
-          else if (u.implies(chc.body, mk<LT>(varprime, var)))
-            sf.addDecVar(var); // Variable which always decrements
-          else if (u.implies(chc.body, mk<EQ>(varprime, var)))
-            sf.addConstVar(var); // Variable which always stays the same
-          else
-            sf.addUnknownVar(var); // Variable which does none of the above
-        }
-      }
-
-
       arrCands.push_back(ExprSet());
       arrAccessVars.push_back(ExprVector());
       arrIterRanges.push_back(ExprSet());

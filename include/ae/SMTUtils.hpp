@@ -24,6 +24,9 @@ namespace ufo
     SMTUtils (SMTUtils&& oth) : efac(oth.efac), z3(efac), smt(z3),
       can_get_model(0), m(NULL) {}
 
+    SMTUtils (const SMTUtils& oth) : efac(oth.efac), z3(efac), smt(z3),
+      can_get_model(0), m(NULL) {}
+
     SMTUtils (ExprFactory& _efac) :
       efac(_efac), z3(efac), smt (z3), can_get_model(0), m(NULL) {}
 

@@ -204,8 +204,7 @@ class CoroTrav : public Traversal
       auto &prods = gram.prods.at(root);
       if (prods.size() == 0)
       {
-        CFGUtils::noNtDefError(root, gram.root);
-        sink(NULL); // Unreachable
+        sink(NULL);
         return;
       }
 

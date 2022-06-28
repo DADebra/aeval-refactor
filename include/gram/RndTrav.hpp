@@ -89,10 +89,7 @@ class RndTrav : public Traversal
         currnt = root;
       }
       if (gram.prods.at(root).size() == 0)
-      {
-        CFGUtils::noNtDefError(root, gram.root);
-        return NULL; // Unreachable
-      }
+        return NULL;
       ParseTree cand = NULL;
       while (!cand)
       {
