@@ -48,7 +48,7 @@ namespace ufo
     NTParamMap ntparams;
     unordered_map<Expr, unordered_map<VarType, VarMap::mapped_type>> vars_analyzed;
 
-    Expr postcond;
+    Expr precond, postcond;
 
     // Whether to print debugging information or not.
     int debug;
@@ -242,6 +242,16 @@ namespace ufo
         }
     }
 
+    void extract_precond(const CHCs& chcs)
+    {
+      for (const auto& chc : chcs.chcs)
+        if (chc.isFact)
+        {
+          assert(!precond);
+          precond = replaceAll(getExists(chc.body, chc.locVars), chc.dstVars, chcs.invVars.at(chc.dstRelation));
+        }
+    }
+
     public:
 
     // Whether or not to print candidates before simplification. For debug.
@@ -291,6 +301,7 @@ namespace ufo
       analyze_vars(chcs);
       extract_consts(chcs);
       extract_postcond(chcs);
+      extract_precond(chcs);
     }
 
     // Properly initialize *_CONSTS now that we've found them
@@ -317,6 +328,13 @@ namespace ufo
         }
 
       gram->addProd(gram->addNt<BOOL_TY>("POST_COND", m_efac), postcond);
+      gram->addProd(gram->addNt<BOOL_TY>("PRE_COND", m_efac), precond);
+      NT precondpart = gram->addNt<BOOL_TY>("PRE_COND_PART", m_efac);
+      if (isOpX<AND>(precond))
+        for (int i = 0; i < precond->arity(); ++i)
+          gram->addProd(precondpart, precond->arg(i));
+      else
+        gram->addProd(precondpart, precond);
 
       initialized = true;
       gramenum.SetParams(globalparams, ntparams);
@@ -492,6 +510,8 @@ namespace ufo
 	aug_gram << "(declare-fun maxrecdepth (String) Int)\n";
 
         aug_gram << "(declare-fun POST_COND () Bool)\n";
+        aug_gram << "(declare-fun PRE_COND () Bool)\n";
+        aug_gram << "(declare-fun PRE_COND_PART () Bool)\n";
 
 	aug_gram << user_cfg.str();
 
