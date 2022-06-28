@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <utility>
 #include <string>
+#include "deep/Horn.hpp"
 
 #ifndef GRAMINCLUDED
 #error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
@@ -75,6 +76,7 @@ class CFGUtils
     const VarMap&, const VarMap&);
   static ExprUSet getQVars(const Grammar&);
   static string toSyGuS(Grammar&, EZ3&);
+  static string autoGenGram(const CHCs& ruleManager);
 
   static TPMethod strtogenmethod(const char* str);
   static TPDir strtotravdir(const char* str);

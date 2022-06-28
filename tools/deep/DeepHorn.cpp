@@ -97,6 +97,7 @@ int main (int argc, char ** argv)
   const char *OPT_NO_SAVE_LEMMAS = "--no-save-lemmas";
   const char *OPT_DEBUG = "--debug";
   const char *OPT_PRINT_SYGUS = "--print-sygus";
+  const char *OPT_GEN_GRAMMAR = "--gen-grammar";
 
   if (getBoolValue(OPT_HELP, false, argc, argv) || argc == 1){
     outs () <<
@@ -114,6 +115,7 @@ int main (int argc, char ** argv)
         "                                 (if not specified, sample from uniform distributions)\n" <<
         " " << OPT_MAX_ATTEMPTS << " <N>                  maximal number of candidates to sample and check\n" <<
         " " << OPT_GRAMMAR << " <grammar.smt2>        generate candidates using CFG from `grammar.smt2`\n" <<
+        " " << OPT_GEN_GRAMMAR << "                   auto-generate a grammar for the given input file\n" <<
         " " << OPT_ELIM << "                     do not minimize CHC rules (and do not slice)\n" <<
         " " << OPT_ARITHM << "                   do not apply arithmetic constant propagation during parsing\n" <<
         " " << OPT_TO << "                            timeout for each Z3 run in ms (default: 1000)\n" <<
@@ -206,10 +208,11 @@ int main (int argc, char ** argv)
   int debug = getIntValue(OPT_DEBUG, 0, argc, argv);
   bool do_boot = !getBoolValue(OPT_NO_BOOT, false, argc, argv);
   bool printSygus = getBoolValue(OPT_PRINT_SYGUS, false, argc, argv);
+  bool gengram = getBoolValue(OPT_GEN_GRAMMAR, false, argc, argv);
 
-  if (printSygus)
+  if (printSygus || gengram)
   {
-    vers3 = true; vers1 = vers2 = false;
+    vers1 = true; vers2 = vers3 = false;
     do_boot = false;
     debug = 0;
   }
@@ -262,7 +265,7 @@ int main (int argc, char ** argv)
   if (vers3)      // FMCAD'18 + CAV'19 + new experiments
     ret = learnInvariants3(string(argv[argc-1]), max_attempts, to, densecode, aggressivepruning,
                      do_dl, do_mu, do_elim, do_arithm, do_disj, do_prop, mbp_eqs,
-                     d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot, templ, saveLemmas, printSygus,
+                     d_m, d_p, d_d, d_s, d_f, d_r, d_g, d_se, d_ser, debug, do_boot, templ, saveLemmas,
                      gramfile, gramparams, b4simpl);
   else if (vers2) // run the TACAS'18 algorithm
     ret = learnInvariants2(string(argv[argc-1]), to, max_attempts,
@@ -270,7 +273,7 @@ int main (int argc, char ** argv)
                   gramfile, gramparams, b4simpl);
   else            // run the FMCAD'17 algorithm
     ret = learnInvariants(string(argv[argc-1]), to, max_attempts,
-                  kinduction, itp, densecode, addepsilon, aggressivepruning, debug, templ, saveLemmas,
+                  kinduction, itp, densecode, addepsilon, aggressivepruning, debug, templ, saveLemmas, printSygus, gengram,
                   gramfile, gramparams, b4simpl);
   return ret ? 0 : 1;
 }

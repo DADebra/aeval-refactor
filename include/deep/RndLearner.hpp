@@ -1128,7 +1128,7 @@ namespace ufo
   };
 
   inline bool learnInvariants(string smt, unsigned to, int maxAttempts,
-                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, bool sl, string gramfile, TravParams gramparams, bool b4simpl)
+                              bool kind, int itp, bool b1, bool b2, bool b3, int debug, int sw, bool sl, bool printSygus, bool gengram, string gramfile, TravParams gramparams, bool b4simpl)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
@@ -1160,6 +1160,17 @@ namespace ufo
       //ds.initializeDecl(dcl, gramparams);
       ds.initializeDecl(dcl->left(), gramparams, b4simpl);
       ds.prepareSeeds(dcl->left(), itpCands); // itpCands isn't used
+    }
+
+    if (printSygus)
+    {
+      ds.printSygus();
+      return true;
+    }
+    if (gengram)
+    {
+      outs() << CFGUtils::autoGenGram(ruleManager) << endl;
+      return true;
     }
 
     ds.calculateStatistics();

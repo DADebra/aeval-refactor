@@ -206,6 +206,65 @@ string CFGUtils::toSyGuS(Grammar &gram, EZ3 &z3)
   return std::move(out.str());
 }
 
+string CFGUtils::autoGenGram(const CHCs& ruleManager)
+{
+  stringstream out;
+  EZ3 &z3 = ruleManager.m_z3;
+  ExprFactory &efac = ruleManager.m_efac;
+  SMTUtils u(efac);
+  for (const auto& chc : ruleManager.chcs)
+  {
+    if (!chc.isQuery)
+      continue;
+    ExprVector cnjs, locCnjs;
+    for (auto itr = chc.body->args_begin(); itr != chc.body->args_end(); ++itr)
+    {
+      if (chc.locVars.size() > 0)
+      {
+        ExprSet itrVars;
+        filter(*itr, bind::IsConst(), inserter(itrVars, itrVars.begin()));
+        if (isOp<ComparissonOp>(*itr))
+        {
+          bool foundTopVar = false;
+          for (const auto& var : itrVars)
+            if (count(chc.locVars.begin(), chc.locVars.end(), var) &&
+                ((*itr)->left() == var || (*itr)->right() == var))
+            {
+              foundTopVar = true;
+              break;
+            }
+          if (foundTopVar)
+          {
+            locCnjs.push_back(*itr);
+            continue;
+          }
+        }
+      }
+      cnjs.push_back(mkNeg(*itr));
+    }
+
+    Expr candinv = disjoin(cnjs, efac);
+    if (chc.locVars.size() > 0)
+    {
+      ExprVector existsArgs;
+      for (const auto& var : chc.locVars)
+        existsArgs.push_back(fname(var));
+      if (locCnjs.size() > 0)
+        existsArgs.push_back(mk<IMPL>(conjoin(locCnjs, efac), candinv));
+      else
+        existsArgs.push_back(candinv);
+      candinv = mknary<FORALL>(existsArgs);
+    }
+    //candinv = mkNeg(candinv);
+    string relname = lexical_cast<string>(chc.srcRelation);
+    out << "(declare-fun " << relname << " () Bool)\n";
+    out << "(assert (= " << relname << " ";
+    u.print(candinv, out);
+    out << "))\n";
+  }
+  return out.str();
+}
+
 TPMethod CFGUtils::strtogenmethod(const char* str)
 {
   if (!strcmp(str, "rnd"))
