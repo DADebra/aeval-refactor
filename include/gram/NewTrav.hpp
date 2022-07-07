@@ -579,42 +579,18 @@ class NewTrav : public Traversal
       { return travpos.childat(dind(i)); };
     constposchildat = [&] (int i) -> const TravPos& { return constpos.childat(dind(i)); };
 
+    bool wasnew = false;
     if (travpos.isnew())
     {
+      wasnew = true;
       // First-time initialize
       assert(!ro);
       travpos = TravPos(0, root->arity());
 
-      if (params.type == TPType::STRIPED)
-      {
-        bool done = true;
-        bool foundnull = false;
-        for (int i = 0; i < travpos.childlimit(); ++i)
-        {
-          newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-            currdepth, localqvars, currnt, np(path,C,dind(i)), nextparams, mu, ro);
-          if (!newexprat(i))
-            foundnull = true;
-          bool idone = constposchildat(i).isdone();
-          if (idone && i == travpos.pos())
-            travpos.nextpos();
-          done &= idone;
-        }
-        if (done)
-          travpos.makedone();
-        else if (params.prio == TPPrio::DFS)
-          travpos.nextpos();
-
-        if (foundnull)
-        {
-          travpos.makenull();
-          return NULL;
-        }
-
-        return ParseTree(root, std::move(newexpr), false);
-      }
-      else
+      if (params.type == TPType::ORDERED || params.prio == TPPrio::DFS)
         travpos.nextpos();
+      else if (params.type == TPType::STRIPED)
+      { travpos.prevpos(); travpos.prevpos(); }
     }
 
     // Traversal
@@ -728,23 +704,31 @@ class NewTrav : public Traversal
       {
         if (i != travpos.pos())
         {
-          assert(!constposchildat(i).isnew());
-          bool needdefer = false;
-          if (i >= travpos.childmin())
-          {
-            newexprat(i) = gettrav(rootarg(i), travpos, currdepth,
-              localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, true);
-          }
+          if (constposchildat(i).isnew())
+            newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
+              localqvars, currnt, np(path,C,dind(i)), nextparams, mu, ro);
           else
-            newexprat(i) = gettrav(rootarg(i), constposchildat(i), currdepth,
-              localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, false);
-          /*if (needdefer)
           {
-            if (constposchildat(i).isdone())
-              travposchildat(i) = TravPos();
-            newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-              currdepth, localqvars, currnt, np(path,C,dind(i)), nextparams, mu, ro);
-          }*/
+            bool needdefer = false;
+            if (i >= travpos.childmin())
+            {
+              newexprat(i) = gettrav(rootarg(i), travpos, currdepth,
+                localqvars, currnt, np(path,C,dind(i)), nextparams,
+                needdefer, true);
+            }
+            else
+              newexprat(i) = gettrav(rootarg(i), constposchildat(i), currdepth,
+                localqvars, currnt, np(path,C,dind(i)), nextparams,
+                needdefer, false);
+            /*if (needdefer)
+            {
+              if (constposchildat(i).isdone())
+                travposchildat(i) = TravPos();
+              newexprat(i) = newtrav(rootarg(i), travposchildat(i),
+                currdepth, localqvars, currnt, np(path,C,dind(i)),
+                nextparams, mu, ro);
+            }*/
+          }
         }
         else
         {
@@ -753,7 +737,7 @@ class NewTrav : public Traversal
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
             localqvars, currnt, np(path,C,dind(i)), nextparams, mu, ro);
 
-          if (!ro && travpos.pos() < travpos.childlimit() - 1)
+          if (!ro && !wasnew && travpos.pos() < travpos.childlimit() - 1)
           {
             TravPos *childpos = new TravPos(travpos, false);
             Path childpath = np(path,Q,travpos.queuelimit());
