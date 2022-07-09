@@ -91,6 +91,9 @@ printf "\n\n" >> "$comboout"
 
 echo "TestName,TimeTakenSecs" > "$timeout"
 
+ln -sf "$comboout" "$testoutdir/latest_output.txt"
+ln -sf "$timeout" "$testoutdir/latest_timing.csv"
+
 # Set up terminal colors (if stdout is terminal)
 red=""; green=""; yellow=""; blue=""; magenta=""; cyan=""; nocolor="";
 if [ -t 1 ]
