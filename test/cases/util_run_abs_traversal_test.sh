@@ -29,7 +29,7 @@ dotravabstest() {
     pid=$!
     diffout="$(mktemp)"
     echo "Good output | Program output" > "$diffout"
-    diff -w -y "good/$good" "$old" >> "$diffout"
+    diff -w -y "$good" "$old" >> "$diffout"
     ret1=$?
     rm "$old"
     if [ $ret1 -ne 0 ]
@@ -48,6 +48,6 @@ if [ "$type" = "striped" ]
 then
     settings="$settings --trav_priority $priority"
 fi
-good="$type-$priority-$order-$direction.txt"
+good="good_output/$type-$priority-$order-$direction.txt"
 
 addtest "$(trcmd dotravabstest "$settings" "$good" "$method")" "Test traversal $method for options $settings" 0 1
