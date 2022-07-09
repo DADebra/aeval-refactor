@@ -3282,6 +3282,7 @@ namespace expr
 
         if (isOpX<ITE>(v)) return typeOf(v->last());
         if (isOp<BoolOp>(v) || isOp<ComparissonOp> (v)) return mk<BOOL_TY> (v->efac ());
+        if (isOpX<EXISTS>(v) || isOpX<FORALL> (v)) return mk<BOOL_TY> (v->efac ());
         if (isOpX<MPZ> (v)) return mk<INT_TY> (v->efac ());
         if (isOpX<MPQ> (v)) return mk<REAL_TY> (v->efac ());
 
@@ -3308,18 +3309,23 @@ namespace expr
 
         if (is_bvop(v))
         {
-          if (isOpX<BSEXT>(v) || isOpX<BZEXT>(v)) return v->last();
-          if (isOpX<BCONCAT>(v))
+          if (isOp<BvWidthOp>(v))
           {
-            return bvsort (width(typeOf(v->arg(0))) + width(typeOf(v->arg(1))), v->efac ());
-          }
-          if (isOpX<BEXTRACT>(v) || isOpX<BREPEAT>(v) ||
-              isOpX<INT2BV>(v) || isOpX<BV2INT>(v))
-          {
+            if (isOpX<BSEXT>(v) || isOpX<BZEXT>(v))
+              return bvsort (getTerm<unsigned>(v->arg(0)) +
+                  width(typeOf(v->arg(1))), v->efac ());
+            if (isOpX<BCONCAT>(v))
+              return bvsort (width(typeOf(v->arg(0))) +
+                  width(typeOf(v->arg(1))), v->efac ());
             assert(0 && "not implemented");
           }
 
-          return typeOf(v->left());
+          if (isOp<BvComparissonOp>(v))
+            return mk<BOOL_TY>(v->efac());
+
+          if (isOp<BvBoolOp>(v) || isOp<BvNumericOp>(v))
+            return typeOf(v->left());
+          assert(0 && "not implemented");
         }
         if (is_bvnum(v) || is_bvvar(v)) return v->right();
 
@@ -3343,6 +3349,17 @@ namespace expr
       inline bool isOpLEQ (Expr v) {return isOpX<LEQ>(v) || isOpX<BULE>(v) || isOpX<BSLE>(v);}
       inline bool isOpGT (Expr v) {return isOpX<GT>(v) || isOpX<BUGT>(v) || isOpX<BSGT>(v);}
       inline bool isOpGEQ (Expr v) {return isOpX<GEQ>(v) || isOpX<BUGE>(v) || isOpX<BSGE>(v);}
+
+      inline bool isCommutative (Expr v)
+      {
+        if (v->arity() == 1)
+          return true;
+        return isOpX<AND>(v)||isOpX<OR>(v)||isOpX<XOR>(v)||isOpX<IFF>(v)||
+          isOpX<EQ>(v)||isOpX<NEQ>(v)||
+          isOpX<PLUS>(v)||isOpX<MULT>(v)||
+          isOpX<BAND>(v)||isOpX<BOR>(v)||isOpX<BXOR>(v)||isOpX<BNAND>(v)||
+          isOpX<BNOR>(v)||isOpX<BXNOR>(v)||isOpX<BADD>(v)||isOpX<BMUL>(v);
+      }
     }
   }
 }
