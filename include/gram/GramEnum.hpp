@@ -25,7 +25,8 @@ class GramEnum
 
   // Key: <Non-terminal, Production>
   // Value: number of candidates generated with NT->Prod expansion
-  unordered_map<std::pair<Expr,Expr>,mpz_class> candnum;
+  unordered_map<Expr,unordered_map<Expr,mpz_class>> candnum;
+  //unordered_map<std::pair<Expr,Expr>,mpz_class> candnum;
   // Total number of candidates we've generated (not necessarily returned)
   mpz_class totalcandnum = 0;
 
@@ -46,12 +47,14 @@ class GramEnum
   {
     //outs() << "shoulddefer(" << nt << ", " << expand << ") = ";
     //outs().flush();
-    auto prod = make_pair(nt, expand);
     bool ret;
-    if (gram.priomap.at(nt).at(expand) >= 1 || candnum[prod] == 0)
+    const auto &priomap = gram.priomap.at(nt);
+    auto expandprio = priomap.find(expand);
+    if (expandprio == priomap.end() || expandprio->second >= 1 ||
+      candnum[nt][expand] == 0)
       ret = false;
     else
-      ret = candnum[prod] > gram.priomap.at(nt).at(expand)*totalcandnum;
+      ret = candnum[nt][expand] > (expandprio->second)*totalcandnum;
     //outs() << ret << "\n";
     return ret;
   }
@@ -146,7 +149,8 @@ class GramEnum
 
   bool simplify;
 
-  GramEnum(Grammar& _gram, const TravParams* _params = NULL, bool _simplify = false, int _debug = 0) :
+  GramEnum(Grammar& _gram) : gram(_gram) {}
+  GramEnum(Grammar& _gram, const TravParams* _params, bool _simplify, int _debug) :
     gram(_gram), simplify(_simplify), debug(_debug)
   {
     if (_params)
@@ -254,7 +258,7 @@ class GramEnum
       // Update candnum and totalcandnum
       nextpt.foreachPt([&] (const Expr& nt, const ParseTree& prod)
         {
-          candnum[make_pair(nt, prod.data())]++;
+          candnum[nt][prod.data()]++;
         });
       totalcandnum++;
 
