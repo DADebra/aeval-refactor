@@ -79,6 +79,14 @@ namespace expr
     NOP(BSREM,"bvsrem",FUNCTIONAL,BvNumericOp)
     NOP(BSMOD,"bvsmod",FUNCTIONAL,BvNumericOp)
 
+    NOP(BSHL,"bvshl",FUNCTIONAL,BvNumericOp)
+    NOP(BLSHR,"bvlshr",FUNCTIONAL,BvNumericOp)
+    NOP(BASHR,"bvashr",FUNCTIONAL,BvNumericOp)
+    NOP(BROTATE_LEFT,"bvrotleft",FUNCTIONAL,BvNumericOp)
+    NOP(BROTATE_RIGHT,"bvrotright",FUNCTIONAL,BvNumericOp)
+    NOP(BEXT_ROTATE_LEFT,"bvextrotleft",FUNCTIONAL,BvNumericOp)
+    NOP(BEXT_ROTATE_RIGHT,"bvextrotright",FUNCTIONAL,BvNumericOp)
+
     NOP_BASE(BvComparissonOp)
     NOP(BULT,"bvult",FUNCTIONAL,BvComparissonOp)
     NOP(BSLT,"bvslt",FUNCTIONAL,BvComparissonOp)
@@ -89,20 +97,12 @@ namespace expr
     NOP(BUGT,"bvugt",FUNCTIONAL,BvComparissonOp)
     NOP(BSGT,"bvsgt",FUNCTIONAL,BvComparissonOp)
 
-    NOP(BSEXT,"bvsext",FUNCTIONAL,BvComparissonOp)
-    NOP(BZEXT,"bvzext",FUNCTIONAL,BvComparissonOp)
-    NOP(BREPEAT,"bvrepeat",FUNCTIONAL,BvComparissonOp)
-    NOP(BSHL,"bvshl",FUNCTIONAL,BvComparissonOp)
-    NOP(BLSHR,"bvlshr",FUNCTIONAL,BvComparissonOp)
-    NOP(BASHR,"bvashr",FUNCTIONAL,BvComparissonOp)
-    NOP(BROTATE_LEFT,"bvrotleft",FUNCTIONAL,BvComparissonOp)
-    NOP(BROTATE_RIGHT,"bvrotright",FUNCTIONAL,BvComparissonOp)
-    NOP(BEXT_ROTATE_LEFT,"bvextrotleft",FUNCTIONAL,BvComparissonOp)
-    NOP(BEXT_ROTATE_RIGHT,"bvextrotright",FUNCTIONAL,BvComparissonOp)
-
     NOP_BASE(BvWidthOp)
     NOP(BCONCAT,"concat",FUNCTIONAL,BvWidthOp)
     NOP(BEXTRACT,"extract",FUNCTIONAL,BvWidthOp)
+    NOP(BSEXT,"bvsext",FUNCTIONAL,BvWidthOp)
+    NOP(BZEXT,"bvzext",FUNCTIONAL,BvWidthOp)
+    NOP(BREPEAT,"bvrepeat",FUNCTIONAL,BvWidthOp)
 
     NOP_BASE(BvMiscOp)
     NOP(INT2BV,"int2bv",FUNCTIONAL,BvMiscOp)
@@ -155,6 +155,9 @@ namespace expr
       /// num is an integer numeral, and bvsort is a bit-vector sort
       inline Expr bvnum (Expr num, Expr bvsort)
       {return bind::bind (num, bvsort);}
+
+      inline Expr bvnum (mpz_class num, Expr bvsort)
+      {return bind::bind (mkTerm(num, bvsort->efac()), bvsort);}
 
       /// bit-vector numeral of an arbitrary precision integer
       inline Expr bvnum (mpz_class num, unsigned bwidth, ExprFactory &efac)
