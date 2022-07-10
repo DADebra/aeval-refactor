@@ -147,11 +147,9 @@ class GramEnum
   int debug;
   bool b4simpl = false;
 
-  bool simplify;
-
   GramEnum(Grammar& _gram) : gram(_gram) {}
-  GramEnum(Grammar& _gram, const TravParams* _params, bool _simplify, int _debug) :
-    gram(_gram), simplify(_simplify), debug(_debug)
+  GramEnum(Grammar& _gram, const TravParams* _params, int _debug) :
+    gram(_gram), debug(_debug)
   {
     if (_params)
       SetParams(*_params, NTParamMap());
@@ -274,7 +272,9 @@ class GramEnum
         continue;
       }
 
-      if (simplify)
+      nextcand = nextpt.toSortedExpr();
+
+      if ((globalparams.simplify && globalparams.method != TPMethod::NEWTRAV))
         nextcand = simplifyBool(simplifyArithm(nextcand));
 
       if (isOpX<TRUE>(nextcand) || isOpX<FALSE>(nextcand))

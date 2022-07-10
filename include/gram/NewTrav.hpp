@@ -41,6 +41,7 @@ class NewTrav : public Traversal
   enum PathClass { C = 1, Q = 2 };
 
   CFGUtils cfgutils;
+  PTSimpl ptsimpl;
 
   Grammar &gram;
   bool grammodified = false;
@@ -100,6 +101,13 @@ class NewTrav : public Traversal
   {
     pt.foreachPt([&] (const Expr& nt, const ParseTree& expand)
     { needdefer |= shoulddefer(nt, expand.data()); });
+  }
+
+  static inline tribool isTrueFalse(Expr e)
+  {
+    if (isOpX<TRUE>(e))       return true;
+    else if (isOpX<FALSE>(e)) return false;
+    else                      return indeterminate;
   }
 
   ParseTree gettrav(const Expr& root, const TravPos& travpos, int currdepth,
@@ -214,6 +222,7 @@ class NewTrav : public Traversal
     }
 
     // Root is a Z3 function (e.g. (and ...))
+    Expr oper = root; // Might change from pruning
     std::shared_ptr<ExprUSet> localqvars(new ExprUSet());
 
     if (qvars != NULL)
@@ -282,7 +291,34 @@ class NewTrav : public Traversal
       }
     }
 
-    ParseTree ret(root, std::move(newexpr), false);
+    if (params.simplify)
+    {
+      vector<int> toprune = std::move(ptsimpl.prunePT(root, newexpr, isTrueFalse));
+      assert(toprune.size() != newexpr.size());
+      if (toprune.size() != 0)
+      {
+        for (const int &prunei : toprune)
+          newexpr[prunei] = NULL;
+        decltype(newexpr) newnewexpr;
+        for (int i = 0; i < newexpr.size(); ++i)
+          if (newexpr[i]) newnewexpr.push_back(newexpr[i]);
+        newexpr = std::move(newnewexpr);
+        if (newexpr.size() == 1)
+        {
+          oper = newexpr[0].data();
+          newexpr = newexpr[0].children();
+        }
+      }
+    }
+
+    ParseTree ret(oper, std::move(newexpr), false);
+
+    if (params.simplify)
+    {
+      ParseTree rewriteRet = std::move(ptsimpl.rewritePT(ret, isTrueFalse));
+      if (rewriteRet)
+        ret = std::move(rewriteRet);
+    }
 
     gettravCache[&travpos] = ret;
     return std::move(ret);
@@ -488,6 +524,7 @@ class NewTrav : public Traversal
     }
 
     // Root is a Z3 function (e.g. (and ...))
+    Expr oper = root; // Might change from pruning
     std::shared_ptr<ExprUSet> localqvars(new ExprUSet());
     vector<ParseTree> newexpr(root->arity());
 
@@ -533,6 +570,7 @@ class NewTrav : public Traversal
 
     // Traversal
 
+    while (true) {
     if (params.type == TPType::STRIPED)
     {
       if (!ro && !travpos.inqueue())
@@ -799,7 +837,47 @@ class NewTrav : public Traversal
     for (const auto& p : newexpr)
       if (!p) { if (!ro) travpos.makenull(); return NULL; }
 
-    ParseTree ret = ParseTree(root, std::move(newexpr), false);
+    if (params.simplify)
+    {
+      vector<int> toprune = std::move(ptsimpl.prunePT(root, newexpr, isTrueFalse));
+      if (toprune.size() != 0)
+      {
+        assert(toprune.size() != newexpr.size());
+
+        decltype(newexpr) newnewexpr;
+        bool docontinue = false;
+        for (const int &pi : toprune)
+        {
+          if (pi == constpos.pos() && !constpos.isdone())
+          {
+            // Pick a new candidate
+            docontinue = true; break;
+          }
+          else
+            newexpr[pi] = NULL;
+        }
+        if (docontinue)
+          continue;
+        for (int i = 0; i < newexpr.size(); ++i)
+          if (newexpr[i]) newnewexpr.push_back(newexpr[i]);
+        newexpr = std::move(newnewexpr);
+        if (newexpr.size() == 1)
+        {
+          oper = newexpr[0].data();
+          newexpr = newexpr[0].children();
+        }
+      }
+    }
+    break;
+    }
+
+    ParseTree ret = ParseTree(oper, std::move(newexpr), false);
+    if (params.simplify)
+    {
+      ParseTree rewriteRet = std::move(ptsimpl.rewritePT(ret, isTrueFalse));
+      if (rewriteRet)
+        ret = std::move(rewriteRet);
+    }
     bool unused = false;
     ParseTree getret = std::move(gettrav(root, travpos, currdepth,
       localqvars, currnt, path, oldparams, unused, false));
@@ -838,7 +916,8 @@ class NewTrav : public Traversal
 
   NewTrav(Grammar &_gram, const TravParams &gp, const NTParamMap &np,
     function<bool(const Expr&, const Expr&)> sd) : gram(_gram),
-    gparams(gp), ntparams(np), shoulddefer(sd), efac(gram.root->efac())
+    gparams(gp), ntparams(np), shoulddefer(sd), efac(_gram.root->efac()),
+    ptsimpl(_gram.root->efac())
   {
     if (gparams.iterdeepen)
       currmaxdepth = 0;

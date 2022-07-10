@@ -13,6 +13,15 @@ bool getBoolValue(const char * opt, bool defValue, int argc, char ** argv)
   return defValue;
 }
 
+tribool getTriboolValue(const char * opt, tribool defValue, int argc, char ** argv)
+{
+  for (int i = 1; i < argc; i++)
+  {
+    if (strcmp(argv[i], opt) == 0) return true;
+  }
+  return defValue;
+}
+
 const char * getStrValue(const char * opt, const char * defValue, int argc, char ** argv)
 {
   for (int i = 1; i < argc-1; i++)
@@ -87,6 +96,7 @@ int main (int argc, char ** argv)
   const char *OPT_GRAM_TRAV_PRIO = "--trav_priority";
   const char *OPT_GRAM_ITER_DEEPEN = "--iter-deepen";
   const char *OPT_GRAM_B4SIMPL = "--b4simpl";
+  const char *OPT_GRAM_NOSIMPL = "--nosimpl";
   const char *OPT_D5 = "--fwd";
   const char *OPT_D6 = "--prune";
   const char *OPT_REC = "--re";
@@ -143,7 +153,8 @@ int main (int argc, char ** argv)
         " " << OPT_GRAM_TRAV_DIR << " <ltr, rtl>     parameter for " << OPT_GRAM_GEN << " traverse\n" <<
         " " << OPT_GRAM_TRAV_ORD << " <forward, reverse> parameter for " << OPT_GRAM_GEN << " traverse\n" <<
         " " << OPT_GRAM_ITER_DEEPEN << "         start at maxrecdepth = 0, and increase depth until at maxrecdepth\n" <<
-        " " << OPT_GRAM_B4SIMPL << "                       print candidates before they're simplified\n\n" <<
+        " " << OPT_GRAM_B4SIMPL << "                       print candidates before they're simplified\n" <<
+        " " << OPT_GRAM_NOSIMPL << "                       don't simplify candidates\n\n" <<
         "V3 options only:\n" <<
         " " << OPT_DATA_LEARNING << " <N>                      bootstrap candidates from behaviors (0: no, NUM: rounds)\n" <<
         "                                 (if \"" << OPT_DISJ <<"\" is enabled, then default is 1; otherwise, 0)\n\n" <<
@@ -257,8 +268,9 @@ int main (int argc, char ** argv)
     CFGUtils::strtotravord(getStrValue(OPT_GRAM_TRAV_ORD, "none", argc, argv)),
     CFGUtils::strtotravtype(gram_trav_type),
     CFGUtils::strtotravprio(gram_trav_prio),
-    getBoolValue(OPT_GRAM_ITER_DEEPEN, false, argc, argv),
-    getIntValue(OPT_GRAM_MAXREC, -2, argc, argv));
+    getTriboolValue(OPT_GRAM_ITER_DEEPEN, indeterminate, argc, argv),
+    getIntValue(OPT_GRAM_MAXREC, -2, argc, argv),
+    !getTriboolValue(OPT_GRAM_NOSIMPL, indeterminate, argc, argv));
   gramparams.SetDefaults();
 
   bool ret;

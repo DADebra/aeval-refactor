@@ -39,9 +39,9 @@ util_run_comp_traversal_test() {
       mkfifo "$old" "$new" "$fifotest"
       hash atexit 2>/dev/null && atexit rm -f "$old" "$new"
       # Run as separate processes (from grep) to track their exit codes
-      freqhorn --v1 --no-save-lemmas --inv-templ 0 --b4simpl --gen_method coro $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" > "$old" &
+      freqhorn --v1 --no-save-lemmas --inv-templ 0 --nosimpl --b4simpl --gen_method coro $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" > "$old" &
       pid1=$!
-      freqhorn --v1 --no-save-lemmas --inv-templ 0 --b4simpl --gen_method newtrav $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" > "$new" &
+      freqhorn --v1 --no-save-lemmas --inv-templ 0 --nosimpl --b4simpl --gen_method newtrav $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" > "$new" &
       pid2=$!
       diffold="$(mktemp)"; diffnew="$(mktemp)"
       rm "$diffold" "$diffnew"

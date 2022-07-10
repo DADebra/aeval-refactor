@@ -4,6 +4,7 @@
 #define GRAMINCLUDED 1
 
 #include "gram/ParseTree.hpp"
+#include "gram/PTSimpl.hpp"
 
 // Order important
 #include "gram/TravParams.hpp"

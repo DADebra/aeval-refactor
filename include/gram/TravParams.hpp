@@ -20,24 +20,27 @@ struct TravParams
   TPPrio prio = TPPrio::NONE;
   boost::tribool iterdeepen = indeterminate;
   int maxrecdepth = -2;
+  boost::tribool simplify = indeterminate;
   boost::tribool propagate = indeterminate;
 
   TravParams() {}
 
-  TravParams(TPMethod m, TPDir d, TPOrder o, TPType t, TPPrio p, bool itd, int r) :
-    method(m), dir(d), order(o), type(t), prio(p), iterdeepen(itd), maxrecdepth(r) {}
+  TravParams(TPMethod m, TPDir d, TPOrder o, TPType t, TPPrio p, tribool itd, int r, tribool s) :
+    method(m), dir(d), order(o), type(t), prio(p), iterdeepen(itd), maxrecdepth(r), simplify(s) {}
 
   bool operator==(const TravParams& oth)
   {
     return method == oth.method && dir == oth.dir && order == oth.order &&
       type == oth.type && prio == oth.prio && bool(iterdeepen == oth.iterdeepen) &&
-      maxrecdepth == oth.maxrecdepth && bool(propagate == oth.propagate);
+      maxrecdepth == oth.maxrecdepth && bool(simplify == oth.simplify) &&
+      bool(propagate == oth.propagate);
   }
   bool operator!=(const TravParams& oth)
   {
     return method != oth.method || dir != oth.dir || order != oth.order ||
       type != oth.type || prio != oth.prio || bool(iterdeepen != oth.iterdeepen) ||
-      maxrecdepth != oth.maxrecdepth || bool(propagate != oth.propagate);
+      maxrecdepth != oth.maxrecdepth || bool(simplify != oth.simplify) ||
+      bool(propagate != oth.propagate);
   }
 
   void CopyIfUnset(const TravParams& oth)
@@ -49,13 +52,14 @@ struct TravParams
     if (prio == TPPrio::NONE)       prio = oth.prio;
     if (indeterminate(iterdeepen))  iterdeepen = oth.iterdeepen;
     if (maxrecdepth == -2)          maxrecdepth = oth.maxrecdepth;
+    if (indeterminate(simplify))    simplify = oth.simplify;
     if (indeterminate(propagate))   propagate = oth.propagate;
   }
 
   void SetDefaults()
   {
     CopyIfUnset(TravParams(TPMethod::NEWTRAV, TPDir::LTR, TPOrder::FOR,
-      TPType::STRIPED, TPPrio::BFS, false, 1));
+      TPType::STRIPED, TPPrio::BFS, false, 1, true));
     propagate = true;
     if (maxrecdepth == -2)
     {

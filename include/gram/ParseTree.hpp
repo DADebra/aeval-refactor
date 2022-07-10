@@ -14,7 +14,7 @@ class ParseTreeNode
 {
   private:
   // Will be FAPP or terminal (MPZ, _FH_inv_0, etc.)
-  Expr data;
+  Expr data, toExprCache = NULL, toSortedExprCache = NULL;
   // Shape will match data; if data has 3 args, children will have 3 args,
   //   even if some of the arguments are e.g. terminals.
   // children[0] == expansion of data.arg(1), etc.
@@ -106,26 +106,56 @@ class ParseTree
     }
   }
 
-  Expr toExpr() const
+  Expr toExpr(bool sort = false) const
   {
+    if (!sort && ptr->toExprCache)
+      return ptr->toExprCache;
+    if (sort && ptr->toSortedExprCache)
+      return ptr->toSortedExprCache;
     if (children().size() == 0)
+    {
+      ptr->toExprCache = data();
+      ptr->toSortedExprCache = data();
       return data();
+    }
     else if (children().size() == 1)
     {
+      Expr ret;
       if (!isNt() && !isOpX<FAPP>(data()))
-        return mk(data()->op(), children()[0].toExpr());
-      return children()[0].toExpr();
+        ret = mk(data()->op(), children()[0].toExpr(sort));
+      else
+        ret = children()[0].toExpr(sort);
+      if (sort)
+        ptr->toSortedExprCache = ret;
+      else
+        ptr->toExprCache = ret;
+      return ret;
     }
     else
     {
       ExprVector eargs;
       for (ParseTree subpt : children())
       {
-        eargs.push_back(subpt.toExpr());
+        eargs.push_back(subpt.toExpr(sort));
       }
-      return mknary(data()->op(), eargs.begin(), eargs.end());
+      Expr ret;
+      if (sort)
+      {
+        if (eargs.size() > 1 && isCommutative(data()))
+          std::sort(eargs.begin(), eargs.end());
+        ret = mknary(data()->op(), eargs.begin(), eargs.end());
+        ptr->toSortedExprCache = ret;
+      }
+      else
+      {
+        ret = mknary(data()->op(), eargs.begin(), eargs.end());
+        ptr->toExprCache = ret;
+      }
+      return ret;
     }
   }
+
+  Expr toSortedExpr() const { return toExpr(true); }
 
   operator Expr() const { return toExpr(); }
 

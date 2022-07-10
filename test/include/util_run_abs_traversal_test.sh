@@ -29,7 +29,7 @@ util_run_abs_traversal_test() {
       old="$(mktemp)"
       rm "$old"
       mkfifo "$old"
-      timeout 5s freqhorn --v1 --no-save-lemmas --inv-templ 0 --attempts 100 --b4simpl --gen_method $method $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" > "$old" &
+      timeout 5s freqhorn --v1 --no-save-lemmas --inv-templ 0 --attempts 100 --nosimpl --b4simpl --gen_method $method $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" | grep "Before simplification" > "$old" &
       pid=$!
       diffout="$(mktemp)"
       echo "Good output | Program output" > "$diffout"
