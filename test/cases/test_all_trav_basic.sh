@@ -3,6 +3,8 @@
 # Runs each of the traversal methods, seeing if the output matches the expected.
 # Uses trav_cfg.smt2 (i.e. NOT A COMPLETE TEST OF CORRECTNESS!)
 
+include util_run_abs_traversal_test.sh
+
 for method in coro newtrav
 do
     for type in striped ordered
@@ -19,7 +21,7 @@ do
             do
                 for direction in ltr rtl
                 do
-                    . ./util_run_abs_traversal_test.sh
+                    util_run_abs_traversal_test
                 done
             done
         done

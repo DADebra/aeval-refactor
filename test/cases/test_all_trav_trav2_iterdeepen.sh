@@ -5,6 +5,8 @@
 
 # Uses trav2_cfg.smt2 (not "complete", but more complete than trav_cfg.smt2)
 
+include util_run_comp_traversal_test.sh
+
 benches="abdu_01.smt2" # Doesn't matter
 cfg="trav2_cfg.smt2" # Doesn't matter (though this one is good to use)
 extrasettings="--maxrecdepth 2 --iter-deepen" # Additional settings to apply
@@ -29,7 +31,7 @@ do
                 then
                     traversalsettings="$traversalsettings --trav_priority $priority"
                 fi
-                . ./util_run_comp_traversal_test.sh
+                util_run_comp_traversal_test
             done
         done
     done

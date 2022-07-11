@@ -41,8 +41,9 @@ normexit() {
     exit $1
 }
 
+export INCLUDE_DIR="$thisdir/include"
 . ./include/common.sh
-. ./include/scheduler.sh
+include scheduler.sh
 
 if findopt "--help" "$@" >/dev/null
 then
@@ -104,7 +105,7 @@ then
 fi
 
 # For start-to-end timing
-starttime="$(date +%s.%N)"
+starttime="$(gettime)"
 echo "~~~Running tests~~~"
 echo
 
@@ -228,7 +229,7 @@ runjobs "$numcpus"
 
 rm "$tests"
 
-endtime="$(date +%s.%N)"
+endtime="$(gettime)"
 echo
 echo "~~~Done running tests: $successfultestcount tests passed, $failedtestcount tests failed~~~"
 echo
@@ -240,9 +241,7 @@ then
     echo
 fi
 
-timetaken="$(echo "$endtime - $starttime" | bc)"
-[ "${timetaken#.}" != "$timetaken" ] && timetaken="0$timetaken"
-[ "${timetaken%.}" != "$timetaken" ] && timetaken="${timetaken}0"
+timetaken="$(difftime "$endtime" "$starttime")"
 echo "Total time taken: $timetaken seconds"
 
 trap '' TERM INT QUIT EXIT

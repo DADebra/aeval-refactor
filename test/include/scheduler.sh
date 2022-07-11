@@ -50,7 +50,7 @@ runjobs() {
       echo "runjobs takes 1 parameter"
       exit 4
   fi
-  scheduler_runjobs "$1"
+  scheduler_runjobs "$1" < "$scheduler_jobs"
 }
 
 # Separates $@ by ^_ for consumption by this script
@@ -66,15 +66,18 @@ trcmd() {
 ### PRIVATE CODE ###
 
 scheduler_nextjobid=0
-scheduler_jobs=""
 scheduler_numrunning=0
 scheduler_runningpids=""
 
 haveatexit() { hash atexit >/dev/null 2>&1; return $?; }
 
+export scheduler_jobs="$(mktemp)"
+echo "$scheduler_jobs"
+haveatexit && atexit rm -f "$scheduler_jobs"
+
 scheduler_addjob() {
     export jobid=$scheduler_nextjobid
-    scheduler_jobs="${scheduler_jobs}$jobid$1$2$3$4"
+    echo "$jobid$1$2$3$4" >> "$scheduler_jobs"
     scheduler_nextjobid=$(( $scheduler_nextjobid + 1 ))
 }
 
@@ -141,32 +144,19 @@ scheduler_checkjobsdone() {
 scheduler_timecmd() {
     outfile="$1"
     shift 1
-    start="$(date +%s.%N)"
+    start="$(gettime)"
     ("$@")
     ret=$?
-    end="$(date +%s.%N)"
-    diff="$(echo "$end - $start" | bc)"
-    if [ "${diff#.}" != "$diff" ]
-    then
-        # bc outputs e.g. '.8' instead of '0.8'
-        diff="0$diff"
-    fi
-    if [ "${diff%.}" != "$diff" ]
-    then
-        # Busybox 'date' doesn't support %N
-        diff="${diff}0"
-    fi
+    end="$(gettime)"
+    diff="$(difftime "$end" "$start")"
     echo "$diff" > "$outfile"
     return $ret
 }
 
 scheduler_runjobs() {
   local numcpus="$1"
-  local jobscopy="$scheduler_jobs"
-  scheduler_jobs=""
   local oldifs="$IFS"
-  IFS=""
-  for job in $jobscopy
+  while read job
   do
       IFS=""
       set -- $job
@@ -205,8 +195,6 @@ scheduler_runjobs() {
       set -- $nextstartcallback
       IFS="$oldifs"
       "$@" "$nextjid" "$pid" "$outfile" "$errfile"
-
-      IFS=""
   done
   IFS="$oldifs"
 

@@ -46,4 +46,56 @@ findopt() {
     return 1
 }
 
+include() {
+    header="$1"
+    if [ -e "$header" ]
+    then
+        foundheader="$header"
+    elif [ -e "$INCLUDE_DIR/$header" ]
+    then
+        foundheader="$INCLUDE_DIR/$header"
+    else
+        echo "Error, couldn't include '$header'" 1>&2
+        exit 4
+    fi
+    . "$foundheader"
+}
+
+# Fractional seconds since UNIX epoch
+gettime() {
+    time="$EPOCHREALTIME"
+    if [ -n "$time" ]
+    then
+        echo "$time"
+        return 0
+    fi
+
+    if hash gdate >/dev/null 2>&1
+    then
+        date="gdate"
+    elif hash date >/dev/null 2>&1
+    then
+        date="date"
+    else
+        echo "No date command found" 1>&2
+        exit 11
+    fi
+
+    time="$("$date" +%s.%N)"
+    if [ "${time%.}" != "$time" ]
+    then
+        time="${time}0"
+    fi
+    echo "$time"
+    return 0
+}
+
+# Compute $1 - $2
+difftime() {
+    difftime="$(echo "$1 - $2" | bc)"
+    [ "${difftime#.}" != "$difftime" ] && difftime="0$difftime"
+    [ "${difftime%.}" != "$difftime" ] && difftime="${difftime}0"
+    echo "$difftime"
+}
+
 fi

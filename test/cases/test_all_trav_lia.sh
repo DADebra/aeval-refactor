@@ -5,6 +5,8 @@
 
 # Uses lia_no_prio_cfg.smt2 (should be the best stress test)
 
+include util_run_comp_traversal_test.sh
+
 cfg="lia_no_prio_cfg.smt2" # Doesn't matter (though this one is good to use)
 extrasettings="--maxrecdepth 1" # Additional settings to apply
 comp_lines=1000 # Compare more lines than usual
@@ -37,7 +39,7 @@ do
                 then
                     traversalsettings="$traversalsettings --trav_priority $priority"
                 fi
-                . ./util_run_comp_traversal_test.sh
+                util_run_comp_traversal_test
             done
         done
     done
