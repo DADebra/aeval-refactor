@@ -22,6 +22,7 @@ struct TravParams
   int maxrecdepth = -2;
   boost::tribool simplify = indeterminate;
   boost::tribool propagate = indeterminate;
+  boost::tribool goverride = indeterminate;
 
   TravParams() {}
 
@@ -33,14 +34,14 @@ struct TravParams
     return method == oth.method && dir == oth.dir && order == oth.order &&
       type == oth.type && prio == oth.prio && bool(iterdeepen == oth.iterdeepen) &&
       maxrecdepth == oth.maxrecdepth && bool(simplify == oth.simplify) &&
-      bool(propagate == oth.propagate);
+      bool(propagate == oth.propagate) && bool(goverride == oth.goverride);
   }
   bool operator!=(const TravParams& oth)
   {
     return method != oth.method || dir != oth.dir || order != oth.order ||
       type != oth.type || prio != oth.prio || bool(iterdeepen != oth.iterdeepen) ||
       maxrecdepth != oth.maxrecdepth || bool(simplify != oth.simplify) ||
-      bool(propagate != oth.propagate);
+      bool(propagate != oth.propagate) || bool(goverride != oth.goverride);
   }
 
   void CopyIfUnset(const TravParams& oth)
@@ -54,6 +55,7 @@ struct TravParams
     if (maxrecdepth == -2)          maxrecdepth = oth.maxrecdepth;
     if (indeterminate(simplify))    simplify = oth.simplify;
     if (indeterminate(propagate))   propagate = oth.propagate;
+    if (indeterminate(goverride))   goverride = oth.goverride;
   }
 
   void SetDefaults()
@@ -61,6 +63,7 @@ struct TravParams
     CopyIfUnset(TravParams(TPMethod::NEWTRAV, TPDir::LTR, TPOrder::FOR,
       TPType::STRIPED, TPPrio::BFS, false, 1, true));
     propagate = true;
+    goverride = false;
     if (maxrecdepth == -2)
     {
       if (iterdeepen) maxrecdepth = -1;

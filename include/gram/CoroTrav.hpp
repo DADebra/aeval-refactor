@@ -871,6 +871,11 @@ class CoroTrav : public Traversal
     return lastcand;
   }
 
+  virtual ParseTree GetUnsimplifiedCand()
+  {
+    return lastcand;
+  }
+
   virtual ParseTree Increment()
   {
     if (grammodified) handleGramMod();

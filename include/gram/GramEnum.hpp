@@ -251,7 +251,6 @@ class GramEnum
         if (!nextpt && traversal->IsDone()) return NULL;
       }
       if (!nextpt) continue;
-      nextcand = nextpt;
 
       // Update candnum and totalcandnum
       nextpt.foreachPt([&] (const Expr& nt, const ParseTree& prod)
@@ -261,7 +260,8 @@ class GramEnum
       totalcandnum++;
 
       if (b4simpl)
-        outs() << "Before simplification: " << nextcand << endl;
+        outs() << "Before simplification: " <<
+          traversal->GetUnsimplifiedCand().toExpr() << endl;
 
       if (!gram.satsConstraints(nextpt))
       {

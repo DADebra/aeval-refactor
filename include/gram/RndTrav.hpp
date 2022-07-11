@@ -201,6 +201,8 @@ class RndTrav : public Traversal
 
   virtual ParseTree GetCurrCand() { return lastcand; }
 
+  virtual ParseTree GetUnsimplifiedCand() { return lastcand; }
+
   virtual const UniqVarMap& GetCurrUniqueVars() { return uniqvars; }
 
   virtual ParseTree Increment()

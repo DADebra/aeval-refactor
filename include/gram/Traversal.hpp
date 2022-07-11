@@ -43,8 +43,13 @@ class Traversal
   // Get the recursion depth currently used as maximum.
   virtual int GetCurrDepth() = 0;
 
-  // Returns the candidate at the current traversal position.
+  // Returns the candidate at the current traversal position
+  // (with simplification applied if requested).
   virtual ParseTree GetCurrCand() = 0;
+
+  // Returns the candidate at the current traversal position
+  // (without simplification applied).
+  virtual ParseTree GetUnsimplifiedCand() = 0;
 
   // Returns the set of unique variables that appear in the current candidate.
   // Key: Variable (added with 'Grammar::addUniqueVar')
