@@ -3294,31 +3294,18 @@ namespace expr
 
         // bv-typing below:
 
-        if (isOp<BvOp>(v))
+        if (is_bvop(v))
         {
           if (isOpX<BSEXT>(v) || isOpX<BZEXT>(v)) return v->last();
           if (isOpX<BCONCAT>(v))
           {
             return bvsort (width(typeOf(v->arg(0))) + width(typeOf(v->arg(1))), v->efac ());
           }
-          if (isOpX<BEXTRACT>(v))
+          if (isOpX<BEXTRACT>(v) || isOpX<BREPEAT>(v) ||
+              isOpX<INT2BV>(v) || isOpX<BV2INT>(v))
           {
-            int high = getTerm<unsigned>(v->arg(0)),
-                low = getTerm<unsigned>(v->arg(1));
-            int newwidth = high - low;
-            newwidth = newwidth < 0 ? -newwidth : newwidth;
-            return bvsort(newwidth, v->efac());
+            assert(0 && "not implemented");
           }
-          if (isOpX<BREPEAT>(v))
-          {
-            unsigned coef = getTerm<unsigned>(v->arg(0));
-            return bvsort(coef * width(typeOf(v->arg(1))), v->efac());
-          }
-          if (isOpX<INT2BV>(v))
-          {
-            return bvsort(getTerm<unsigned>(v->arg(0)), v->efac());
-          }
-          if (isOpX<BV2INT>(v)) { return mk<INT_TY>(v->efac()); }
 
           return typeOf(v->left());
         }
