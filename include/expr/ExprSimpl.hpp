@@ -503,6 +503,42 @@ namespace ufo
     return mk<UN_MINUS>(e);
   }
 
+  inline static Expr bvAdditiveInverse(Expr e)
+  {
+    // TODO: To be expanded
+    if (is_bvvar(e) || is_bvconst(e))
+      return e;
+    if (is_bvnum(e))
+      return bv::bvnum(-bv::toMpz(e), typeOf(e));
+    if (!isOp<BvNumericOp>(e))
+      return e;
+
+    if (isOpX<BNEG>(e))
+      return e->left();
+    if (isOpX<BSUB>(e))
+      return mk<BSUB>(e->right(), e->left());
+    if (isOpX<BSMOD>(e))
+      return mk<BNEG>(e);
+
+    Expr invleft = bvAdditiveInverse(e->left());
+    if (isOpX<BMUL>(e))
+      return mk<BMUL>(invleft, e->right());
+    if (isOpX<BUDIV>(e))
+      return mk<BUDIV>(invleft, e->right());
+    if (isOpX<BSDIV>(e))
+      return mk<BSDIV>(invleft, e->right());
+    if (isOpX<BUREM>(e))
+      return mk<BUREM>(invleft, e->right());
+    if (isOpX<BSREM>(e))
+      return mk<BSREM>(invleft, e->right());
+
+    Expr invright = bvAdditiveInverse(e->right());
+    if (isOpX<BADD>(e))
+      return mk<BADD>(invleft, invright);
+
+    return e;
+  }
+
   /**
    * Commutativity in Addition
    */
@@ -859,7 +895,8 @@ namespace ufo
   }
 
   // not very pretty method, but..
-  inline static bool evaluateCmpConsts(Expr fla, cpp_int a, cpp_int b)
+  template <typename T>
+  inline static bool evaluateCmpConsts(Expr fla, T a, T b)
   {
     if (isOpX<EQ>(fla))
     {
@@ -884,6 +921,10 @@ namespace ufo
     assert(isOpX<GT>(fla));
     return (a > b);
   }
+  inline static bool evaluateCmpConsts(Expr fla, cpp_int a, cpp_int b)
+  { return evaluateCmpConsts<cpp_int>(fla, a, b); }
+  inline static bool evaluateCmpConsts(Expr fla, mpz_class a, mpz_class b)
+  { return evaluateCmpConsts<mpz_class>(fla, a, b); }
 
   inline static Expr mkNeg(Expr fla)
   {
@@ -4662,6 +4703,23 @@ namespace ufo
       errs () << "unable lit: " << *exp << "\n";
       assert(0);
     }
+  }
+
+  // Sorts all arguments of commutative operators by memory address,
+  // which helps find equalities between e.g. `1 + 0` and `0 + 1`.
+  Expr sortCommutative(Expr e)
+  {
+    RW<function<Expr(Expr)>> sortrw(new function<Expr(Expr)>(
+      [] (Expr e) -> Expr {
+        if (isCommutative(e))
+        {
+          ExprVector newargs(e->args_begin(), e->args_end());
+          std::sort(newargs.begin(), newargs.end());
+          return mknary(e->op(), newargs.begin(), newargs.end());
+        }
+        return e;
+      }));
+    return dagVisit(sortrw, e);
   }
 
   void pprint(Expr exp, int inden, bool upper);
