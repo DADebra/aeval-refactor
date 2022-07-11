@@ -2761,11 +2761,11 @@ namespace expr
 
     struct RAVALL: public std::unary_function<Expr,VisitAction>
     {
-      ExprVector* s;
-      ExprVector* t;
+      const ExprVector* s;
+      const ExprVector* t;
       unsigned int sz;
 
-      RAVALL (ExprVector* _s, ExprVector* _t) : s(_s), t(_t), sz(_s->size()) { }
+      RAVALL (const ExprVector* _s, const ExprVector* _t) : s(_s), t(_t), sz(_s->size()) { }
       VisitAction operator() (Expr exp) const
       {
         // TODO: could be optimized further,
@@ -2779,9 +2779,9 @@ namespace expr
     template <typename T>
     struct RAVALLM: public std::unary_function<Expr,VisitAction>
     {
-      T* m;
+      const T* m;
 
-      RAVALLM (T* _m) : m(_m) { }
+      RAVALLM (const T* _m) : m(_m) { }
       VisitAction operator() (Expr exp) const
       {
         auto it = m->find(exp);
@@ -2792,9 +2792,9 @@ namespace expr
 
     struct RAVALLMR: public std::unary_function<Expr,VisitAction>
     {
-      ExprMap* m;
+      const ExprMap* m;
 
-      RAVALLMR (ExprMap* _m) : m(_m) { }
+      RAVALLMR (const ExprMap* _m) : m(_m) { }
       VisitAction operator() (Expr exp) const
       {
         auto it = m->begin();
@@ -3035,7 +3035,7 @@ namespace expr
   }
 
   // pairwise replacing
-  inline Expr replaceAll (Expr exp, ExprVector& s, ExprVector& t)
+  inline Expr replaceAll (Expr exp, const ExprVector& s, const ExprVector& t)
   {
     assert(s.size() == t.size());
     if (s.empty()) return exp;
@@ -3046,7 +3046,7 @@ namespace expr
   }
 
   // pairwise replacing
-  inline Expr replaceAll (Expr exp, ExprMap& m)
+  inline Expr replaceAll (Expr exp, const ExprMap& m)
   {
     if (m.empty()) return exp;
     RAVALLM<ExprMap> rav(&m);
@@ -3056,7 +3056,7 @@ namespace expr
   }
 
   // pairwise replacing
-  inline Expr replaceAll (Expr exp, ExprUMap& m)
+  inline Expr replaceAll (Expr exp, const ExprUMap& m)
   {
     if (m.empty()) return exp;
     RAVALLM<ExprUMap> rav(&m);
@@ -3066,7 +3066,7 @@ namespace expr
   }
 
   // pairwise replacing
-  inline Expr replaceAllRev (Expr exp, ExprMap& m)
+  inline Expr replaceAllRev (Expr exp, const ExprMap& m)
   {
     if (m.empty()) return exp;
     RAVALLMR rav(&m);
