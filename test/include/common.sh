@@ -98,4 +98,6 @@ difftime() {
     echo "$difftime"
 }
 
+haveatexit() { hash atexit >/dev/null 2>&1; return $?; }
+
 fi

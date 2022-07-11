@@ -34,10 +34,9 @@ util_run_comp_traversal_test() {
       cfg="$3"
       old="$(mktemp)"
       new="$(mktemp)"
-      fifotest="$(mktemp)"
-      rm "$old" "$new" "$fifotest"
-      mkfifo "$old" "$new" "$fifotest"
-      hash atexit 2>/dev/null && atexit rm -f "$old" "$new"
+      rm "$old" "$new"
+      mkfifo "$old" "$new"
+      haveatexit && atexit rm -f "$old" "$new"
       # Run as separate processes (from grep) to track their exit codes
       freqhorn --v1 --no-save-lemmas --inv-templ 0 --nosimpl --b4simpl --gen_method coro $settings --grammar "$GRAMDIR/$cfg" "$BENCHDIR/$bench" > "$old" &
       pid1=$!
@@ -46,13 +45,13 @@ util_run_comp_traversal_test() {
       diffold="$(mktemp)"; diffnew="$(mktemp)"
       rm "$diffold" "$diffnew"
       mkfifo "$diffold" "$diffnew"
-      hash atexit 2>/dev/null && atexit rm -f "$diffold" "$diffnew"
+      haveatexit && atexit rm -f "$diffold" "$diffnew"
       grep "Before simplification" "$old" | head -n "$comp_lines" > "$diffold" &
       pidhead1=$!
       grep "Before simplification" "$new" | head -n "$comp_lines" > "$diffnew" &
       pidhead2=$!
       diffout="$(mktemp)"
-      hash atexit 2>/dev/null && atexit rm -f "$diffout"
+      haveatexit && atexit rm -f "$diffout"
       echo "Coro output | Newtrav output" > "$diffout"
       diff -W 200 -w -y "$diffold" "$diffnew" >> "$diffout"
       ret3=$?

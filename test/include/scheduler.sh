@@ -69,8 +69,6 @@ scheduler_nextjobid=0
 scheduler_numrunning=0
 scheduler_runningpids=""
 
-haveatexit() { hash atexit >/dev/null 2>&1; return $?; }
-
 export scheduler_jobs="$(mktemp)"
 echo "$scheduler_jobs"
 haveatexit && atexit rm -f "$scheduler_jobs"
