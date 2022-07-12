@@ -9,11 +9,10 @@
 #include <algorithm>
 #include <boost/logic/tribool.hpp>
 
-namespace ufo
-{
-using namespace std;
-using namespace boost;
+#include <functional>
 
+namespace std
+{
 template <typename T, typename UnaryPredicate>
 bool any_of(const T& container, UnaryPredicate pred)
 { return any_of(begin(container), end(container), pred); }
@@ -21,12 +20,20 @@ bool any_of(const T& container, UnaryPredicate pred)
 template <typename T, typename UnaryPredicate>
 bool all_of(const T& container, UnaryPredicate pred)
 { return all_of(begin(container), end(container), pred); }
+}
+
+namespace ufo
+{
+using namespace std;
+using namespace boost;
 
 typedef function<boost::tribool(Expr)> IsTrueFalseFn;
+typedef std::tuple<std::vector<int>,std::vector<int>,ParseTree> PruneRetType;
 
 class PTSimpl {
   Expr ezero, eone, enegone;
   ParseTree ptzero, ptone, ptnegone, pttrue, ptfalse;
+  unordered_map<Expr,Expr> _bvzero, _bvone, _bvallones; // K: Sort, V: Term
   public:
 
   explicit PTSimpl(ExprFactory& efac)
@@ -49,6 +56,17 @@ class PTSimpl {
 //      `rewritePT(true & x)` will return `NULL`.
   ParseTree rewritePT(const ParseTree& pt, const IsTrueFalseFn& isTrueFalse)
   {
+    if (!pt || !pt.data() || pt.children().size() == 0)
+      return NULL;
+    if (isOpX<ITE>(pt.data()))
+    {
+      assert(pt.children().size() == 3);
+      tribool firstTF = isTrueFalse(pt.children()[0].toSortedExpr());
+      if (firstTF)
+        return pt.children()[1];
+      else if (!firstTF)
+        return pt.children()[2];
+    }
     Expr optype = typeOf(pt.data());
     if (is_bvop(pt.data()))
       return std::move(rewriteBVPT(pt, isTrueFalse));
@@ -60,24 +78,35 @@ class PTSimpl {
     return NULL;
   }
 
-  // Returns a list of elements from `args` which should be removed.
-  // Return is guaranteed to be in sorted order.
+  // Returns 3 things:
+  // - A list of indices (in `args`) which are causing a short-circuit
+  //     evaluation (empty if nothing to prune).
+  // - A list of indices which will permanently be useless,
+  //     i.e. regardless of what value they hold the resultant expression will
+  //     be unchanged (empty if first ret value if empty)
+  // - The resultant ParseTree (which might not be
+  //     equivalent to `ParseTree(oper, args - 1st return)`), NULL if 1st return
+  //     is empty.
+  // Returns are guaranteed to be in sorted order.
   // `isTrueFalse` is a function taking an Expr and returning `true` if the
   //   Expr is a tautology, `indeterminate` if Expr is sometimes true (SAT),
   //   and `false` if Expr is a contradiction.
-  // E.g. `prunePT(AND, {true, x, true})` will return `{0, 2}`.
-  vector<int> prunePT(Expr oper, const vector<ParseTree> &args, const IsTrueFalseFn& isTrueFalse)
+  // E.g. `prunePT(AND, {false, x, true}, 1)` will return `{1, 2}`.
+  PruneRetType prunePT(Expr oper, const vector<ParseTree> &args,
+    const IsTrueFalseFn& isTrueFalse)
   {
-    vector<int> empty;
+    PruneRetType empty;
+    if (!oper || args.empty())
+      return std::move(empty);
     Expr optype = typeOf(oper);
     if (isOpX<ITE>(oper))
     {
       assert(args.size() == 3);
-      tribool firstTF = isTrueFalse(args[0].toExpr());
+      tribool firstTF = isTrueFalse(args[0].toSortedExpr());
       if (firstTF)
-        return vector<int>{0, 2};
+        return make_tuple(vector<int>{0}, vector<int>{2}, args[1]);
       else if (!firstTF)
-        return vector<int>{0, 1};
+        return make_tuple(vector<int>{0}, vector<int>{1}, args[2]);
     }
     if (is_bvop(oper))
       return std::move(pruneBVPT(oper, args, isTrueFalse));
@@ -91,54 +120,74 @@ class PTSimpl {
 
   private:
 
+  Expr bvzero(Expr sort)
+  {
+    auto itr = _bvzero.find(sort);
+    if (itr == _bvzero.end())
+      itr = _bvzero.emplace(sort, bv::bvnum(mpz_class(0), sort)).first;
+    return itr->second;
+  }
+
+  Expr bvone(Expr sort)
+  {
+    auto itr = _bvone.find(sort);
+    if (itr == _bvone.end())
+      itr = _bvone.emplace(sort, bv::bvnum(mpz_class(1), sort)).first;
+    return itr->second;
+  }
+
+  Expr bvallones(Expr sort)
+  {
+    auto itr = _bvallones.find(sort);
+    if (itr == _bvallones.end())
+    {
+      mpz_class allones;
+      mpz_pow_ui(allones.get_mpz_t(), mpz_class(2).get_mpz_t(), bv::width(sort));
+      itr = _bvallones.emplace(sort, bv::bvnum(allones, sort)).first;
+    }
+    return itr->second;
+  }
+
   ParseTree rewriteBoolPT(const ParseTree& pt, const IsTrueFalseFn& isTrueFalse)
   {
     Expr oper = pt.data();
-    if (!oper || pt.children().size() == 0)
-      return NULL;
     if (isOpX<NEG>(oper))
     {
       assert(pt.children().size() == 1);
-      tribool isTF = isTrueFalse(pt.children()[0].toExpr());
+      tribool isTF = isTrueFalse(pt.children()[0].toSortedExpr());
       if (!isTF) return pttrue;
       else if (isTF) return ptfalse;
     }
-    else if (isOpX<AND>(oper))
+    else if (isOpX<AND>(oper) || isOpX<OR>(oper))
     {
-      bool anyFalse = false, allTrue = true;
-      for (const auto& child : pt.children())
+      // Prune `true` and duplicates from AND
+      // Prune `false` and duplicates from OR
+      bool isand = isOpX<AND>(oper);
+      vector<ParseTree> ret;
+      unordered_set<Expr> seen;
+      for (int i = 0; i < pt.children().size(); ++i)
       {
-        tribool isTF = isTrueFalse(child.toExpr());
-        if (!isTF)
-          anyFalse = true;
-        if (!isTF || indeterminate(isTF))
-          allTrue = false;
+        Expr child = pt.children()[i].toSortedExpr();
+        if ((isand == isTrueFalse(child)) || !seen.insert(child).second)
+          continue;
+        else
+          ret.push_back(pt.children()[i]);
       }
-      if (anyFalse) return ptfalse;
-      else if (allTrue) return pttrue;
-    }
-    else if (isOpX<OR>(oper))
-    {
-      bool anyTrue = false, allFalse = true;
-      for (const auto& child : pt.children())
-      {
-        tribool isTF = isTrueFalse(child.toExpr());
-        if (isTF)
-          anyTrue = true;
-        if (isTF || indeterminate(isTF))
-          allFalse = false;
-      }
-      if (anyTrue) return pttrue;
-      else if (allFalse) return ptfalse;
+      if (ret.size() == 0)
+        ret.push_back(pt.children()[0]);
+      if (ret.size() == 1)
+        return ret[0];
+      return ParseTree(oper, std::move(ret), pt.isNt());
     }
     else if (isOpX<IMPL>(oper))
     {
       assert(pt.children().size() == 2);
-      tribool leftTF = isTrueFalse(pt.children()[0].toExpr()),
-              rightTF = isTrueFalse(pt.children()[1].toExpr());
+      tribool leftTF = isTrueFalse(pt.children()[0].toSortedExpr()),
+              rightTF = isTrueFalse(pt.children()[1].toSortedExpr());
 
       if (leftTF && !rightTF) return ptfalse;
       else if (!leftTF || rightTF) return pttrue;
+      else if (leftTF) return pt.children()[1];
     }
     else if (isOpX<EQ>(oper))
     {
@@ -151,12 +200,12 @@ class PTSimpl {
     {
       unordered_set<Expr> seen;
       for (const auto& child : pt.children())
-        if (!seen.insert(child.toExpr()).second) return ptfalse; // two of child
+        if (!seen.insert(child.toSortedExpr()).second) return ptfalse; // two of child
       return NULL; // i.e. "we don't know"
     }
     else if (isOpX<FORALL>(oper) || isOpX<EXISTS>(oper))
     {
-      tribool isTF = isTrueFalse(pt.children()[0].toExpr());
+      tribool isTF = isTrueFalse(pt.children()[0].toSortedExpr());
       if (isTF)       return pttrue;
       else if (!isTF) return ptfalse;
       else            return NULL;
@@ -179,7 +228,19 @@ class PTSimpl {
     else if (isOpX<GEQ>(oper) && left == right)
       return pttrue;
 
+    tribool isTF = isTrueFalse(pt.toSortedExpr());
+    if (isTF) return pttrue;
+    else if (!isTF) return ptfalse;
+
     return NULL;
+  }
+
+  ParseTree negPT(const ParseTree& pt)
+  {
+    if (isOpX<MPZ>(pt.data()))
+      return mkTerm<mpz_class>(-getTerm<mpz_class>(pt.data()), pt.data()->efac());
+    assert(pt.children().size() == 1);
+    return ParseTree(pt.data(), negPT(pt.children()[0]), pt.isNt());
   }
 
   ParseTree rewriteIntPT(const ParseTree& pt, const IsTrueFalseFn& isTrueFalse)
@@ -187,29 +248,53 @@ class PTSimpl {
     Expr oper = pt.data();
     if (!oper || pt.children().size() < 1)
       return NULL;
-    Expr left = pt.children()[0].toSortedExpr();
+    const ParseTree &ptleft = pt.children()[0];
+    Expr left = ptleft.toSortedExpr();
     if (isNum(left) && pt.children().size() == 1)
-      return simplifyArithm(pt.toExpr(), true, true);
+      return simplifyArithm(pt.toSortedExpr(), true, true);
 
     if (pt.children().size() != 2)
       return NULL;
 
-    Expr right = pt.children()[1].toSortedExpr();
+    const ParseTree &ptright = pt.children()[1];
+    Expr right = ptright.toSortedExpr();
 
     if (isNum(left) && isNum(right)) // Evaluate e.g. 0 + 1
-      return simplifyArithm(pt.toExpr(), true, true);
+      return simplifyArithm(pt.toSortedExpr(), true, true);
 
-    if (isOpX<PLUS>(oper) && left == additiveInverse(right))
-      return ptzero;
+    if (isOpX<PLUS>(oper))
+    {
+      if (left == ezero) return ptright;
+      else if (right == ezero) return ptleft;
+      else if (left == additiveInverse(right)) return ptzero;
+    }
     else if (isOpX<MINUS>(oper))
     {
       if (left == right) return ptzero;
       else if (left == ezero) return additiveInverse(right);
+      else if (right == ezero) return ptleft;
     }
     else if (isOpX<MULT>(oper))
     {
-      if (left == enegone) return additiveInverse(right);
+      if (left == eone) return ptright;
+      else if (right == eone) return ptleft;
+      else if (left == enegone) return additiveInverse(right);
       else if (right == enegone) return additiveInverse(left);
+    }
+    else if (isOpX<DIV>(oper) || isOpX<IDIV>(oper))
+    {
+      if (right == eone) return ptleft;
+    }
+    else if (isOpX<MOD>(oper))
+    {
+      if (left == right) return ptleft;
+      if (isOpX<MPZ>(right))
+      {
+        mpz_class div = getTerm<mpz_class>(right);
+        if (div < 0)
+          return ParseTree(oper, vector<ParseTree>{ptleft, negPT(ptright)},
+            pt.isNt());
+      }
     }
     else if ((isOpX<DIV>(oper) || isOpX<IDIV>(oper)) && left == right)
       return ptone;
@@ -217,37 +302,101 @@ class PTSimpl {
     return NULL;
   }
 
+  inline tribool bvIsTrueFalse(Expr sort, Expr e)
+  {
+    if (e == bvallones(sort))
+      return true;
+    else if (e == bvzero(sort))
+      return false;
+    else
+      return indeterminate;
+  }
+
   ParseTree rewriteBVPT(const ParseTree& pt, const IsTrueFalseFn& isTrueFalse)
   {
     if (!pt.data() || pt.children().size() < 1)
       return NULL;
     Expr oper = pt.data(), sort = typeOf(pt.data());
-    mpz_class allones;
-    mpz_pow_ui(allones.get_mpz_t(), mpz_class(2).get_mpz_t(), bv::width(sort));
-    Expr bvzero(bv::bvnum(mpz_class(0), sort)),
-         bvone(bv::bvnum(mpz_class(1), sort)),
-         bvallones(bv::bvnum(allones, sort));
-    ParseTree ptbvzero(bvzero), ptbvone(bvone), ptbvallones(bvallones);
-    Expr left = pt.children()[0].toSortedExpr();
+    Expr lbvzero(bvzero(sort)), lbvone(bvone(sort)), lbvallones(bvallones(sort));
+    ParseTree ptbvzero(lbvzero), ptbvone(lbvone), ptbvallones(lbvallones);
+    const ParseTree &ptleft = pt.children()[0];
+    Expr left = ptleft.toSortedExpr();
     /*if (isNum(left) && pt.children().size() == 1)
-      return evaluateBVOp(pt.toExpr());*/
-    Expr right = pt.children()[1].toSortedExpr();
+      return evaluateBVOp(pt.toSortedExpr());*/
+    const ParseTree &ptright = pt.children()[1];
+    Expr right = ptright.toSortedExpr();
 
     /*if (isNum(left) && isNum(right)) // Evaluate e.g. 0 + 1
-      return evaluateBVOp(pt.toExpr());*/
+      return evaluateBVOp(pt.toSortedExpr());*/
 
+    if (isOpX<BAND>(oper) || isOpX<BOR>(oper) ||
+        isOpX<BNAND>(oper) || isOpX<BNOR>(oper))
+    {
+      bool isand = isOpX<BAND>(oper) || isOpX<BNAND>(oper);
+      vector<ParseTree> ret;
+      unordered_set<Expr> seen;
+      for (int i = 0; i < pt.children().size(); ++i)
+      {
+        Expr child = pt.children()[i].toSortedExpr();
+        if ((isand == bvIsTrueFalse(sort, child)) || !seen.insert(child).second)
+          continue;
+        else
+          ret.push_back(pt.children()[i]);
+      }
+      if (ret.size() == 0)
+        ret.push_back(pt.children()[0]);
+      if (ret.size() == 1)
+        return ret[0];
+      return ParseTree(oper, std::move(ret), pt.isNt());
+    }
+    else if (isOpX<BXOR>(oper))
+    {
+      if (left == lbvzero) return ptright;
+      else if (right == lbvzero) return ptleft;
+    }
+
+    else if (isOpX<BADD>(oper))
+    {
+      if (left == lbvzero) return ptright;
+      else if (right == lbvzero) return ptleft;
+      else if (left == bvAdditiveInverse(right))
+        return ptbvzero;
+    }
+    else if (isOpX<BSUB>(oper))
+    {
+      if (right == lbvzero) return ptleft;
+      else if (left == right) return ptbvzero;
+      else if (left == lbvzero) return bvAdditiveInverse(right);
+    }
+    else if (isOpX<BMUL>(oper))
+    {
+      if (left == lbvone) return ptright;
+      else if (right == lbvone) return ptleft;
+      // Because all 1's == -1
+      else if (left == lbvallones) return bvAdditiveInverse(right);
+      else if (right == lbvallones) return bvAdditiveInverse(left);
+    }
+    else if (isOpX<BUDIV>(oper) || isOpX<BSDIV>(oper))
+    {
+      if (right == lbvone) return ptleft;
+      else if (left == right)
+        return ptbvone;
+    }
+    else if (isOpX<BUREM>(oper) || isOpX<BSREM>(oper) || isOpX<BSMOD>(oper))
+    {
+      if (left == right) return ptleft;
+    }
+
+    else if (isOpX<BSHL>(oper) || isOpX<BLSHR>(oper) || isOpX<BASHR>(oper))
+    {
+      if (right == lbvzero) return ptleft;
+    }
     if (isOpX<BXOR>(oper))
     {
       if (left == right) return ptbvzero;
-      else if (left == bvallones) return bvAdditiveInverse(right);
-      else if (right == bvallones) return bvAdditiveInverse(left);
+      else if (left == lbvallones) return bvAdditiveInverse(right);
+      else if (right == lbvallones) return bvAdditiveInverse(left);
     }
-    else if (isOpX<BNAND>(oper) && (left == bvzero || right == bvzero))
-      return ptbvallones;
-    else if (isOpX<BNOR>(oper) && (left == bvallones || right == bvallones))
-      return ptbvzero;
-    else if (isOpX<BXNOR>(oper) && (left == right))
-      return ptbvallones;
 
     else if ((isOpX<BULT>(oper) || isOpX<BSLT>(oper)) && left == right)
       return ptfalse;
@@ -257,53 +406,44 @@ class PTSimpl {
       return ptfalse;
     else if ((isOpX<BUGE>(oper) || isOpX<BSGE>(oper)) && left == right)
       return pttrue;
-    else if (isOpX<BUGE>(oper) && right == bvzero)
+    else if (isOpX<BUGE>(oper) && right == lbvzero)
       return pttrue;
-    else if (isOpX<BULT>(oper) && right == bvzero)
+    else if (isOpX<BULT>(oper) && right == lbvzero)
       return ptfalse;
-
-    else if (isOpX<BADD>(oper) && left == bvAdditiveInverse(right))
-      return ptbvzero;
-    else if (isOpX<BSUB>(oper))
-    {
-      if (left == right) return ptbvzero;
-      else if (left == bvzero) return bvAdditiveInverse(right);
-    }
-    else if (isOpX<BMUL>(oper))
-    {
-      if (left == bvallones) return bvAdditiveInverse(right);
-      else if (right == bvallones) return bvAdditiveInverse(left);
-    }
-    else if ((isOpX<BUDIV>(oper) || isOpX<BSDIV>(oper)) && left == right)
-      return ptbvone;
 
     return NULL;
   }
 
-  vector<int> pruneBoolPT(Expr oper, const vector<ParseTree> &args, const IsTrueFalseFn& isTrueFalse)
+  PruneRetType pruneBoolPT(Expr oper, const vector<ParseTree> &args, const IsTrueFalseFn& isTrueFalse)
   {
-    vector<int> empty;
+    PruneRetType empty;
     if (!oper || args.size() == 0)
       return std::move(empty);
     if (isOpX<AND>(oper) || isOpX<OR>(oper))
     {
-      // Prune `true` and duplicates from AND
-      // Prune `false` and duplicates from OR
-      bool isand = isOpX<AND>(oper);
-      vector<int> ret;
-      unordered_set<Expr> seen;
+      bool hasShortCircuit = false, isand = isOpX<AND>(oper);
+      vector<int> culprits, ret;
+      ParseTree ret2;
       for (int i = 0; i < args.size(); ++i)
-        if ((isand == isTrueFalse(args[i].toExpr())) || !seen.insert(args[i].toExpr()).second)
+      {
+        tribool isTF = isTrueFalse(args[i].toSortedExpr());
+        if (isand == !isTF)
+        {
+          ret2 = isand ? ptfalse : pttrue;
+          hasShortCircuit = true;
+          culprits.push_back(i);
+        }
+        else
           ret.push_back(i);
-      if (ret.size() == args.size())
-        ret.erase(ret.begin());
-      return std::move(ret);
+      }
+      if (hasShortCircuit)
+        return make_tuple(std::move(culprits), std::move(ret), std::move(ret2));
     }
     else if (isOpX<IMPL>(oper))
     {
       assert(args.size() == 2);
-      if (isTrueFalse(args[0].toExpr()))
-        return vector<int>{0};
+      if (!isTrueFalse(args[0].toSortedExpr()))
+        return make_tuple(vector<int>{0}, vector<int>{1}, pttrue);
     }
     /*else if (isOpX<EQ>(oper))
     {
@@ -321,102 +461,94 @@ class PTSimpl {
     return std::move(empty);
   }
 
-  vector<int> pruneIntPT(Expr oper, const vector<ParseTree> &args, const IsTrueFalseFn& isTrueFalse)
+  PruneRetType pruneIntPT(Expr oper, const vector<ParseTree> &args, const IsTrueFalseFn& isTrueFalse)
   {
-    vector<int> empty;
+    PruneRetType empty;
     if (args.size() != 2)
       return std::move(empty);
     Expr left = args[0].toSortedExpr(), right = args[1].toSortedExpr();
-    vector<int> pruneright({1}), pruneleft({0});
-    if (isOpX<PLUS>(oper))
+    vector<int> rightind({1}), leftind({0});
+
+    if (isOpX<MULT>(oper))
     {
-      if (left == ezero) return std::move(pruneleft);
-      else if (right == ezero) return std::move(pruneright);
-    }
-    else if (isOpX<MINUS>(oper))
-    {
-      if (right == ezero) return std::move(pruneright);
-    }
-    else if (isOpX<MULT>(oper))
-    {
-      if (left == eone) return std::move(pruneleft);
-      else if (right == eone) return std::move(pruneright);
-      else if (left == ezero) return std::move(pruneright);
-      else if (right == ezero) return std::move(pruneleft);
+      if (left == ezero)
+        return make_tuple(std::move(leftind), std::move(rightind), args[0]);
+      else if (right == ezero)
+        return make_tuple(std::move(rightind), std::move(leftind), args[1]);
     }
     else if (isOpX<DIV>(oper) || isOpX<IDIV>(oper))
     {
-      if (right == eone) return std::move(pruneright);
-      else if (left == ezero) return std::move(pruneright);
+      if (left == ezero || left == eone)
+        return make_tuple(std::move(leftind), std::move(rightind), ptzero);
     }
     else if (isOpX<MOD>(oper))
     {
-      if (left == right) return std::move(pruneleft);
-      else if (right == eone) return std::move(pruneleft);
+      if (left == ezero)
+        return make_tuple(std::move(leftind), std::move(rightind), ptzero);
+      else if (right == eone)
+        return make_tuple(std::move(rightind), std::move(leftind), args[1]);
     }
 
     return std::move(empty);
   }
 
-  vector<int> pruneBVPT(Expr oper, const vector<ParseTree> &args, const IsTrueFalseFn& isTrueFalse)
+  PruneRetType pruneBVPT(Expr oper, const vector<ParseTree> &args, const IsTrueFalseFn& isTrueFalse)
   {
-    vector<int> empty;
+    PruneRetType empty;
+    Expr left = args[0].toSortedExpr(), right = args[1].toSortedExpr();
+    PruneRetType pruneleft(vector<int>{1}, vector<int>{0}, args[1]),
+                 pruneright(vector<int>{0}, vector<int>{1}, args[2]);
+    Expr sort = typeOf(oper);
+
+    if (isOpX<BAND>(oper) || isOpX<BOR>(oper) ||
+      isOpX<BNAND>(oper) || isOpX<BNOR>(oper))
+    {
+      bool hasShortCircuit = false,
+           isand = isOpX<BAND>(oper) || isOpX<BNAND>(oper);
+      vector<int> culprits, ret;
+      ParseTree ret2;
+      for (int i = 0; i < args.size(); ++i)
+      {
+        if (isand == bvIsTrueFalse(sort, args[i].toSortedExpr()))
+        {
+          if (isOpX<BAND>(oper) || isOpX<BNOR>(oper))
+            ret2 = bvzero(sort);
+          else
+            ret2 = bvallones(sort);
+          culprits.push_back(i);
+          hasShortCircuit = true;
+        }
+        else
+          ret.push_back(i);
+      }
+      if (hasShortCircuit)
+        return make_tuple(std::move(culprits), std::move(ret), std::move(ret2));
+      else
+        return std::move(empty);
+    }
+
     if (args.size() != 2)
       return std::move(empty);
-    Expr left = args[0].toSortedExpr(), right = args[1].toSortedExpr();
-    vector<int> pruneright({1}), pruneleft({0});
-    Expr sort = typeOf(oper);
-    Expr bvzero(bv::bvnum(mpz_class(0), sort)),
-         bvone(bv::bvnum(mpz_class(1), sort)),
-         bvnegone(bv::bvnum(mpz_class(-1), sort));
 
-    if (isOpX<BAND>(oper))
+    if (isOpX<BMUL>(oper))
     {
-      if (left == bvzero) return std::move(pruneright);
-      else if (right == bvzero) return std::move(pruneleft);
-      else if (left == bvnegone) return std::move(pruneleft);
-      else if (right == bvnegone) return std::move(pruneright);
-    }
-    else if (isOpX<BOR>(oper))
-    {
-      if (left == bvzero) return std::move(pruneleft);
-      else if (right == bvzero) return std::move(pruneright);
-      else if (left == bvnegone) return std::move(pruneright);
-      else if (right == bvnegone) return std::move(pruneleft);
-    }
-    else if (isOpX<BXOR>(oper))
-    {
-      if (left == bvzero) return std::move(pruneleft);
-      else if (right == bvzero) return std::move(pruneright);
-    }
-
-    else if (isOpX<BADD>(oper))
-    {
-      if (left == bvzero) return std::move(pruneleft);
-      else if (right == bvzero) return std::move(pruneright);
-    }
-    else if (isOpX<BSUB>(oper))
-    {
-      if (right == bvzero) return std::move(pruneright);
-    }
-    else if (isOpX<BMUL>(oper))
-    {
-      if (left == bvzero) return std::move(pruneright);
-      else if (right == bvzero) return std::move(pruneleft);
+      if (left == bvzero(sort)) return std::move(pruneright);
+      else if (right == bvzero(sort)) return std::move(pruneleft);
     }
     else if (isOpX<BUDIV>(oper) || isOpX<BSDIV>(oper))
     {
-      if (left == bvone || left == bvzero) return std::move(pruneright);
-      else if (right == bvone) return std::move(pruneright);
+      if (left == bvone(sort) || left == bvzero(sort))
+        return make_tuple(vector<int>{0}, vector<int>{1}, bvzero(sort));
     }
     else if (isOpX<BUREM>(oper) || isOpX<BSREM>(oper) || isOpX<BSMOD>(oper))
     {
-      if (left == right) return std::move(pruneleft);
-      else if (right == bvone) return std::move(pruneleft);
+      if (left == bvzero(sort))
+        return make_tuple(vector<int>{0}, vector<int>{1}, bvzero(sort));
+      else if (right == eone) return std::move(pruneleft);
     }
 
     else if (isOpX<BSHL>(oper) || isOpX<BLSHR>(oper) || isOpX<BASHR>(oper))
-      if (right == bvzero) return std::move(pruneright);
+      if (left == bvzero(sort)) return std::move(pruneleft);
 
     return std::move(empty);
   }

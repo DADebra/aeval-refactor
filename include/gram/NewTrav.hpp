@@ -227,7 +227,6 @@ class NewTrav : public Traversal
     }
 
     // Root is a Z3 function (e.g. (and ...))
-    Expr oper = root; // Might change from pruning
     std::shared_ptr<ExprUSet> localqvars(new ExprUSet());
 
     if (qvars != NULL)
@@ -296,27 +295,15 @@ class NewTrav : public Traversal
       }
     }
 
+    ParseTree ret = NULL;
     if (params.simplify)
     {
-      vector<int> toprune = std::move(ptsimpl.prunePT(root, newexpr, isTrueFalse));
-      assert(toprune.size() != newexpr.size());
-      if (toprune.size() != 0)
-      {
-        for (const int &prunei : toprune)
-          newexpr[prunei] = NULL;
-        decltype(newexpr) newnewexpr;
-        for (int i = 0; i < newexpr.size(); ++i)
-          if (newexpr[i]) newnewexpr.push_back(newexpr[i]);
-        newexpr = std::move(newnewexpr);
-        if (newexpr.size() == 1)
-        {
-          oper = newexpr[0].data();
-          newexpr = newexpr[0].children();
-        }
-      }
+      std::tie(ignore, ignore, ret) =
+        std::move(ptsimpl.prunePT(root, newexpr, isTrueFalse));
     }
 
-    ParseTree ret(oper, std::move(newexpr), false);
+    if (!ret)
+      ret = ParseTree(root, std::move(newexpr), false);
 
     if (params.simplify)
     {
@@ -533,7 +520,6 @@ class NewTrav : public Traversal
     }
 
     // Root is a Z3 function (e.g. (and ...))
-    Expr oper = root; // Might change from pruning
     std::shared_ptr<ExprUSet> localqvars(new ExprUSet());
     vector<ParseTree> newexpr(root->arity());
 
@@ -584,7 +570,7 @@ class NewTrav : public Traversal
 
     // Traversal
 
-    while (true) {
+    ParseTree ret = NULL;
     if (params.type == TPType::STRIPED)
     {
       if (!ro && !travpos.inqueue())
@@ -761,6 +747,40 @@ class NewTrav : public Traversal
           }
         }
       }
+      for (const auto& p : newexpr)
+        if (!p) { if (!ro) travpos.makenull(); return NULL; }
+
+      if (params.simplify)
+      {
+        vector<int> culprits, toprune;
+        std::tie(culprits, toprune, ret) =
+          std::move(ptsimpl.prunePT(root, newexpr, isTrueFalse));
+        if (!ro && toprune.size() != 0)
+        {
+          assert(toprune.size() != newexpr.size());
+          assert(ret);
+
+          bool docontinue = false;
+          bool doPrune = false;
+          for (const int &ci : culprits)
+            if (dind(ci) < constpos.childmin())
+            { doPrune = true; break; }
+
+          if (doPrune)
+          {
+            // At least one of the short-circuit culprits is below
+            // the min, i.e. we can't change it.
+            for (const int &pi : toprune)
+            {
+              // This child is useless, so just set it as done so we skip
+              // over it.
+              if (dind(pi) >= constpos.childmin())
+                travposchildat(pi).makedone();
+            }
+          }
+          // Otherwise, no more to do, just use the new candidate
+        }
+      }
 
       if (!ro)
       {
@@ -849,44 +869,8 @@ class NewTrav : public Traversal
       }
     }
 
-    for (const auto& p : newexpr)
-      if (!p) { if (!ro) travpos.makenull(); return NULL; }
-
-    if (params.simplify)
-    {
-      vector<int> toprune = std::move(ptsimpl.prunePT(root, newexpr, isTrueFalse));
-      if (toprune.size() != 0)
-      {
-        assert(toprune.size() != newexpr.size());
-
-        decltype(newexpr) newnewexpr;
-        bool docontinue = false;
-        for (const int &pi : toprune)
-        {
-          if (pi == constpos.pos() && !constpos.isdone())
-          {
-            // Pick a new candidate
-            docontinue = true; break;
-          }
-          else
-            newexpr[pi] = NULL;
-        }
-        if (docontinue)
-          continue;
-        for (int i = 0; i < newexpr.size(); ++i)
-          if (newexpr[i]) newnewexpr.push_back(newexpr[i]);
-        newexpr = std::move(newnewexpr);
-        if (newexpr.size() == 1)
-        {
-          oper = newexpr[0].data();
-          newexpr = newexpr[0].children();
-        }
-      }
-    }
-    break;
-    }
-
-    ParseTree ret = ParseTree(oper, std::move(newexpr), false);
+    if (!ret)
+      ret = ParseTree(root, std::move(newexpr), false);
     if (params.simplify)
     {
       ParseTree rewriteRet = std::move(ptsimpl.rewritePT(ret, isTrueFalse));

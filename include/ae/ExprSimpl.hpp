@@ -1006,7 +1006,7 @@ namespace ufo
       if (divider == 0)
         // Don't try to calculate; causes Div by 0 otherwise.
         // We can't simplify, because mod by 0 is undefined in Z3
-        return e->left();
+        return e;
 
       ExprVector ops;
       getMultOps (e->left(), ops);

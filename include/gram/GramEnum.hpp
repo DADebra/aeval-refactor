@@ -17,7 +17,7 @@ namespace ufo
 class GramEnum
 {
   // The maximum number of previous candidates we store.
-  const int MAXGRAMCANDS = 200;
+  const int MAXGRAMCANDS = 1000;
 
   // Previously generated candidates from sample grammar
   ExprUSet gramCands;
@@ -275,7 +275,11 @@ class GramEnum
       nextcand = nextpt.toSortedExpr();
 
       if ((globalparams.simplify && globalparams.method != TPMethod::NEWTRAV))
+      //if (globalparams.simplify)
+      {
         nextcand = simplifyBool(simplifyArithm(nextcand));
+        nextcand = sortCommutative(nextcand);
+      }
 
       if (isOpX<TRUE>(nextcand) || isOpX<FALSE>(nextcand))
       {
