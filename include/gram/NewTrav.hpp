@@ -61,7 +61,7 @@ class NewTrav : public Traversal
   int currmaxdepth = -1;
 
   // I'm not sure why, but using the Path as the key here won't work
-  unordered_map<std::pair<const TravPos*,const TravParams*>,ParseTree>
+  unordered_map<const TravPos*,ParseTree>
     gettravCache;
   unordered_map<std::tuple<Expr,int,Expr,size_t,const TravParams*>,ParseTree>
     getfirstCache;
@@ -114,7 +114,7 @@ class NewTrav : public Traversal
 
   ParseTree gettrav(const Expr& root, const TravPos& travpos, int currdepth,
     std::shared_ptr<ExprUSet> qvars, Expr currnt, Path path, const TravParams& oldparams,
-    bool& needdefer, bool getfirst)
+    bool& needdefer, bool getfirst, bool nocache = false)
   {
     size_t phash;
 #if DO_PATH_COLL_CHECK == 1
@@ -123,7 +123,8 @@ class NewTrav : public Traversal
     phash = path;
 #endif
 
-    const TravParams& params = ntparams.count(root) != 0 ? ntparams[root] : oldparams;
+    const TravParams& params = oldparams.goverride ? oldparams :
+      ntparams.count(root) != 0 ? ntparams[root] : oldparams;
     const TravParams& nextparams = oldparams.goverride ? oldparams :
       params.propagate ? params : oldparams;
 
@@ -158,29 +159,32 @@ class NewTrav : public Traversal
       }
     }
 
-    std::pair<const TravPos*,const TravParams*> key;
+    const TravPos* key;
     std::tuple<Expr,int,Expr,size_t,const TravParams*> firstkey;
-    if (!getfirst)
+    if (!nocache)
     {
-      key = make_pair(&travpos, &oldparams);
-      auto itr = gettravCache.find(key);
-      if (itr != gettravCache.end())
+      if (!getfirst)
       {
-        if (itr->second)
-          ptshoulddefer(itr->second, needdefer);
-        return itr->second;
+        key = &travpos;
+        auto itr = gettravCache.find(key);
+        if (itr != gettravCache.end())
+        {
+          if (itr->second)
+            ptshoulddefer(itr->second, needdefer);
+          return itr->second;
+        }
       }
-    }
-    else
-    {
-      // Will be used when we return
-      firstkey = std::move(make_tuple(root, currdepth, currnt, phash, &oldparams));
-      auto itr = getfirstCache.find(firstkey);
-      if (itr != getfirstCache.end())
+      else
       {
-        if (itr->second)
-          ptshoulddefer(itr->second, needdefer);
-        return itr->second;
+        // Will be used when we return
+        firstkey = std::move(make_tuple(root, currdepth, currnt, phash, &oldparams));
+        auto itr = getfirstCache.find(firstkey);
+        if (itr != getfirstCache.end())
+        {
+          if (itr->second)
+            ptshoulddefer(itr->second, needdefer);
+          return itr->second;
+        }
       }
     }
 
@@ -192,7 +196,7 @@ class NewTrav : public Traversal
       ParseTree ret(std::move(newtrav(root, firstpos, currdepth, qvars, currnt,
         path, oldparams, path, false)));
       ptshoulddefer(ret, needdefer);
-      getfirstCache[firstkey] = ret;
+      if (!nocache) getfirstCache[firstkey] = ret;
       return std::move(ret);
     }
 
@@ -218,11 +222,11 @@ class NewTrav : public Traversal
       int startpos = pos;
       ParseTree ret = NULL;
       ret = std::move(gettrav(prods[pos], travpos.childat(pos), newdepth,
-        qvars, currnt, np(path,C,pos), nextparams, needdefer, getfirst));
+        qvars, currnt, np(path,C,pos), nextparams, needdefer, getfirst, nocache));
       assert(ret);
       needdefer = needdefer || shoulddefer(root, prods[pos]);
       ret = ParseTree(root, std::move(ret), true);
-      gettravCache[key] = ret;
+      if (!nocache) gettravCache[key] = ret;
       return std::move(ret);
     }
 
@@ -252,10 +256,10 @@ class NewTrav : public Traversal
       for (int i = 0; i < root->arity(); ++i)
       {
         newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos.childat(dind(i)), currdepth,
-          localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, getfirst);
+          localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, getfirst, nocache);
         if (!newexpr[dind(i)])
         {
-          gettravCache[key] = NULL;
+          if (!nocache) gettravCache[key] = NULL;
           return NULL;
         }
       }
@@ -265,8 +269,8 @@ class NewTrav : public Traversal
       if (travpos.inqueue())
       {
         ParseTree ret(std::move(gettrav(root, travpos.queueat(pos), currdepth,
-          localqvars, currnt, np(path,Q,pos), oldparams, needdefer, getfirst)));
-        gettravCache[key] = ret;
+          localqvars, currnt, np(path,Q,pos), oldparams, needdefer, getfirst, nocache)));
+        if (!nocache) gettravCache[key] = ret;
         return std::move(ret);
       }
 
@@ -275,20 +279,20 @@ class NewTrav : public Traversal
         if (i >= travpos.min() && i != pos)
         {
           newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos, currdepth,
-            localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, true);
+            localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, true, nocache);
           if (!newexpr[dind(i)])
           {
-            gettravCache[key] = NULL;
+            if (!nocache) gettravCache[key] = NULL;
             return NULL;
           }
         }
         else
         {
           newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos.childat(dind(i)), currdepth,
-            localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, getfirst);
+            localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, getfirst, nocache);
           if (!newexpr[dind(i)])
           {
-            gettravCache[key] = NULL;
+            if (!nocache) gettravCache[key] = NULL;
             return NULL;
           }
         }
@@ -312,7 +316,7 @@ class NewTrav : public Traversal
         ret = std::move(rewriteRet);
     }
 
-    gettravCache[key] = ret;
+    if (!nocache) gettravCache[key] = ret;
     return std::move(ret);
   }
 
@@ -323,7 +327,8 @@ class NewTrav : public Traversal
     // mu: Only increment positions below this path
     // ro: Read-only, don't increment positions
 
-    const TravParams& params = ntparams.count(root) != 0 ? ntparams[root] : oldparams;
+    const TravParams& params = oldparams.goverride ? oldparams :
+      ntparams.count(root) != 0 ? ntparams[root] : oldparams;
     const TravParams& nextparams = oldparams.goverride ? oldparams :
       params.propagate ? params : oldparams;
 
@@ -341,7 +346,7 @@ class NewTrav : public Traversal
     if (ro && travpos.isnull())
       return NULL;
 
-    gettravCache.erase(make_pair(&travpos, &oldparams));
+    gettravCache.erase(&travpos);
 
     // Some operations should not cause copy-up; use constpos for these.
     const TravPos &constpos = travpos;
@@ -858,6 +863,8 @@ class NewTrav : public Traversal
             currdepth, localqvars, currnt, np(path,C,dind(i)), nextparams, mu, ro);
         }*/
       }
+      for (const auto& p : newexpr)
+        if (!p) { if (!ro) travpos.makenull(); return NULL; }
 
       if (!ro)
       {
@@ -968,8 +975,8 @@ class NewTrav : public Traversal
   virtual ParseTree GetUnsimplifiedCand()
   {
     bool unused;
-    return std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root,
-      rootpath, nosimplparams, nullpath, true));
+    return gettrav(gram.root, rootpos, 0, NULL, gram.root, rootpath,
+      nosimplparams, unused, false, true);
   }
 
   virtual ParseTree Increment()
