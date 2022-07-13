@@ -8,7 +8,7 @@
 #include <sstream>
 #include <fstream>
 
-#include "gram/PairHash.hpp"
+#include "utils/PairHash.hpp"
 
 using namespace ufo;
 

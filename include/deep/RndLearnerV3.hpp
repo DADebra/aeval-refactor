@@ -962,6 +962,10 @@ namespace ufo
             outs () << "Success after " << (i+1) << " iterations "
                     << (rndStarted ? "(+ rnd)" :
                        (i > defSz[invNum]) ? "(+ rec)" : "" ) << "\n";
+
+            for (int j = 0; j < invNumber; j++)
+              sfs[j].back().gf.finish(true);
+
             printSolution();
             return true;
           }
@@ -969,6 +973,8 @@ namespace ufo
         else if (printLog)
           outs() << " - - - bad cand\n";
       }
+      for (int j = 0; j < invNumber; j++)
+        sfs[j].back().gf.finish(false);
       outs() << "unknown\n";
       return false;
     }

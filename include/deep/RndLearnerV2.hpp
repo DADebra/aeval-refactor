@@ -322,6 +322,9 @@ namespace ufo
         if (success) break;
       }
 
+      for (int j = 0; j < invNumber; j++)
+        sfs[j].back().gf.finish(success);
+
       outIters = iter - 1;
       return success;
     }

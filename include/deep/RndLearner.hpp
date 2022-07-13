@@ -785,6 +785,10 @@ namespace ufo
             << sfs[j].back().learnedExprs.size() << "\n";
 
       if (printLog) outs () << "        number of SMT checks: " << numOfSMTChecks << "\n";
+
+      for (int j = 0; j < invNumber; j++)
+        sfs[j].back().gf.finish(success);
+
       if (success) printSolution();
       return success;
     }

@@ -5,7 +5,7 @@
 #error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
 #endif
 
-#include "gram/PairHash.hpp"
+#include "utils/PairHash.hpp"
 
 #include <boost/optional.hpp>
 

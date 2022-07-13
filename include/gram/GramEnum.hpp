@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <list>
 
-#include "gram/PairHash.hpp"
+#include "utils/PairHash.hpp"
 
 namespace ufo
 {
@@ -17,11 +17,10 @@ namespace ufo
 class GramEnum
 {
   // The maximum number of previous candidates we store.
-  const int MAXGRAMCANDS = 1000;
+  const int MAXGRAMCANDS = 10000;
 
   // Previously generated candidates from sample grammar
-  ExprUSet gramCands;
-  deque<Expr> gramCandsOrder;
+  unordered_set<Expr> gramCands;
 
   // Key: <Non-terminal, Production>
   // Value: number of candidates generated with NT->Prod expansion
@@ -81,7 +80,6 @@ class GramEnum
   {
     travReset();
     gramCands.clear();
-    gramCandsOrder.clear();
   }
 
   void travReset()
@@ -147,9 +145,9 @@ class GramEnum
   int debug;
   bool b4simpl = false;
 
-  GramEnum(Grammar& _gram) : gram(_gram) {}
+  GramEnum(Grammar& _gram) : gram(_gram), gramCands() {}
   GramEnum(Grammar& _gram, const TravParams* _params, int _debug) :
-    gram(_gram), debug(_debug)
+    gram(_gram), debug(_debug), gramCands()
   {
     if (_params)
       SetParams(*_params, NTParamMap());
@@ -309,12 +307,6 @@ class GramEnum
         continue;
       }
 
-      if (gramCandsOrder.size() == MAXGRAMCANDS)
-      {
-        gramCands.erase(gramCandsOrder[0]);
-        gramCandsOrder.pop_front();
-      }
-      gramCandsOrder.push_back(nextcand);
       break;
     }
 
@@ -329,6 +321,24 @@ class GramEnum
 
   // Unsimplified
   ParseTree GetCurrPT() const { return lastpt; }
+
+  void PrintCacheStatistics()
+  {
+    /*cout << "gramCands Top: [" << gramCands.top() << "]\n";
+    cout << "gramCands Bottom: [" << gramCands.bottom() << "]\n";*/
+    /*cout << "gramCands Top: [" << gramCands.top().val <<
+      ", " << gramCands.top().extra << "]\n";
+    cout << "gramCands Bottom: [" << gramCands.bottom().val <<
+      ", " << gramCands.bottom().extra << "]\n";
+    int count = 0;
+    float avgextra = 0;
+    for (const auto& itm : gramCands)
+    {
+      assert(itm.extra >= gramCands.top().extra);
+      avgextra = ((avgextra * count) + itm.extra) / ++count;
+    }
+    cout << "gramCands Average Frequency: " << avgextra << endl;*/
+  }
 };
 
 }

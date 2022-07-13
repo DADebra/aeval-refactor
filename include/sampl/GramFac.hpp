@@ -364,6 +364,15 @@ namespace ufo
       return ret;
     }
 
+    // Call when sampling done
+    void finish(bool success)
+    {
+      if (!initialized)
+        return;
+      if (debug > 1)
+        gramenum.PrintCacheStatistics();
+    }
+
     private:
     bool etob(Expr e) { return isOpX<TRUE>(e); }
 

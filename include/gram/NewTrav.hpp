@@ -5,7 +5,7 @@
 #error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
 #endif
 
-#include "gram/TupleHash.hpp"
+#include "utils/TupleHash.hpp"
 
 #include "gram/TravPos.hpp"
 
