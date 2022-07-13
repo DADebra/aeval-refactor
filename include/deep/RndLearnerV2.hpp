@@ -30,6 +30,8 @@ namespace ufo
     {
       ExprVector eqs;
       ZSolver<EZ3>::Model m = m_smt_solver.getModel();
+      if (!m)
+        return NULL;
       for (auto & v : vars)
       {
         Expr e = m.eval(v);
@@ -128,7 +130,9 @@ namespace ufo
         boost::tribool res = m_smt_solver.solve();
         if (res || indeterminate(res))
         {
-          modelsOfFailures[getModel(hr->srcVars)].insert(candSet[i]);
+          Expr m = getModel(hr->srcVars);
+          if (m)
+            modelsOfFailures[m].insert(candSet[i]);
 
           if (deferPriorities)
           {
