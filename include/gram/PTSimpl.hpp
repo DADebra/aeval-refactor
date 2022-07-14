@@ -132,6 +132,7 @@ class PTSimpl {
     {
       mpz_class allones;
       mpz_pow_ui(allones.get_mpz_t(), mpz_class(2).get_mpz_t(), bv::width(sort));
+      --allones;
       itr = _bvallones.emplace(sort, bv::bvnum(allones, sort)).first;
     }
     return itr->second;
@@ -140,6 +141,15 @@ class PTSimpl {
   ParseTree rewriteBoolPT(const ParseTree& pt, const IsTrueFalseFn& isTrueFalse)
   {
     Expr oper = pt.data();
+    if (isOp<ComparissonOp>(oper))
+    {
+      Expr left = pt.children()[0].toSortedExpr(),
+           right = pt.children()[1].toSortedExpr();
+      if (isNum(left) && isNum(right)) // Evaluate e.g. 0 < 1
+        return evaluateCmpConsts(oper, getTerm<mpz_class>(left),
+          getTerm<mpz_class>(right)) ? pttrue : ptfalse;
+    }
+
     if (isOpX<NEG>(oper))
     {
       assert(pt.children().size() == 1);
@@ -194,7 +204,7 @@ class PTSimpl {
     }
     else if (isOpX<FORALL>(oper) || isOpX<EXISTS>(oper))
     {
-      tribool isTF = isTrueFalse(pt.children()[0].toSortedExpr());
+      tribool isTF = isTrueFalse(pt.children().back().toSortedExpr());
       if (isTF)       return pttrue;
       else if (!isTF) return ptfalse;
       else            return NULL;
@@ -203,10 +213,6 @@ class PTSimpl {
       return NULL;
     Expr left = pt.children()[0].toSortedExpr(),
          right = pt.children()[1].toSortedExpr();
-
-    if (isNum(left) && isNum(right)) // Evaluate e.g. 0 < 1
-      return evaluateCmpConsts(oper,
-        getTerm<mpz_class>(left), getTerm<mpz_class>(right)) ? pttrue : ptfalse;
 
     if (isOpX<LT>(oper) && left == right)
       return ptfalse;
@@ -312,6 +318,8 @@ class PTSimpl {
     Expr left = ptleft.toSortedExpr();
     /*if (isNum(left) && pt.children().size() == 1)
       return evaluateBVOp(pt.toSortedExpr());*/
+    if (pt.children().size() < 2)
+      return NULL;
     const ParseTree &ptright = pt.children()[1];
     Expr right = ptright.toSortedExpr();
 
@@ -484,9 +492,11 @@ class PTSimpl {
   PruneRetType pruneBVPT(Expr oper, const vector<ParseTree> &args, const IsTrueFalseFn& isTrueFalse)
   {
     PruneRetType empty;
+    if (args.size() < 2)
+      return std::move(empty);
     Expr left = args[0].toSortedExpr(), right = args[1].toSortedExpr();
     PruneRetType pruneleft(vector<int>{1}, vector<int>{0}, args[1]),
-                 pruneright(vector<int>{0}, vector<int>{1}, args[2]);
+                 pruneright(vector<int>{0}, vector<int>{1}, args[0]);
     Expr sort = typeOf(oper);
 
     if (isOpX<BAND>(oper) || isOpX<BOR>(oper) ||
@@ -498,7 +508,7 @@ class PTSimpl {
       ParseTree ret2;
       for (int i = 0; i < args.size(); ++i)
       {
-        if (isand == bvIsTrueFalse(sort, args[i].toSortedExpr()))
+        if (isand == !bvIsTrueFalse(sort, args[i].toSortedExpr()))
         {
           if (isOpX<BAND>(oper) || isOpX<BNOR>(oper))
             ret2 = bvzero(sort);
