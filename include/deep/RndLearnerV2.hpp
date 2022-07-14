@@ -130,9 +130,7 @@ namespace ufo
         boost::tribool res = m_smt_solver.solve();
         if (res || indeterminate(res))
         {
-          Expr m = getModel(hr->srcVars);
-          if (m)
-            modelsOfFailures[m].insert(candSet[i]);
+          modelsOfFailures[getModel(hr->srcVars)].insert(candSet[i]);
 
           if (deferPriorities)
           {
@@ -309,6 +307,14 @@ namespace ufo
         ExprSet secondChanceCands;
         for (auto it = modelsOfFailures.begin(); it != modelsOfFailures.end(); )
         {
+          if (!it->first)
+          {
+            // CE Unknown, try unconditionally
+            // TODO: Limit the maximum number we try at a time
+            for (auto & e : it->second) secondChanceCands.insert(e);
+            it = modelsOfFailures.erase(it);
+            continue;
+          }
           m_smt_solver.reset();
           m_smt_solver.assertExpr (it->first);
           m_smt_solver.assertExpr (sf.getAllLemmas());
@@ -317,7 +323,7 @@ namespace ufo
           if (!m_smt_solver.solve ()) // CE violated
           {
             for (auto & e : it->second) secondChanceCands.insert(e);
-            modelsOfFailures.erase(it++);
+            it = modelsOfFailures.erase(it);
           }
           else ++it;
         }
