@@ -59,6 +59,10 @@ class Traversal
   // Increments the position of this traversal, returning the next candidate
   // (i.e. the candidate at the new position).
   virtual ParseTree Increment() = 0;
+
+  // Must call when traversal is completed. `success` is true if the problem
+  // was solved correctly. Mostly for debug printing, etc. purposes.
+  virtual void Finish(bool success) = 0;
 };
 
 }

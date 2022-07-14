@@ -215,6 +215,11 @@ class RndTrav : public Traversal
     lastcand.fixchildren();
     return ret;
   }
+
+  virtual void Finish(bool success)
+  {
+    return;
+  }
 };
 
 }

@@ -140,6 +140,24 @@ class GramEnum
 
   }
 
+  void printCacheStatistics()
+  {
+    /*cout << "gramCands Top: [" << gramCands.top() << "]\n";
+    cout << "gramCands Bottom: [" << gramCands.bottom() << "]\n";*/
+    /*cout << "gramCands Top: [" << gramCands.top().val <<
+      ", " << gramCands.top().extra << "]\n";
+    cout << "gramCands Bottom: [" << gramCands.bottom().val <<
+      ", " << gramCands.bottom().extra << "]\n";
+    int count = 0;
+    float avgextra = 0;
+    for (const auto& itm : gramCands)
+    {
+      assert(itm.extra >= gramCands.top().extra);
+      avgextra = ((avgextra * count) + itm.extra) / ++count;
+    }
+    cout << "gramCands Average Frequency: " << avgextra << endl;*/
+  }
+
   public:
 
   int debug;
@@ -298,7 +316,8 @@ class GramEnum
         continue;
       }
 
-      if (!gramCands.insert(nextcand).second)
+      if (globalparams.method != TPMethod::NEWTRAV &&
+          !gramCands.insert(nextcand).second)
       {
         nextcand = NULL;
         nextpt = NULL;
@@ -322,22 +341,12 @@ class GramEnum
   // Unsimplified
   ParseTree GetCurrPT() const { return lastpt; }
 
-  void PrintCacheStatistics()
+  void Finish(bool success)
   {
-    /*cout << "gramCands Top: [" << gramCands.top() << "]\n";
-    cout << "gramCands Bottom: [" << gramCands.bottom() << "]\n";*/
-    /*cout << "gramCands Top: [" << gramCands.top().val <<
-      ", " << gramCands.top().extra << "]\n";
-    cout << "gramCands Bottom: [" << gramCands.bottom().val <<
-      ", " << gramCands.bottom().extra << "]\n";
-    int count = 0;
-    float avgextra = 0;
-    for (const auto& itm : gramCands)
-    {
-      assert(itm.extra >= gramCands.top().extra);
-      avgextra = ((avgextra * count) + itm.extra) / ++count;
-    }
-    cout << "gramCands Average Frequency: " << avgextra << endl;*/
+    if (traversal)
+      traversal->Finish(success);
+    if (debug > 1)
+      printCacheStatistics();
   }
 };
 

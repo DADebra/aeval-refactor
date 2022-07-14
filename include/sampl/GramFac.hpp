@@ -369,8 +369,7 @@ namespace ufo
     {
       if (!initialized)
         return;
-      if (debug > 1)
-        gramenum.PrintCacheStatistics();
+      gramenum.Finish(success);
     }
 
     private:

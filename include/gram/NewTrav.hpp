@@ -66,6 +66,25 @@ class NewTrav : public Traversal
   unordered_map<std::tuple<Expr,int,Expr,size_t,const TravParams*>,ParseTree>
     getfirstCache;
 
+  unordered_map<const TravPos*, unordered_set<Expr>> oldCands;
+  // True if all of the given NTs productions are unique
+  unordered_map<std::pair<Expr,int>,tribool> _isUnique;
+
+  inline int oldCandsSize(const TravPos* pos)
+  {
+    auto itr = oldCands.find(pos);
+    return itr == oldCands.end() ? 0 : itr->second.size();
+  }
+
+  inline tribool& isUnique(Expr nt, int depth)
+  {
+    auto key = make_pair(nt, depth);
+    auto itr = _isUnique.find(key);
+    if (itr == _isUnique.end())
+      itr = _isUnique.emplace(key, indeterminate).first;
+    return itr->second;
+  }
+
 #if DO_PATH_COLL_CHECK == 1
   unordered_map<size_t,string> pathCollisionCheck;
 #endif
@@ -193,8 +212,8 @@ class NewTrav : public Traversal
       // I'm sick of having to maintain two versions of the traversal iteration
       //   code. The rest will be pruned later.
       TravPos firstpos;
-      ParseTree ret(std::move(newtrav(root, firstpos, currdepth, qvars, currnt,
-        path, oldparams, path, false)));
+      ParseTree ret(std::move(newtrav(root, firstpos, currdepth, qvars,
+        currnt, path, oldparams, path, false)));
       ptshoulddefer(ret, needdefer);
       if (!nocache) getfirstCache[firstkey] = ret;
       return std::move(ret);
@@ -278,7 +297,7 @@ class NewTrav : public Traversal
       {
         if (i >= travpos.min() && i != pos)
         {
-          newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos, currdepth,
+          newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos.childat(dind(i)), currdepth,
             localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, true, nocache);
           if (!newexpr[dind(i)])
           {
@@ -399,6 +418,7 @@ class NewTrav : public Traversal
           else if (params.order == TPOrder::REV)
             travpos.prevpos();
         }
+        oldCands.erase(&travpos); // Our address might have been used already
       }
 
       if (!ro && params.type == TPType::STRIPED)
@@ -426,7 +446,7 @@ class NewTrav : public Traversal
       ParseTree ret(NULL);
       int newdepth;
       int startpos = travpos.pos();
-      for (;;)
+      while (true)
       {
         if (!ro)
         {
@@ -450,6 +470,7 @@ class NewTrav : public Traversal
                 checkprio = false;
               else
               {
+                oldCands.erase(&travpos);
                 travpos.makenull();
                 return NULL;
               }
@@ -472,33 +493,52 @@ class NewTrav : public Traversal
         if (!ret.children()[0])
           // The either we picked is done at that recursive depth. Pick another.
           continue;
-        break;
-      }
 
-      if (!ro)
-      {
-        // Check to see if we're done.
-        startpos = travpos.pos();
-        CircularInt checkpos = travpos;
-        bool alldone = true, // Completely done
-             recdone = true; // Just done at this recursion depth
-        do
+        bool docontinue = false;
+        if (params.simplify && (prods.size() != 1 || !gram.isNt(prods[0])) &&
+            !bool(isUnique(root, currdepth)))
+          if (!oldCands[&travpos].insert(ret.toSortedExpr()).second)
+          {
+            isUnique(root, currdepth) = false;
+            if (constpos.childat(travpos.pos()).isdone())
+              docontinue = true; // We might be done, so check below
+            else
+              continue; // Definitely aren't done, can skip check below
+          }
+
+        if (!ro)
         {
-          bool isrec = gram.isRecursive(prods[checkpos], root) &&
-            currdepth == currmaxdepth;
-          bool isdone = constpos.childat(checkpos).isdone();
+          // Check to see if we're done.
+          startpos = travpos.pos();
+          CircularInt checkpos = travpos;
+          bool alldone = true, // Completely done
+               recdone = true; // Just done at this recursion depth
+          do
+          {
+            bool isrec = gram.isRecursive(prods[checkpos], root) &&
+              currdepth == currmaxdepth;
+            bool isdone = constpos.childat(checkpos).isdone();
 
-          alldone &= isdone;
-          recdone &= (isrec || isdone);
+            alldone &= isdone;
+            recdone &= (isrec || isdone);
 
-          if (params.order == TPOrder::FOR)
-            ++checkpos;
-          else if (params.order == TPOrder::REV)
-            --checkpos;
-        } while (checkpos != startpos);
+            if (params.order == TPOrder::FOR)
+              ++checkpos;
+            else if (params.order == TPOrder::REV)
+              --checkpos;
+          } while (checkpos != startpos);
 
-        if (alldone || recdone)
-          travpos.makedone();
+          if (alldone || recdone)
+          {
+            oldCands.erase(&travpos);
+            travpos.makedone();
+            break;
+          }
+        }
+
+        if (docontinue) continue;
+
+        break;
       }
 
       assert(ret);
@@ -694,7 +734,7 @@ class NewTrav : public Traversal
             bool needdefer = false;
             if (i >= travpos.childmin())
             {
-              newexprat(i) = gettrav(rootarg(i), travpos, currdepth,
+              newexprat(i) = gettrav(rootarg(i), constposchildat(i), currdepth,
                 localqvars, currnt, np(path,C,dind(i)), nextparams,
                 needdefer, true);
             }
@@ -780,7 +820,7 @@ class NewTrav : public Traversal
               // This child is useless, so just set it as done so we skip
               // over it.
               if (dind(pi) >= constpos.childmin())
-                travposchildat(pi).makedone();
+                travposchildat(dind(pi)).makedone();
             }
           }
           // Otherwise, no more to do, just use the new candidate
@@ -1000,6 +1040,11 @@ class NewTrav : public Traversal
     if (lastcand)
       fillUniqVars(lastcand);
     return lastcand;
+  }
+
+  virtual void Finish(bool success)
+  {
+    return;
   }
 };
 

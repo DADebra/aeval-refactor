@@ -243,15 +243,23 @@ class PTSimpl {
     Expr oper = pt.data();
     if (!oper || pt.children().size() < 1)
       return NULL;
-    const ParseTree &ptleft = pt.children()[0];
-    Expr left = ptleft.toSortedExpr();
-    if (isNum(left) && pt.children().size() == 1)
+
+    bool allnum = true;
+    for (const ParseTree& child : pt.children())
+      if (!isNum(child.toSortedExpr()))
+      {
+        allnum = false;
+        break;
+      }
+    if (allnum)
       return simplifyArithm(pt.toSortedExpr(), true, true);
 
     if (pt.children().size() != 2)
       return NULL;
 
+    const ParseTree &ptleft = pt.children()[0];
     const ParseTree &ptright = pt.children()[1];
+    Expr left = ptleft.toSortedExpr();
     Expr right = ptright.toSortedExpr();
 
     if (isNum(left) && isNum(right)) // Evaluate e.g. 0 + 1

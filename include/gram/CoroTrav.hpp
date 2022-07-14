@@ -901,6 +901,11 @@ class CoroTrav : public Traversal
     (*getNextCandTrav)();
     return lastcand;
   }
+
+  virtual void Finish(bool success)
+  {
+    return;
+  }
 };
 
 }
