@@ -390,6 +390,7 @@ class SyGuSSolver
     tparams.dir = TPDir::RTL;
     tparams.maxrecdepth = -1;
     tparams.iterdeepen = true;
+    tparams.simplify = true;
 
     // Create a "super" grammar which will synthesize permutations of
     // candidates for all of the functions to synthesize.
@@ -425,7 +426,7 @@ class SyGuSSolver
 
         // Just so we know not to expand them; the created *_VARS won't be used
         for (const auto& kv : func.gram.vars)
-          for (const Var& var : kv.second)
+          for (const Expr& var : kv.second)
             supergram.addVar(var);
         for (const auto& kv : func.gram.consts)
           for (const Expr& c : kv.second)
@@ -447,7 +448,7 @@ class SyGuSSolver
       supergram.addProd(newroot, mknary<FAPP>(newrootapp));
     }
 
-    GramEnum ge(supergram, &tparams, false, params.debug);
+    GramEnum ge(supergram, &tparams, params.debug);
     DefMap cands;
     mpz_class candnum = 0;
     auto parseExpr = [&] (Expr cand)
@@ -470,9 +471,12 @@ class SyGuSSolver
         _foundfuncs = cands;
         if (params.debug) errs() << "Candidate found at recursion depth " + to_string(ge.GetCurrDepth()) << endl;
         if (params.debug) errs() << "after " << candnum << " iterations" << endl;
+        ge.Finish(true);
         return true;
       }
     }
+
+    ge.Finish(false);
 
     if (supergram.isInfinite())
     {

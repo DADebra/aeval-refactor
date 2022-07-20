@@ -20,7 +20,7 @@ void printUsage()
   outs() << "  Options:\n";
   outs() << "    --help                 print this message\n";
   outs() << "    --debug <lvl>          enable debug logging (higher = more)\n";
-  outs() << "    --method <single,enum> method of solving problem\n";
+  outs() << "    --sygus-method <single,enum> method of solving problem\n";
 }
 
 using namespace std;
