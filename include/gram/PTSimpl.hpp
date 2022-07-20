@@ -57,7 +57,7 @@ class PTSimpl {
         return pt.children()[2];
     }
     Expr optype = typeOf(pt.data());
-    if (is_bvop(pt.data()))
+    if (isOpX<BVSORT>(optype))
       return std::move(rewriteBVPT(pt, isTrueFalse));
     else if (isOpX<BOOL_TY>(optype))
       return std::move(rewriteBoolPT(pt, isTrueFalse));
@@ -97,7 +97,7 @@ class PTSimpl {
       else if (!firstTF)
         return make_tuple(vector<int>{0}, vector<int>{1}, args[2]);
     }
-    if (is_bvop(oper))
+    if (isOpX<BVSORT>(optype))
       return std::move(pruneBVPT(oper, args, isTrueFalse));
     else if (isOpX<BOOL_TY>(optype))
       return std::move(pruneBoolPT(oper, args, isTrueFalse));
@@ -145,7 +145,7 @@ class PTSimpl {
     {
       Expr left = pt.children()[0].toSortedExpr(),
            right = pt.children()[1].toSortedExpr();
-      if (isNum(left) && isNum(right)) // Evaluate e.g. 0 < 1
+      if (isOpX<MPZ>(left) && isOpX<MPZ>(right)) // Evaluate e.g. 0 < 1
         return evaluateCmpConsts(oper, getTerm<mpz_class>(left),
           getTerm<mpz_class>(right)) ? pttrue : ptfalse;
     }
@@ -187,6 +187,8 @@ class PTSimpl {
       if (leftTF && !rightTF) return ptfalse;
       else if (!leftTF || rightTF) return pttrue;
       else if (leftTF) return pt.children()[1];
+      else if (!rightTF)
+        return ParseTree(mk<NEG>(oper->efac()), vector<ParseTree>{pt.children()[0]}, false);
     }
     else if (isOpX<EQ>(oper))
     {
@@ -246,7 +248,7 @@ class PTSimpl {
 
     bool allnum = true;
     for (const ParseTree& child : pt.children())
-      if (!isNum(child.toSortedExpr()))
+      if (!isOpX<MPZ>(child.toSortedExpr()))
       {
         allnum = false;
         break;
@@ -262,7 +264,7 @@ class PTSimpl {
     Expr left = ptleft.toSortedExpr();
     Expr right = ptright.toSortedExpr();
 
-    if (isNum(left) && isNum(right)) // Evaluate e.g. 0 + 1
+    if (isOpX<MPZ>(left) && isOpX<MPZ>(right)) // Evaluate e.g. 0 + 1
       return simplifyArithm(pt.toSortedExpr(), true, true);
 
     if (isOpX<PLUS>(oper))
