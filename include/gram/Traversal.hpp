@@ -48,6 +48,22 @@ inline Path np(Path currhash, PathClass pclass, unsigned index)
   return currhash;
 }
 
+struct TravContext
+{
+  // The context of the current position, with holes.
+  // E.g. '(+ Start! Start!!)'
+  Expr holeyCtx;
+  // K: Hole (e.g. 'Start!'), V: <1st: NT (e.g. 'Start'), 2nd: Curr rec depth>
+  unordered_map<Expr, std::pair<Expr, int>> holes;
+  // For internal use (allocating new holes)
+  // K: NT, V: max hole for that NT
+  unordered_map<Expr, Expr> maxholes;
+};
+
+// Paramteter is post-replacement
+typedef function<tribool(const TravContext&)> PrunePathFn;
+tribool DefaultPrunePathFn(const TravContext& ctx) { return false; }
+
 class Traversal
 {
   public:
@@ -80,11 +96,6 @@ class Traversal
   // Increments the position of this traversal, returning the next candidate
   // (i.e. the candidate at the new position).
   virtual ParseTree Increment() = 0;
-
-  // Disallow the given production in the given context (described by the Path)
-  //   from being chosen in the traversal.
-  // Create the path using 'np()' and 'rootpath'.
-  virtual void BlacklistPath(Path p) = 0;
 
   // Must call when traversal is completed. `success` is true if the problem
   // was solved correctly. Mostly for debug printing, etc. purposes.

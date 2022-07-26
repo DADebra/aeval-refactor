@@ -258,7 +258,8 @@ namespace ufo
     bool b4simpl;
 
     GRAMfactory(ExprFactory &_efac, EZ3 &_z3, int _debug) :
-      m_efac(_efac), z3(_z3), debug(_debug), gram(new Grammar()), gramenum(*gram, NULL, debug), u(_efac) {}
+      m_efac(_efac), z3(_z3), debug(_debug), gram(new Grammar()),
+      gramenum(*gram, NULL, DefaultPrunePathFn, debug), u(_efac) {}
 
     ~GRAMfactory() { Constraint::strcache.clear(); }
 

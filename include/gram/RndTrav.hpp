@@ -216,9 +216,6 @@ class RndTrav : public Traversal
     return ret;
   }
 
-  virtual void BlacklistPath(Path p)
-  { assert(0 && "BlacklistPath unsupported for RndTrav"); }
-
   virtual void Finish(bool success)
   {
     return;

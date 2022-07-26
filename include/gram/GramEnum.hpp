@@ -38,6 +38,7 @@ class GramEnum
   Traversal *traversal = NULL;
   TravParams globalparams;
   NTParamMap ntparams;
+  PrunePathFn ppfn;
 
   ParseTree lastpt;
   Expr lastexpr;
@@ -112,7 +113,7 @@ class GramEnum
       case TPMethod::NEWTRAV:
         traversal = new NewTrav(gram, globalparams, compparams,
           [&] (const Expr& ei, const Expr& exp)
-          { return shoulddefer(gram, ei, exp); });
+          { return shoulddefer(gram, ei, exp); }, ppfn);
         break;
       case TPMethod::NONE:
         errs() << "WARNING: Traversal method set to NONE. Segfaults inbound!" << endl;
@@ -163,9 +164,8 @@ class GramEnum
   int debug;
   bool b4simpl = false;
 
-  GramEnum(Grammar& _gram) : gram(_gram), gramCands() {}
-  GramEnum(Grammar& _gram, const TravParams* _params, int _debug) :
-    gram(_gram), debug(_debug), gramCands()
+  GramEnum(Grammar& _gram, const TravParams* _params, PrunePathFn _ppfn,
+    int _debug) : gram(_gram), debug(_debug), gramCands(), ppfn(_ppfn)
   {
     if (_params)
       SetParams(*_params, NTParamMap());
@@ -347,10 +347,12 @@ class GramEnum
   // Simplified (if enabled)
   Expr GetCurrCand() const { return lastexpr; }
 
-  // Unsimplified
   ParseTree GetCurrPT() const { return lastpt; }
 
-  void BlacklistPath(Path p) { return traversal->BlacklistPath(p); }
+  ParseTree GetUnsimplifiedPT() const
+  { return traversal->GetUnsimplifiedCand(); }
+
+  Expr GetUnsimplifiedCand() const { return GetUnsimplifiedPT().toExpr(); }
 
   void Finish(bool success)
   {
