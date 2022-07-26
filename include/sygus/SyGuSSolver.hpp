@@ -448,6 +448,24 @@ class SyGuSSolver
       supergram.addProd(newroot, mknary<FAPP>(newrootapp));
     }
 
+    // Make constraints solver friendly for pruning later
+    Expr varcons, negvarcons;
+    ExprUMap replaceMap;
+    if (prob.singleapps.size() == prob.synthfuncs.size())
+    {
+      for (const SynthFunc& func : prob.synthfuncs)
+      {
+        Expr funcsort = func.decl->last();
+        Expr funcvar = mkConst(
+            mkTerm<string>(getTerm<string>(func.decl->first()) + "_out", efac),
+            funcsort);
+        Expr singlefapp = prob.singleapps.at(&func);
+        replaceMap[singlefapp] = funcvar;
+      }
+      varcons = replaceAll(allcons, replaceMap);
+      negvarcons = mkNeg(varcons);
+    }
+
     GramEnum ge(supergram, &tparams, params.debug);
     DefMap cands;
     mpz_class candnum = 0;
@@ -462,6 +480,8 @@ class SyGuSSolver
     while (!ge.IsDone())
     {
       Expr newcand = ge.Increment();
+      if (params.debug > 1)
+        outs() << "Iteration " << candnum << ": " << newcand << "\n";
       ++candnum;
       if (!newcand)
         break;
@@ -469,10 +489,62 @@ class SyGuSSolver
       if (checkCands(cands))
       {
         _foundfuncs = cands;
-        if (params.debug) errs() << "Candidate found at recursion depth " + to_string(ge.GetCurrDepth()) << endl;
-        if (params.debug) errs() << "after " << candnum << " iterations" << endl;
+        if (params.debug) errs() << "Candidate found at recursion depth " <<
+          to_string(ge.GetCurrDepth()) << endl;
+        if (params.debug) errs() << "after " << candnum <<
+          " iterations" << endl;
         ge.Finish(true);
         return true;
+      }
+      if (ge.IsDone())
+        break; // Grammar fully enumerated
+      if (!ge.IsDepthDone())
+        continue;
+
+      // Done with current depth, try to prune.
+
+      // TODO: Pruning only implemented for simple cases
+      if (prob.synthfuncs.size() > 1 ||
+          prob.singleapps.size() != prob.synthfuncs.size())
+        continue;
+      Expr outvar = replaceMap.begin()->second;
+      const string &outvarname = getTerm<string>(outvar->left()->left());
+      // TODO: Pruning only implemented for top productions
+      auto rootfilter = [&] (Expr e) { return e == supergram.root; };
+      for (int prodnum = 0; prodnum < supergram.prods.at(supergram.root).size();
+           ++prodnum)
+      {
+        const Expr& prod = supergram.prods.at(supergram.root)[prodnum];
+        if (isOpX<FAPP>(prod))
+          continue; // TODO: Pruning only works for basic operators
+        if (!supergram.isRecursive(prod, supergram.root))
+          continue; // Pruning only works for recursive productions (TODO?)
+
+        Path path = np(rootpath, C, prodnum);
+        ExprVector prodargs(prod->args_begin(), prod->args_end());
+        bool docontinue = false;
+        for (const Expr& arg : prodargs)
+          if (isOpX<FAPP>(arg) && arg != supergram.root)
+            docontinue = true; // TODO: Pruning only works for (op Root Root)
+        if (docontinue)
+          continue;
+
+        for (int i = 0; i < prodargs.size(); ++i)
+          if (prodargs[i] == supergram.root)
+            prodargs[i] = mkConst(mkTerm(outvarname + "_" + to_string(i),
+              outvar->efac()), outvar->left()->last());
+
+        Expr newprod = mknary(prod->op(), prodargs.begin(), prodargs.end());
+        ExprVector conj;
+        for (int i = 0; i < prodargs.size(); ++i)
+          if (isOpX<FAPP>(prodargs[i]))
+            conj.push_back(replaceAll(negvarcons, outvar, prodargs[i]));
+        conj.push_back(replaceAll(varcons, outvar, newprod));
+        if (!u.isSat(mknary<AND>(conj)))
+        {
+          // Can prune
+          ge.BlacklistPath(path);
+        }
       }
     }
 
