@@ -9,36 +9,12 @@
 
 #include "gram/TravPos.hpp"
 
-// Uncomment to always disable path collision checking
-//#define DO_PATH_COLL_CHECK 0
-
-// Else, check for collisions if debug builds are enabled
-// (the checking relies on 'assert', so won't work if NDEBUG is defined)
-#ifndef DO_PATH_COLL_CHECK
-#ifndef NDEBUG
-#define DO_PATH_COLL_CHECK 1
-#else
-#define DO_PATH_COLL_CHECK 0
-#endif // #ifndef NDEBUG
-#endif // #ifndef DO_PATH_COLL_CHECK
-
 namespace ufo
 {
-
-#if DO_PATH_COLL_CHECK == 1
-typedef std::pair<size_t,string> Path;
-#else
-typedef size_t Path;
-#endif
 
 class NewTrav : public Traversal
 {
   private:
-
-  // The hash of the root path
-  const static Path rootpath, nullpath;
-
-  enum PathClass { C = 1, Q = 2 };
 
   CFGUtils cfgutils;
   PTSimpl ptsimpl;
@@ -53,17 +29,19 @@ class NewTrav : public Traversal
   ExprFactory& efac;
 
   UniqVarMap uniqvars; // Per-candidate
-  unordered_map<size_t, mpz_class> uniqvarnums; // Nicer unique numbers
+  unordered_map<Path, mpz_class> uniqvarnums; // Nicer unique numbers
   mpz_class lastuniqvarnum = -1;
 
   ParseTree lastcand; // Not strictly necessary, but for efficiency.
 
   int currmaxdepth = -1;
 
+  unordered_set<Path> blacklistedPaths; // Don't go down these paths.
+
   // I'm not sure why, but using the Path as the key here won't work
   unordered_map<const TravPos*,ParseTree>
     gettravCache;
-  unordered_map<std::tuple<Expr,int,Expr,size_t,const TravParams*>,ParseTree>
+  unordered_map<std::tuple<Expr,int,Expr,Path,const TravParams*>,ParseTree>
     getfirstCache;
 
   unordered_map<const TravPos*, unordered_set<Expr>> oldCands;
@@ -85,39 +63,6 @@ class NewTrav : public Traversal
     return itr->second;
   }
 
-#if DO_PATH_COLL_CHECK == 1
-  unordered_map<size_t,string> pathCollisionCheck;
-#endif
-
-  // Extend the hash of the current path 'currhash' by position 'index'
-  //   and class (queue or child) 'class'.
-  // This number is used to uniquely identify where we are
-  //   in the recursive invocations of 'newtrav'.
-  // Note that this is the TRAVERSAL path (note the inclusion of the queue)
-  //   and not the GRAMMAR path (which would mean that queue items have the
-  //   same path).
-  inline Path np(Path currhash, PathClass pclass, unsigned index)
-  {
-#if DO_PATH_COLL_CHECK == 1
-    hash_combine(currhash.first, pclass);
-    hash_combine(currhash.first, index + 1);
-#else
-    hash_combine(currhash, pclass);
-    hash_combine(currhash, index + 1);
-#endif
-
-#if DO_PATH_COLL_CHECK == 1
-    currhash.second += pclass == C ? "C" : "Q";
-    currhash.second += to_string(index);
-    auto itr = pathCollisionCheck.find(currhash.first);
-    if (itr != pathCollisionCheck.end())
-      assert(itr->second == currhash.second);
-    else
-      pathCollisionCheck.emplace(currhash.first, currhash.second);
-#endif
-    return currhash;
-  }
-
   inline void ptshoulddefer(const ParseTree& pt, bool& needdefer)
   {
     pt.foreachPt([&] (const Expr& nt, const ParseTree& expand)
@@ -135,12 +80,8 @@ class NewTrav : public Traversal
     std::shared_ptr<ExprUSet> qvars, Expr currnt, Path path, const TravParams& oldparams,
     bool& needdefer, bool getfirst, bool nocache = false)
   {
-    size_t phash;
-#if DO_PATH_COLL_CHECK == 1
-    phash = path.first;
-#else
-    phash = path;
-#endif
+    if (blacklistedPaths.count(path) != 0)
+      return NULL;
 
     const TravParams& params = oldparams.goverride ? oldparams :
       ntparams.count(root) != 0 ? ntparams[root] : oldparams;
@@ -155,7 +96,7 @@ class NewTrav : public Traversal
       return ParseTree(root);
     if (gram.isUniqueVar(root))
     {
-      auto itr = uniqvarnums.find(phash);
+      auto itr = uniqvarnums.find(path);
       assert(itr != uniqvarnums.end());
       Expr uniqvar = mk<FAPP>(CFGUtils::uniqueVarDecl(typeOf(root)),
         mkTerm(itr->second, efac));
@@ -196,7 +137,7 @@ class NewTrav : public Traversal
       else
       {
         // Will be used when we return
-        firstkey = std::move(make_tuple(root, currdepth, currnt, phash, &oldparams));
+        firstkey = std::move(make_tuple(root, currdepth, currnt, path, &oldparams));
         auto itr = getfirstCache.find(firstkey);
         if (itr != getfirstCache.end())
         {
@@ -346,6 +287,12 @@ class NewTrav : public Traversal
     // mu: Only increment positions below this path
     // ro: Read-only, don't increment positions
 
+    if (blacklistedPaths.count(path) != 0)
+    {
+      travpos.makenull();
+      return NULL;
+    }
+
     const TravParams& params = oldparams.goverride ? oldparams :
       ntparams.count(root) != 0 ? ntparams[root] : oldparams;
     const TravParams& nextparams = oldparams.goverride ? oldparams :
@@ -378,15 +325,9 @@ class NewTrav : public Traversal
     }
     else if (gram.isUniqueVar(root))
     {
-      size_t phash;
-#if DO_PATH_COLL_CHECK == 1
-      phash = path.first;
-#else
-      phash = path;
-#endif
-      auto itr = uniqvarnums.find(phash);
+      auto itr = uniqvarnums.find(path);
       if (itr == uniqvarnums.end())
-        itr = uniqvarnums.emplace(phash, ++lastuniqvarnum).first;
+        itr = uniqvarnums.emplace(path, ++lastuniqvarnum).first;
       Expr uniqvar = mk<FAPP>(CFGUtils::uniqueVarDecl(typeOf(root)),
         mkTerm(itr->second, efac));
       if (!ro) travpos.makedone();
@@ -1042,19 +983,14 @@ class NewTrav : public Traversal
     return lastcand;
   }
 
+  virtual void BlacklistPath(Path p)
+  { blacklistedPaths.insert(p); }
+
   virtual void Finish(bool success)
   {
     return;
   }
 };
-
-#if DO_PATH_COLL_CHECK == 1
-const Path NewTrav::rootpath = make_pair(std::hash<int>()(1), string("R"));
-const Path NewTrav::nullpath = make_pair(0, string("N"));
-#else
-const Path NewTrav::rootpath = std::hash<int>()(1);
-const Path NewTrav::nullpath = 0;
-#endif
 
 }
 #endif

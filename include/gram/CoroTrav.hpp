@@ -902,6 +902,9 @@ class CoroTrav : public Traversal
     return lastcand;
   }
 
+  virtual void BlacklistPath(Path p)
+  { assert(0 && "BlacklistPath unsupported for CoroTrav"); }
+
   virtual void Finish(bool success)
   {
     return;

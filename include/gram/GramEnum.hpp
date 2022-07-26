@@ -235,6 +235,15 @@ class GramEnum
     return deferred_cands.size() == 0;
   }
 
+  bool IsDepthDone() const
+  {
+    if (!traversal)
+      return true;
+    if (!traversal->IsDepthDone())
+      return false;
+    return deferred_cands.size() == 0;
+  }
+
   int GetCurrDepth() const
   {
     if (!traversal)
@@ -340,6 +349,8 @@ class GramEnum
 
   // Unsimplified
   ParseTree GetCurrPT() const { return lastpt; }
+
+  void BlacklistPath(Path p) { return traversal->BlacklistPath(p); }
 
   void Finish(bool success)
   {

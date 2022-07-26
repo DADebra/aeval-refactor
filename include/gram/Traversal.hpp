@@ -27,6 +27,27 @@ struct uniqvarless
 
 typedef unordered_map<Expr,set<Expr,uniqvarless>> UniqVarMap;
 
+typedef size_t Path;
+const Path rootpath = std::hash<int>()(1), nullpath = 0;
+enum PathClass { C = 1, Q = 2 };
+
+// Extend the hash of the current path 'currhash' by position 'index'
+//   and class (queue or child) 'class'.
+// This number is used to uniquely identify where we are
+//   in the recursive invocations of 'newtrav'.
+// Now the grammar path (i.e. derivation), because I think that's more useful,
+//   i.e. pclass == Q is ignored.
+inline Path np(Path currhash, PathClass pclass, unsigned index)
+{
+  if (pclass != Q)
+  {
+    hash_combine(currhash, pclass);
+    hash_combine(currhash, index + 1);
+  }
+
+  return currhash;
+}
+
 class Traversal
 {
   public:
@@ -59,6 +80,11 @@ class Traversal
   // Increments the position of this traversal, returning the next candidate
   // (i.e. the candidate at the new position).
   virtual ParseTree Increment() = 0;
+
+  // Disallow the given production in the given context (described by the Path)
+  //   from being chosen in the traversal.
+  // Create the path using 'np()' and 'rootpath'.
+  virtual void BlacklistPath(Path p) = 0;
 
   // Must call when traversal is completed. `success` is true if the problem
   // was solved correctly. Mostly for debug printing, etc. purposes.
