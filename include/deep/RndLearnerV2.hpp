@@ -400,7 +400,7 @@ namespace ufo
         if (success) outs () << "Total number of learned lemmas: " << ds.getlearnedLemmas(0).size() << "\n";
 
       if (success) outs () << "Success after " << iters << " iterations \n";
-      else         outs () << "No success after " << maxAttempts << " iterations\n";
+      else         outs () << "No success after " << iters << " iterations\n";
     }
 
     if (success) ds.printSolution();
