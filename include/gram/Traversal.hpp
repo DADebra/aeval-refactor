@@ -37,7 +37,7 @@ enum PathClass { C = 1, Q = 2 };
 //   in the recursive invocations of 'newtrav'.
 // Now the grammar path (i.e. derivation), because I think that's more useful,
 //   i.e. pclass == Q is ignored.
-inline Path np(Path currhash, PathClass pclass, unsigned index)
+inline Path nextpath(Path currhash, PathClass pclass, unsigned index)
 {
   if (pclass != Q)
   {

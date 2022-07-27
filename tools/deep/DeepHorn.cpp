@@ -270,7 +270,8 @@ int main (int argc, char ** argv)
     CFGUtils::strtotravprio(gram_trav_prio),
     getTriboolValue(OPT_GRAM_ITER_DEEPEN, indeterminate, argc, argv),
     getIntValue(OPT_GRAM_MAXREC, -2, argc, argv),
-    !getTriboolValue(OPT_GRAM_NOSIMPL, indeterminate, argc, argv));
+    !getTriboolValue(OPT_GRAM_NOSIMPL, indeterminate, argc, argv),
+    indeterminate);
   gramparams.SetDefaults();
 
   bool ret;

@@ -75,6 +75,16 @@ class NewTrav : public Traversal
     else                      return indeterminate;
   }
 
+  unordered_map<Path, Path> pathParent;
+
+  inline Path np(Path currpath, PathClass pclass, unsigned index)
+  {
+    Path newpath = nextpath(currpath, pclass, index);
+    if (newpath != currpath)
+      pathParent[newpath] = currpath;
+    return newpath;
+  }
+
   static inline Expr newhole(Expr prevhole)
   {
     return mkConst(
@@ -83,17 +93,19 @@ class NewTrav : public Traversal
   }
 
   // K: path, V: <ctx, hole or expr of holes, e.g. '(+ hole hole)'>
-  unordered_map<Path, std::pair<TravContext*,Expr>> pathToCtx;
+  unordered_map<Path, std::pair<std::shared_ptr<TravContext>,Expr>> pathToCtx;
 
   // 'prod' is mutually exclusive with 'child': only supply one.
   inline void findNewCtx(Path currpath, Path newpath, int newdepth,
     Expr prod, int child)
   {
+    if (pathToCtx.count(newpath) != 0)
+      return;
     auto &ctx_hole = pathToCtx.at(currpath);
     if (prod != NULL)
     {
       // NT -> Prod
-      TravContext *newctx = new TravContext();
+      std::shared_ptr<TravContext> newctx(new TravContext());
       newctx->holes = ctx_hole.first->holes;
       newctx->maxholes = ctx_hole.first->maxholes;
       function<Expr(Expr)> holerw = [&] (Expr e)
@@ -237,7 +249,7 @@ class NewTrav : public Traversal
       TravPos firstpos;
       ParseTree ret(std::move(newtrav(root, firstpos, currdepth, qvars,
         currnt, path, oldparams, path, false)));
-      ptshoulddefer(ret, needdefer);
+      if (ret) ptshoulddefer(ret, needdefer);
       if (!nocache) getfirstCache[firstkey] = ret;
       return std::move(ret);
     }
@@ -320,8 +332,10 @@ class NewTrav : public Traversal
       {
         if (i >= travpos.min() && i != pos)
         {
+          Path newpath = np(path,C, dind(i));
+          if (params.prune) findNewCtx(path,newpath,currdepth,NULL,dind(i));
           newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos.childat(dind(i)), currdepth,
-            localqvars, currnt, np(path,C,dind(i)), nextparams, needdefer, true, nocache);
+            localqvars, currnt, newpath, nextparams, needdefer, true, nocache);
           if (!newexpr[dind(i)])
           {
             if (!nocache) gettravCache[key] = NULL;
@@ -473,7 +487,10 @@ class NewTrav : public Traversal
            currdepth == currmaxdepth))
           {
             if (constpos.childat(travpos.pos()).isdone())
+            {
               travpos.childpop();
+              pathToCtx.erase(np(path,C,travpos.pos()));
+            }
 
             if (params.order == TPOrder::FOR)
               travpos.nextpos();
@@ -488,6 +505,7 @@ class NewTrav : public Traversal
               else
               {
                 oldCands.erase(&travpos);
+                pathToCtx.erase(path);
                 travpos.makenull();
                 return NULL;
               }
@@ -503,11 +521,13 @@ class NewTrav : public Traversal
         assert(newdepth <= currmaxdepth);
 
         Path nextpath = np(path, C, travpos.pos());
-        findNewCtx(path,nextpath,newdepth,prods[constpos.pos()],0);
+        if (params.prune)
+          findNewCtx(path,nextpath,newdepth,prods[constpos.pos()],0);
 
-        if (prunePath(nextpath))
+        if (params.prune && prunePath(nextpath))
         {
-          travpos.childat(travpos.pos()).makedone();
+          travpos.childpop();
+          pathToCtx.erase(nextpath);
           continue;
         }
 
@@ -557,6 +577,7 @@ class NewTrav : public Traversal
           if (alldone || recdone)
           {
             oldCands.erase(&travpos);
+            pathToCtx.erase(path);
             travpos.makedone();
             break;
           }
@@ -728,13 +749,21 @@ class NewTrav : public Traversal
           if (done)
           {
             if (params.prio != TPPrio::BFS)
+            {
+              for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
+                pathToCtx.erase(np(path,C,dind(i)));
               travpos.makedone();
+            }
             else
             {
               for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
                 done &= constposchildat(i).isdone();
               if (done)
+              {
+                for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
+                  pathToCtx.erase(np(path,C,dind(i)));
                 travpos.makedone();
+              }
             }
           }
         }
@@ -755,7 +784,7 @@ class NewTrav : public Traversal
           if (constposchildat(i).isnew())
           {
             Path nextpath = np(path,C,dind(i));
-            findNewCtx(path,nextpath,currdepth,NULL,dind(i));
+            if (params.prune) findNewCtx(path,nextpath,currdepth,NULL,dind(i));
             newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
               localqvars, currnt, nextpath, nextparams, mu, ro);
           }
@@ -764,8 +793,11 @@ class NewTrav : public Traversal
             bool needdefer = false;
             if (i >= travpos.childmin())
             {
+              Path nextpath = np(path,C,dind(i));
+              if (params.prune)
+                findNewCtx(path,nextpath,currdepth,NULL,dind(i));
               newexprat(i) = gettrav(rootarg(i), constposchildat(i), currdepth,
-                localqvars, currnt, np(path,C,dind(i)), nextparams,
+                localqvars, currnt, nextpath, nextparams,
                 needdefer, true);
             }
             else
@@ -787,7 +819,7 @@ class NewTrav : public Traversal
           if (!ro) assert(!constposchildat(i).isdone());
 
           Path nextpath = np(path, C, dind(i));
-          findNewCtx(path,nextpath,currdepth,NULL,dind(i));
+          if (params.prune) findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
             localqvars, currnt, nextpath, nextparams, mu, ro);
 
@@ -806,7 +838,8 @@ class NewTrav : public Traversal
               if (c == travpos.pos())
                 continue;
               childpos->childat(dind(c)) = TravPos();
-              findNewCtx(path,np(childpath,C,dind(c)),currdepth,NULL,dind(c));
+              if (params.prune)
+                findNewCtx(path,np(childpath,C,dind(c)),currdepth,NULL,dind(c));
               newtrav(rootarg(c), childpos->childat(dind(c)), currdepth,
                 localqvars, currnt, np(childpath,C,dind(c)),nextparams,mu,ro);
             }
@@ -826,7 +859,13 @@ class NewTrav : public Traversal
         }
       }
       for (const auto& p : newexpr)
-        if (!p) { if (!ro) travpos.makenull(); return NULL; }
+        if (!p)
+        {
+          if (!ro) travpos.makenull();
+          for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
+            pathToCtx.erase(np(path,C,dind(i)));
+          return NULL;
+        }
 
       if (params.simplify)
       {
@@ -878,7 +917,11 @@ class NewTrav : public Traversal
             }
 
         if (done)
+        {
+          for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
+            pathToCtx.erase(np(path,C,dind(i)));
           travpos.makedone();
+        }
       }
     }
     else if (params.type == TPType::ORDERED)
@@ -896,7 +939,7 @@ class NewTrav : public Traversal
             travposchildat(i) = TravPos();
           }
           Path nextpath = np(path,C,dind(i));
-          findNewCtx(path,nextpath,currdepth,NULL,dind(i));
+          if (params.prune) findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
             localqvars, currnt, nextpath, nextparams, mu, ro);
           if (!newexprat(i) && !wasdone)
@@ -910,6 +953,8 @@ class NewTrav : public Traversal
           {
             // Everything done. Return NULL.
             travpos.makenull();
+            for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
+              pathToCtx.erase(np(path,C,dind(i)));
             return NULL;
           }
           // Increment next position
@@ -925,7 +970,7 @@ class NewTrav : public Traversal
         {
           assert(!ro);
           Path nextpath = np(path,C,dind(i));
-          findNewCtx(path,nextpath,currdepth,NULL,dind(i));
+          if (params.prune) findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newtrav(rootarg(i), travposchildat(i), currdepth, localqvars,
             currnt, nextpath, nextparams, mu, ro);
         }
@@ -941,7 +986,13 @@ class NewTrav : public Traversal
         }*/
       }
       for (const auto& p : newexpr)
-        if (!p) { if (!ro) travpos.makenull(); return NULL; }
+        if (!p)
+        {
+          if (!ro) travpos.makenull();
+          for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
+            pathToCtx.erase(np(path,C,dind(i)));
+          return NULL;
+        }
 
       if (!ro)
       {
@@ -949,7 +1000,11 @@ class NewTrav : public Traversal
         for (int i = 0; i < constpos.childlimit(); ++i)
           done &= constposchildat(i).isdone();
         if (done)
+        {
+          for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
+            pathToCtx.erase(np(path,C,dind(i)));
           travpos.makedone();
+        }
       }
     }
 
@@ -995,6 +1050,16 @@ class NewTrav : public Traversal
   }
   std::shared_ptr<ModListener> mlp;
 
+  void makeRootCtx()
+  {
+    std::shared_ptr<TravContext> rootctx(new TravContext());
+    Expr roothole = newhole(gram.root);
+    rootctx->holeyCtx = roothole;
+    rootctx->holes[roothole] = make_pair(gram.root, 0);
+    rootctx->maxholes[gram.root] = roothole;
+    pathToCtx.emplace(rootpath, make_pair(std::move(rootctx), roothole));
+  }
+
   public:
 
   NewTrav(Grammar &_gram, const TravParams &gp, const NTParamMap &np,
@@ -1015,14 +1080,10 @@ class NewTrav : public Traversal
     assert(ret);
 
     nosimplparams.simplify = false;
+    nosimplparams.prune = false;
     nosimplparams.goverride = true;
 
-    TravContext *rootctx = new TravContext();
-    Expr roothole = newhole(gram.root);
-    rootctx->holeyCtx = roothole;
-    rootctx->holes[roothole] = make_pair(gram.root, 0);
-    rootctx->maxholes[gram.root] = roothole;
-    pathToCtx.emplace(rootpath, make_pair(rootctx, roothole));
+    makeRootCtx();
   }
 
   virtual ~NewTrav()
@@ -1071,6 +1132,7 @@ class NewTrav : public Traversal
       return NULL;
     if (IsDepthDone())
     {
+      makeRootCtx(); // Will have been deleted when last depth finished
       rootpos = TravPos();
       gettravCache.clear();
       getfirstCache.clear();
