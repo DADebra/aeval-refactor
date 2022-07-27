@@ -1132,6 +1132,9 @@ class NewTrav : public Traversal
       return NULL;
     if (IsDepthDone())
     {
+      pathToCtx.clear();
+      _prunePathCache.clear();
+      oldCands.clear();
       makeRootCtx(); // Will have been deleted when last depth finished
       rootpos = TravPos();
       gettravCache.clear();
