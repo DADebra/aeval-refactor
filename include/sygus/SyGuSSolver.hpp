@@ -23,6 +23,7 @@ class SyGuSSolver
   private:
   SynthProblem prob;
   Expr allcons; // Conjunction of all problem constraints
+  Expr negallcons; // mkNeg(allcons)
   ExprFactory &efac;
   EZ3 &z3;
   SMTUtils u;
@@ -448,25 +449,35 @@ class SyGuSSolver
       supergram.addProd(newroot, mknary<FAPP>(newrootapp));
     }
 
-    // Make constraints solver friendly for pruning later
-    Expr varcons, negvarcons;
-    ExprUMap replaceMap;
-    if (prob.singleapps.size() == prob.synthfuncs.size())
+    int oldmaxdepth = -1;
+    auto prunePathFn = [&] (const TravContext& ctx) -> tribool
     {
-      for (const SynthFunc& func : prob.synthfuncs)
-      {
-        Expr funcsort = func.decl->last();
-        Expr funcvar = mkConst(
-            mkTerm<string>(getTerm<string>(func.decl->first()) + "_out", efac),
-            funcsort);
-        Expr singlefapp = prob.singleapps.at(&func);
-        replaceMap[singlefapp] = funcvar;
-      }
-      varcons = replaceAll(allcons, replaceMap);
-      negvarcons = mkNeg(varcons);
-    }
+      // TODO: Pruning only implemented for simple cases
+      if (prob.synthfuncs.size() > 1 ||
+          prob.singleapps.size() != prob.synthfuncs.size())
+        return false;
 
-    GramEnum ge(supergram, &tparams, params.debug);
+      Expr fnapp = prob.singleapps.at(&prob.synthfuncs[0]);
+
+      ExprVector conj;
+      for (const auto& kv : ctx.holes)
+      {
+        if (kv.second.first != supergram.root)
+          return false; // TODO: Handle assumptions for non-root NTs
+        if (kv.second.second >= oldmaxdepth)
+          return indeterminate; // Not sure, haven't gotten to that depth yet.
+        conj.push_back(replaceAll(negallcons, fnapp, kv.first));
+      }
+      conj.push_back(replaceAll(allcons, fnapp, ctx.holeyCtx));
+      if (!u.isSat(mknary<AND>(conj)))
+        return true; // Can prune!
+      // Future invocations of this won't return true, since we know all we'll
+      //   ever know about the NTs in this context.
+      // TODO: Change if we arrive at NT summaries iteratively.
+      return false;
+    };
+
+    GramEnum ge(supergram, &tparams, prunePathFn, params.debug);
     DefMap cands;
     mpz_class candnum = 0;
     auto parseExpr = [&] (Expr cand)
@@ -479,6 +490,7 @@ class SyGuSSolver
     };
     while (!ge.IsDone())
     {
+      oldmaxdepth = ge.GetCurrDepth();
       Expr newcand = ge.Increment();
       if (params.debug > 1)
         outs() << "Iteration " << candnum << ": " << newcand << "\n";
@@ -488,6 +500,8 @@ class SyGuSSolver
       parseExpr(newcand);
       if (checkCands(cands))
       {
+        parseExpr(ge.GetUnsimplifiedCand());
+        assert(checkCands(cands));
         _foundfuncs = cands;
         if (params.debug) errs() << "Candidate found at recursion depth " <<
           to_string(ge.GetCurrDepth()) << endl;
@@ -495,56 +509,6 @@ class SyGuSSolver
           " iterations" << endl;
         ge.Finish(true);
         return true;
-      }
-      if (ge.IsDone())
-        break; // Grammar fully enumerated
-      if (!ge.IsDepthDone())
-        continue;
-
-      // Done with current depth, try to prune.
-
-      // TODO: Pruning only implemented for simple cases
-      if (prob.synthfuncs.size() > 1 ||
-          prob.singleapps.size() != prob.synthfuncs.size())
-        continue;
-      Expr outvar = replaceMap.begin()->second;
-      const string &outvarname = getTerm<string>(outvar->left()->left());
-      // TODO: Pruning only implemented for top productions
-      auto rootfilter = [&] (Expr e) { return e == supergram.root; };
-      for (int prodnum = 0; prodnum < supergram.prods.at(supergram.root).size();
-           ++prodnum)
-      {
-        const Expr& prod = supergram.prods.at(supergram.root)[prodnum];
-        if (isOpX<FAPP>(prod))
-          continue; // TODO: Pruning only works for basic operators
-        if (!supergram.isRecursive(prod, supergram.root))
-          continue; // Pruning only works for recursive productions (TODO?)
-
-        Path path = np(rootpath, C, prodnum);
-        ExprVector prodargs(prod->args_begin(), prod->args_end());
-        bool docontinue = false;
-        for (const Expr& arg : prodargs)
-          if (isOpX<FAPP>(arg) && arg != supergram.root)
-            docontinue = true; // TODO: Pruning only works for (op Root Root)
-        if (docontinue)
-          continue;
-
-        for (int i = 0; i < prodargs.size(); ++i)
-          if (prodargs[i] == supergram.root)
-            prodargs[i] = mkConst(mkTerm(outvarname + "_" + to_string(i),
-              outvar->efac()), outvar->left()->last());
-
-        Expr newprod = mknary(prod->op(), prodargs.begin(), prodargs.end());
-        ExprVector conj;
-        for (int i = 0; i < prodargs.size(); ++i)
-          if (isOpX<FAPP>(prodargs[i]))
-            conj.push_back(replaceAll(negvarcons, outvar, prodargs[i]));
-        conj.push_back(replaceAll(varcons, outvar, newprod));
-        if (!u.isSat(mknary<AND>(conj)))
-        {
-          // Can prune
-          ge.BlacklistPath(path);
-        }
       }
     }
 
@@ -572,6 +536,7 @@ class SyGuSSolver
     prob(std::move(_prob)), efac(_efac), z3(_z3), u(efac), params(p)
   {
     allcons = conjoin(prob.constraints, efac);
+    negallcons = mkNeg(allcons);
     for (const auto& func : prob.synthfuncs)
       for (const Expr& var : func.vars)
       {
