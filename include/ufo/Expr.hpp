@@ -3028,7 +3028,7 @@ namespace expr
 
 
   // -- replace all occurrences of s by t
-  inline Expr replaceAll (Expr exp, Expr s, Expr t)
+  inline Expr replaceAll (Expr exp, const Expr& s, const Expr& t)
   {
     RAV rav(s,t);
     return dagVisit (rav, exp);
