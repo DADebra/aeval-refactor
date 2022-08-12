@@ -63,6 +63,7 @@ class SynthProblem
 
   string _logic;
   vector<SynthFunc> _synthfuncs;
+  vector<Expr> _vars;
   vector<Expr> _constraints;
   unordered_map<SynthFunc*,Expr> _singleapps;
   unordered_map<Expr, SynthFunc*> _declToFunc;
@@ -71,6 +72,7 @@ class SynthProblem
   public:
   const string& logic;
   vector<SynthFunc>& synthfuncs;
+  const vector<Expr>& vars;
   const vector<Expr> constraints;
   // Funcs which are always called with same args, subset of synthfuncs
   // K: Func, V: FAPP (the single one)
@@ -111,11 +113,11 @@ class SynthProblem
       if (apps.count(decl) == 0)
         apps[decl] = fapp;
       else if (apps.at(decl) != fapp)
-        apps.erase(decl);
+        apps[decl] = NULL;
     }
 
     for (auto &func : _synthfuncs)
-      if (apps.count(func.decl) != 0)
+      if (apps.count(func.decl) != 0 && apps.at(func.decl))
         _singleapps[&func] = apps.at(func.decl);
   }
 
@@ -210,6 +212,7 @@ class SynthProblem
 
   SynthProblem() :
     logic(_logic), synthfuncs(_synthfuncs), constraints(_constraints),
+    vars((decltype(vars))_vars),
     singleapps((decltype(singleapps))_singleapps),
     declToFunc((decltype(declToFunc))_declToFunc),
     gramFuncs((decltype(gramFuncs))_gramFuncs) {}
@@ -219,8 +222,10 @@ class SynthProblem
   SynthProblem(SynthProblem&& o) :
     _logic(std::move(o._logic)), _synthfuncs(std::move(o._synthfuncs)),
     _constraints(std::move(o._constraints)),
+    _vars(std::move(o._vars)),
     _singleapps(std::move(o._singleapps)),
     logic(_logic), synthfuncs(_synthfuncs), constraints(_constraints),
+    vars((decltype(vars))_vars),
     singleapps((decltype(singleapps))_singleapps),
     declToFunc((decltype(declToFunc))_declToFunc),
     gramFuncs((decltype(gramFuncs))_gramFuncs) {}

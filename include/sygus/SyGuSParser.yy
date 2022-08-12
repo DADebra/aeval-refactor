@@ -9,6 +9,7 @@
 
 %code requires {
   #include <sstream>
+  #include <algorithm>
 
   #include "ufo/Expr.hpp"
   #include "ufo/Smt/EZ3.hh"
@@ -92,11 +93,20 @@ yy::parser::symbol_type yylex()
       break;
   }
 
-  while (c != ' ' && c != '\n' && c != '\t' && c != ')' && c != '(')
+  if (isComment)
   {
-    s += c;
-    c = fgetc(infile);
+    while (c != '\n')
+    {
+      s += c;
+      c = fgetc(infile);
+    }
   }
+  else
+    while (c != ' ' && c != '\n' && c != '\t' && c != ')' && c != '(')
+    {
+      s += c;
+      c = fgetc(infile);
+    }
   ungetc(c, infile);
   loc.columns(s.length() - 1);
 
@@ -330,6 +340,7 @@ eithers:
 gramprod:
          LPAR ID sort LPAR eithers RPAR RPAR
            {
+              std::reverse($5.begin(), $5.end());
               NT nt = gram.addNt($2, $3);
               for (const Expr& prod : $5)
                 gram.addProd(nt, prod);
@@ -362,7 +373,7 @@ topvardecl:
 
 topcommand:
            COMMENT
-           | LPAR SETLOGIC ID RPAR { prob._logic = $2; }
+           | LPAR SETLOGIC ID RPAR { prob._logic = $3; }
            | LPAR SYNTHFUN ID LPAR funcvars RPAR sort grammar RPAR
                {
                   /* TODO: Ignoring grammar for now */
@@ -393,8 +404,14 @@ topcommand:
                {
                   std::string sort = z3.toSmtLib($4);
                   toparse << "\n(declare-fun " << $3 << " () " << sort << ")";
+                  prob._vars.push_back(expr::op::bind::constDecl(
+                    expr::mkTerm($3, efac), $4));
                   if ($2 == "declare-primed-var")
+                  {
                     toparse << "\n(declare-fun " << $3 << "! () " << sort<< ")";
+                    prob._vars.push_back(expr::op::bind::constDecl(
+                      expr::mkTerm($3 + "!", efac), $4));
+                  }
                }
            | LPAR CONSTRAINT expr RPAR
                {

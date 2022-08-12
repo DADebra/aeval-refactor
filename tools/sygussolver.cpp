@@ -17,10 +17,8 @@ void printUsage()
   outs() << "Usage: sygussolver [options] <file.sl>\n";
   outs() << "\n";
   outs() << "Solves the given SyGuS problem specified in SyGuS-IF vers 2.0 format\n";
-  outs() << "  Options:\n";
-  outs() << "    --help                 print this message\n";
-  outs() << "    --debug <lvl>          enable debug logging (higher = more)\n";
-  outs() << "    --sygus-method <single,enum> method of solving problem\n";
+  outs() << "Options:\n";
+  SyGuSParams::PrintOptionUsage();
 }
 
 using namespace std;

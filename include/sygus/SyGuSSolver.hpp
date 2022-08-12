@@ -29,7 +29,6 @@ class SyGuSSolver
   SMTUtils u;
   SyGuSParams params;
 
-  ExprUSet allFuncVars;
   ExprVector faArgs; // Arguments to the FORALL used for '(Constant *)'
   bool hasanyconst = false; // True if some synth function uses '(Constant *)'
 
@@ -159,7 +158,7 @@ class SyGuSSolver
     ));
     for (auto& kv : defs)
       if (kv.first->hasanyconst)
-        kv.second = dagVisit(constrw, kv.second);
+        kv.second = visit(constrw, kv.second);
   }
 
   // Replace applications of synth-fun's with their definitions
@@ -201,14 +200,16 @@ class SyGuSSolver
     if (!ret)
       return false;
     else if (indeterminate(ret))
-      assert(0 && "Handling unknowns from Z3 for (Constant *) is unimplemented");
+      //assert(0 && "Handling unknowns from Z3 for (Constant *) is unimplemented");
+      return indeterminate;
 
     ExprUMap constReplaceMap;
     for (const Expr& c : anyConsts)
     {
       Expr foundConst = u.getModel(c);
       if (!foundConst)
-        assert(0 && "Handling no model from Z3 for (Constant *) is unimplemented");
+        //assert(0 && "Handling no model from Z3 for (Constant *) is unimplemented");
+        return indeterminate;
       constReplaceMap[c] = foundConst;
     }
     for (auto& kv : cands)
@@ -389,6 +390,7 @@ class SyGuSSolver
     tparams.type = TPType::STRIPED;
     tparams.prio = TPPrio::BFS;
     tparams.dir = TPDir::RTL;
+    tparams.order = TPOrder::REV;
     tparams.maxrecdepth = -1;
     tparams.iterdeepen = true;
     tparams.simplify = true;
@@ -500,8 +502,21 @@ class SyGuSSolver
       parseExpr(newcand);
       if (checkCands(cands))
       {
+        if (params.nonvac)
+        {
+          bool docontinue = false;
+          for (const auto& kv : cands)
+            if (isOpX<BOOL_TY>(typeOf(kv.second)))
+              if (u.isTrue(kv.second) || u.isFalse(kv.second))
+              {
+                docontinue = true;
+                break;
+              }
+          if (docontinue) continue;
+        }
+
         parseExpr(ge.GetUnsimplifiedCand());
-        assert(checkCands(cands));
+        assert(bool(checkCands(cands)));
         _foundfuncs = cands;
         if (params.debug) errs() << "Candidate found at recursion depth " <<
           to_string(ge.GetCurrDepth()) << endl;
@@ -537,12 +552,7 @@ class SyGuSSolver
   {
     allcons = conjoin(prob.constraints, efac);
     negallcons = mkNeg(allcons);
-    for (const auto& func : prob.synthfuncs)
-      for (const Expr& var : func.vars)
-      {
-        allFuncVars.insert(var);
-        faArgs.push_back(var);
-      }
+    faArgs = prob.vars;
     faArgs.push_back(NULL); // To be filled in 'checkCands'
     for (const auto& func : prob.synthfuncs)
       hasanyconst |= func.hasanyconst;
