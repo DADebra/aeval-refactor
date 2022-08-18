@@ -622,7 +622,6 @@ class CoroTrav : public Traversal
               return true;
             }
           sink(ParseTree(root, newcand, false));
-          int b = 0;
         }
         else
         {

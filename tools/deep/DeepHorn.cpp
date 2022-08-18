@@ -223,7 +223,7 @@ int main (int argc, char ** argv)
 
   if (printSygus || gengram)
   {
-    vers1 = true; vers2 = vers3 = false;
+    vers1 = true; vers2 = false; vers3 = false;
     do_boot = false;
     debug = 0;
   }

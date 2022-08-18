@@ -686,20 +686,34 @@ class NewTrav : public Traversal
               {
                 if (constpos.queuelimit() != 0)
                   travpos.makeinqueue();
+                else if (constposchildat(travpos.pos()).isdone())
+                {
+                  // We're done. Return NULL
+                  travpos.makenull();
+                  return NULL;
+                }
                 break;
               }
             }
           }
         }
-        else if (constposchildat(travpos.pos()).isdone())
-        {
-          travpos.nextpos();
-          if (travpos.pos() == travpos.min())
+        else
+          while (constposchildat(travpos.pos()).isdone())
           {
-            assert(constpos.queuelimit() != 0);
-            travpos.makeinqueue();
+            travpos.nextpos();
+            if (travpos.pos() == travpos.min())
+            {
+              if (constpos.queuelimit() != 0)
+                travpos.makeinqueue();
+              else if (constposchildat(travpos.pos()).isdone())
+              {
+                // We're done. Return NULL
+                travpos.makenull();
+                return NULL;
+              }
+              break;
+            }
           }
-        }
       }
       else if (!ro)
       {
@@ -860,12 +874,8 @@ class NewTrav : public Traversal
       }
       for (const auto& p : newexpr)
         if (!p)
-        {
-          if (!ro) travpos.makenull();
-          for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
-            pathToCtx.erase(np(path,C,dind(i)));
-          return NULL;
-        }
+          return std::move(newtrav(root, travpos, currdepth,
+            qvars, currnt, path, oldparams, mu, ro));
 
       if (params.simplify)
       {
@@ -949,7 +959,7 @@ class NewTrav : public Traversal
         if (wasdone)
         {
           // ro == false here
-          if (!newexprat(i) || i == constpos.childlimit() - 1)
+          if (i == constpos.childlimit() - 1 || !newexprat(i))
           {
             // Everything done. Return NULL.
             travpos.makenull();
@@ -987,12 +997,8 @@ class NewTrav : public Traversal
       }
       for (const auto& p : newexpr)
         if (!p)
-        {
-          if (!ro) travpos.makenull();
-          for (int i = travpos.childmin(); i < travpos.childlimit(); ++i)
-            pathToCtx.erase(np(path,C,dind(i)));
-          return NULL;
-        }
+          return std::move(newtrav(root, travpos, currdepth,
+            qvars, currnt, path, oldparams, mu, ro));
 
       if (!ro)
       {
