@@ -283,7 +283,7 @@ namespace ufo
       if (printLog >= 3) outs () << "Adding candidate [" << invNum << "]: " << cnd << "\n";
       SamplFactory& sf = sfs[invNum].back();
       Expr allLemmas = sf.getAllLemmas();
-      if (containsOp<FORALL>(cnd) || containsOp<FORALL>(allLemmas))
+      if (!sf.gf.initialized && (containsOp<FORALL>(cnd) || containsOp<FORALL>(allLemmas)))
       {
         if (containsOp<FORALL>(cnd))
           replaceArrRangeForIndCheck (invNum, cnd, candidates[invNum]);
@@ -917,15 +917,19 @@ namespace ufo
         {
           rndStarted = true;
           cand = sf.getFreshCandidate();  // try simple array candidates first
+          if (cand != NULL && !sf.gf.initialized && isOpX<FORALL>(cand) && isOpX<IMPL>(cand->last()))
+          {
+            if (!u.isSat(cand->last()->left())) cand = NULL;
+          }
         }
         else
         {
           cand = deferredCandidates[invNum].back();
           deferredCandidates[invNum].pop_back();
-        }
-        if (cand != NULL && isOpX<FORALL>(cand) && isOpX<IMPL>(cand->last()))
-        {
-          if (!u.isSat(cand->last()->left())) cand = NULL;
+          if (cand != NULL && isOpX<FORALL>(cand) && isOpX<IMPL>(cand->last()))
+          {
+            if (!u.isSat(cand->last()->left())) cand = NULL;
+          }
         }
         bool alldone = true;
         for (int j = 0; j < ruleManager.cycles.size(); ++j)
@@ -934,8 +938,11 @@ namespace ufo
             alldone = false;
             break;
           }
-        if (alldone) break;
-        if (cand == NULL) continue;
+        if (cand == NULL)
+        {
+          if (alldone) break;
+          else continue;
+        }
         if (printLog >= 3 && dRecycleCands)
           outs () << "Number of deferred candidates: " << deferredCandidates[invNum].size() << "\n";
 

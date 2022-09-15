@@ -150,12 +150,12 @@ namespace ufo
           Expr vartype = typeOf(var);
           if (isOpX<INT_TY>(vartype))
 	  {
-            if (u.implies(chc.body, mk<GT>(varprime, var)))
-              addIncVar(var); // Variable which always increments
-            else if (u.implies(chc.body, mk<LT>(varprime, var)))
-              addDecVar(var); // Variable which always decrements
-            else if (u.implies(chc.body, mk<EQ>(varprime, var)))
+            if (u.implies(chc.body, mk<EQ>(varprime, var)))
               addConstVar(var); // Variable which always stays the same
+            else if (u.implies(chc.body, mk<GEQ>(varprime, var)))
+              addIncVar(var); // Variable which (conditionally) increments
+            else if (u.implies(chc.body, mk<LEQ>(varprime, var)))
+              addDecVar(var); // Variable which (conditionally) decrements
             else
               addUnknownVar(var); // Variable which does none of the above
           }

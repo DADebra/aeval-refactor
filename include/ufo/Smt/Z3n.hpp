@@ -422,7 +422,10 @@ namespace ufo
         entries.push_back (fentryToExpr (zfunc.entry (i)));
 
       z3::ast elseV (ctx, Z3_func_interp_get_else (ctx, zfunc));
-      Expr res = mdl::ftable (entries, z3.toExpr (elseV));
+      Expr elseVE = z3.toExpr (elseV);
+      if (!elseVE)
+        return NULL;
+      Expr res = mdl::ftable (entries, elseVE);
       return res;
     }
     

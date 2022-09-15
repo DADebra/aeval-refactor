@@ -185,24 +185,29 @@ namespace ufo
               else
               {
                 auto m = m_smt_solver.getModelPtr();
-                if (hr.isInductive)
+                if (m && *m)
                 {
-                  outs () << "CTI:\n";
-                  for (auto & v : invarVars[ind1])
+                  if (hr.isInductive)
                   {
-                      outs () << "  " << hr.srcVars[v.first] << " = "
-                                      << m->eval(hr.srcVars[v.first]) << "\n";
+                    outs () << "CTI:\n";
+                    for (auto & v : invarVars[ind1])
+                    {
+                        outs () << "  " << hr.srcVars[v.first] << " = "
+                                        << m->eval(hr.srcVars[v.first]) << "\n";
+                    }
+                  }
+                  else
+                  {
+                    outs () << "CEX:\n";
+                    for (auto & v : invarVars[ind2])
+                    {
+                      outs () << "  " << hr.dstVars[v.first] << " = "
+                                      << m->eval(hr.dstVars[v.first]) << "\n";
+                    }
                   }
                 }
                 else
-                {
-                  outs () << "CEX:\n";
-                  for (auto & v : invarVars[ind2])
-                  {
-                    outs () << "  " << hr.dstVars[v.first] << " = "
-                                    << m->eval(hr.dstVars[v.first]) << "\n";
-                  }
-                }
+                  outs() << "CTI unknown\n";
               }
             }
             curCandidates[ind2] = mk<TRUE>(m_efac);

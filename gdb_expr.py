@@ -158,15 +158,17 @@ def getargs(expr):
 opptrtype = None
 mpq_struct = None
 mpz_struct = None
+unsigned = None
 class ENodePrinter:
     def __init__(self, val):
         self.val = val
     def to_string(self):
-        global opptrtype, OpTypeToSymbol, mpz_struct, mpq_struct
+        global opptrtype, OpTypeToSymbol, mpz_struct, mpq_struct, unsigned
         if opptrtype is None:
             opptrtype = gdb.lookup_type('expr::Operator').pointer()
             mpz_struct = gdb.lookup_type('__mpz_struct')
             mpq_struct = gdb.lookup_type('__mpq_struct')
+            unsigned = gdb.lookup_type("unsigned")
 
         args = getargs(self.val)
         oper = derefoper(self.val['oper'])
@@ -211,6 +213,8 @@ class ENodePrinter:
                             return "#x" + hexstr[2:]
                         #width = op1.cast(op1type)['val']['m_width']
                         #return "#x" + valint.to_bytes(width, 'big', signed=True).hex()
+                    else:
+                        return str(args[0].dereference()) + ":" + str(args[1].dereference())
             elif op == "FORALL" or op == "EXISTS":
                 body = args[-1].dereference()
                 retstr = "(" + op.lower() + " ("
@@ -223,6 +227,8 @@ class ENodePrinter:
                     retstr += "(" + str(argargs[0].dereference()) + " " +\
                             str(argargs[-1].dereference()) + ")"
                 return retstr + ") " + str(body) + ")"
+            elif op == "AD_TY":
+                return "ADT:" + str(args[-1].dereference())
             if op not in OpTypeToSymbol:
                 raise ValueError("Unknown DefOp type \"{}\"".format(op))
             sym = OpTypeToSymbol[op]
@@ -246,6 +252,9 @@ class ENodePrinter:
                 # Actually a sort
                 width = int(val['m_width'])
                 return "(_ BitVec " + str(width) + ")"
+            elif "BoundVar" in opname:
+                val = val.cast(unsigned)
+                return "B" + str(val)
             else:
                 raise ValueError("Unknown Terminal type {}".format(optype))
         else:
