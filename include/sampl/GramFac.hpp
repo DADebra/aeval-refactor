@@ -328,8 +328,10 @@ namespace ufo
             gram->addProd(nt, var);
         }
 
-      gram->addProd(gram->addNt<BOOL_TY>("POST_COND", m_efac), postcond);
-      gram->addProd(gram->addNt<BOOL_TY>("PRE_COND", m_efac), precond);
+      if (postcond)
+        gram->addProd(gram->addNt<BOOL_TY>("POST_COND", m_efac), postcond);
+      if (precond)
+        gram->addProd(gram->addNt<BOOL_TY>("PRE_COND", m_efac), precond);
       NT precondpart = gram->addNt<BOOL_TY>("PRE_COND_PART", m_efac);
       if (isOpX<AND>(precond))
         for (int i = 0; i < precond->arity(); ++i)
