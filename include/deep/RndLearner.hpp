@@ -189,7 +189,8 @@ namespace ufo
                 {
                   if (hr.isInductive)
                   {
-                    outs () << "CTI:\n";
+                    outs () << "CTI for " << hr.srcRelation << " -> " <<
+                      hr.dstRelation << "\n";
                     for (auto & v : invarVars[ind1])
                     {
                         outs () << "  " << hr.srcVars[v.first] << " = "
@@ -1142,7 +1143,7 @@ namespace ufo
     ExprFactory m_efac;
     EZ3 z3(m_efac);
 
-    CHCs ruleManager(m_efac, z3);
+    CHCs ruleManager(to, m_efac, z3);
     ruleManager.parse(smt);
     RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt, gramfile, sw, sl);
 
@@ -1150,6 +1151,11 @@ namespace ufo
     std::srand(std::time(0));
     ExprSet itpCands;
 
+    if (gengram)
+    {
+      outs() << CFGUtils::autoGenGram(ruleManager) << endl;
+      return true;
+    }
     if (ruleManager.decls.size() > 1)
     {
       outs () << "WARNING: learning multiple invariants is currently unstable\n"
@@ -1174,11 +1180,6 @@ namespace ufo
     if (printSygus)
     {
       ds.printSygus();
-      return true;
-    }
-    if (gengram)
-    {
-      outs() << CFGUtils::autoGenGram(ruleManager) << endl;
       return true;
     }
 

@@ -2080,7 +2080,7 @@ namespace ufo
     EZ3 z3(m_efac);
     SMTUtils u(m_efac);
 
-    CHCs ruleManager(m_efac, z3, debug - 2);
+    CHCs ruleManager(to, m_efac, z3, debug - 2);
     auto res = ruleManager.parse(smt, doElim, doArithm);
     if (ser)
     {

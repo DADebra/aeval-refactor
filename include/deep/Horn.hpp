@@ -76,8 +76,8 @@ namespace ufo
     int glob_ind = 0;
     ExprSet origVrs;
 
-    CHCs(ExprFactory &efac, EZ3 &z3, int d = false) :
-      u(efac), m_efac(efac), m_z3(z3), hasAnyArrays(false), debug(d) {};
+    CHCs(unsigned to, ExprFactory &efac, EZ3 &z3, int d = false) :
+      u(efac, to), m_efac(efac), m_z3(z3), hasAnyArrays(false), debug(d) {};
 
     bool isFapp (Expr e)
     {

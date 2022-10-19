@@ -820,13 +820,13 @@ namespace ufo
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
-    CHCs ruleManager(m_efac, z3, debug);
+    CHCs ruleManager(to, m_efac, z3, debug);
     if (!ruleManager.parse(smt, !skip_elim)) return;
     BndExpl bnd(ruleManager, to, debug);
     bnd.exploreTraces(bnd1, bnd2, true);
   };
 
-  inline bool kInduction(CHCs& ruleManager, int bnd)
+  inline bool kInduction(CHCs& ruleManager, int bnd, unsigned to)
   {
     if (ruleManager.chcs.size() != 3)
     {
@@ -834,7 +834,7 @@ namespace ufo
       return false;
     }
 
-    BndExpl ds(ruleManager, false);
+    BndExpl ds(ruleManager, to, false);
 
     bool success = false;
     int i;
@@ -854,13 +854,13 @@ namespace ufo
     return success;
   };
 
-  inline void kInduction(string smt, int bnd)
+  inline void kInduction(string smt, int bnd, unsigned to)
   {
     ExprFactory m_efac;
     EZ3 z3(m_efac);
-    CHCs ruleManager(m_efac, z3);
+    CHCs ruleManager(to, m_efac, z3);
     ruleManager.parse(smt);
-    kInduction(ruleManager, bnd);
+    kInduction(ruleManager, bnd, to);
   };
 }
 

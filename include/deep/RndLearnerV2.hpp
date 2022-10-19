@@ -353,7 +353,7 @@ namespace ufo
     ExprFactory m_efac;
     EZ3 z3(m_efac);
 
-    CHCs ruleManager(m_efac, z3);
+    CHCs ruleManager(to, m_efac, z3);
     ruleManager.parse(smt);
     RndLearnerV2 ds(m_efac, z3, ruleManager, to, freqs, aggp, debug, smt, gramfile, sw, sl);
 
