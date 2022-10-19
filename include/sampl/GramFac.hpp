@@ -361,7 +361,6 @@ namespace ufo
       Expr ret = gramenum.Increment();
       if (gramenum.IsDone())
       {
-        outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
         done = true;
       }
       return ret;
@@ -372,6 +371,8 @@ namespace ufo
     {
       if (!initialized)
         return;
+      if (!success)
+        outs() << "Unable to find invariant with given grammar and maximum depth." << endl;
       gramenum.Finish(success);
     }
 
