@@ -36,10 +36,28 @@ namespace ufo
       {
         Expr e = m.eval(v);
         if (e == NULL)
-        {
           return NULL;
-        }
-        else if (e != v)
+
+        if (isOpX<ARRAY_TY>(typeOf(v)))
+          return NULL;
+
+        // Disabled for now because Array model generation is currently very
+        // weird.
+        /*if (isOpX<EXISTS>(e) || isOpX<FORALL>(e))
+        {
+          // Z3 produces MPZ-named bound vars for some reason,
+          // e.g. '(exists (0 Int) ...)'
+          // TODO: Fix properly later
+          ExprVector newe;
+          for (int i = 0; i < e->arity() - 1; ++i)
+            newe.push_back(constDecl(mkTerm(string("B")+to_string(i), e->efac()),
+              typeOf(e->arg(i))));
+          newe.push_back(e->last());
+          e = mknary(e->op(), newe.begin(), newe.end());
+          e = regularizeQF(e);
+        }*/
+
+        if (e != v)
         {
           eqs.push_back(mk<EQ>(v, e));
         }
@@ -230,6 +248,62 @@ namespace ufo
       }
     }
 
+    bool secondChance(unsigned limit, bool do_nomodel = true)
+    {
+      ExprSet secondChanceCands;
+      for (auto it = modelsOfFailures.begin(); it != modelsOfFailures.end(); )
+      {
+        if (!it->first)
+        {
+          if (!do_nomodel)
+          {
+            ++it;
+            continue;
+          }
+          // CE Unknown, try unconditionally
+          bool dobreak = false;
+          for (auto & e : it->second)
+          {
+            secondChanceCands.insert(e);
+            if (secondChanceCands.size() >= limit)
+            {
+              dobreak = true;
+              break;
+            }
+          }
+          if (dobreak)
+            break;
+          it = modelsOfFailures.erase(it);
+          continue;
+        }
+
+        // TODO: Support candidate retrying for arrays
+        if (containsOp<FTABLE>(it->first))
+        {
+          ++it;
+          continue;
+        }
+
+        m_smt_solver.reset();
+        m_smt_solver.assertExpr (it->first);
+        m_smt_solver.assertExpr (sfs[0].back().getAllLemmas());
+
+        numOfSMTChecks++;
+        if (!m_smt_solver.solve ()) // CE violated
+        {
+          for (auto & e : it->second) secondChanceCands.insert(e);
+          it = modelsOfFailures.erase(it);
+          if (secondChanceCands.size() >= limit)
+            break;
+        }
+        else ++it;
+      }
+
+      if (secondChanceCands.size() > 0)
+        return houdini(secondChanceCands, false, true);
+      return false;
+    }
+
     bool synthesize(int maxAttempts, int batchSz, int scndChSz, int &outIters)
     {
       assert(sfs.size() == 1); // current limitation
@@ -247,12 +321,13 @@ namespace ufo
       {
         candsBatch.clear();
 
+        if (sf.isdone()) break;
         if (printLog) outs() << "\n  ---- new iteration " << iter <<  " ----\n";
 
         while (candsBatch.size() < batchSz)
         {
-          Expr cand = sf.getFreshCandidate();
           if (sf.isdone()) break;
+          Expr cand = sf.getFreshCandidate();
           if (cand == NULL) continue;
 
           if (isTautology(cand))  // keep searching
@@ -288,49 +363,29 @@ namespace ufo
 
           candsBatch.push_back(cand);
         }
-        if (sf.isdone()) break;
+
+        if (candsBatch.size() == 0) continue;
 
         for (auto a : tr) getIS(a, candsBatch, false);      // houdini
 
-        if (candsBatch.size() == 0) continue;
+        // second chance candidates
+        triggerSecondChance += redundancyCheck(candsBatch, false);
 
         success = true;
         for (auto a : qr) success = success && checkSafetyAndReset(a);
         if (success) break;
 
-        // second chance candidates
-        triggerSecondChance += redundancyCheck(candsBatch, false);
-        if (triggerSecondChance < scndChSz) continue;
-
-        triggerSecondChance = 0;
-
-        ExprSet secondChanceCands;
-        for (auto it = modelsOfFailures.begin(); it != modelsOfFailures.end(); )
+        if (triggerSecondChance >= scndChSz)
         {
-          if (!it->first)
-          {
-            // CE Unknown, try unconditionally
-            // TODO: Limit the maximum number we try at a time
-            for (auto & e : it->second) secondChanceCands.insert(e);
-            it = modelsOfFailures.erase(it);
-            continue;
-          }
-          m_smt_solver.reset();
-          m_smt_solver.assertExpr (it->first);
-          m_smt_solver.assertExpr (sf.getAllLemmas());
-
-          numOfSMTChecks++;
-          if (!m_smt_solver.solve ()) // CE violated
-          {
-            for (auto & e : it->second) secondChanceCands.insert(e);
-            it = modelsOfFailures.erase(it);
-          }
-          else ++it;
+          triggerSecondChance = 0;
+          // TODO: Make limit an option?
+          success = secondChance(10 * scndChSz, true);
+          if (success) break;
         }
-
-        if (secondChanceCands.size() > 0) success = houdini(secondChanceCands, false, true);
-        if (success) break;
       }
+
+      if (!success)
+        success = secondChance(-1, false);
 
       for (int j = 0; j < invNumber; j++)
         sfs[j].back().gf.finish(success);
