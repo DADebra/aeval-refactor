@@ -19,15 +19,16 @@ void printUsage()
   outs() << "Converts the given SyGuS problem and grammar into a CHC unrealizability problem\n";
   outs() << "\n";
   outs() << "Options:\n";
-  outs() << "  -n <size> \t\t How many variable copies to include in the relation\n";
-  outs() << "  --debug <size> \t\t Debug verbosity [0]\n";
+  outs() << "  -n <size> \t How many variable copies to include in the relation\n";
+  outs() << "  --spec \t Generate a spec synthesis problem for relation named 'input' instead\n";
+  outs() << "  --debug <size> \t Debug verbosity [0]\n";
   outs().flush();
 }
 
 using namespace std;
 using namespace ufo;
 
-int printCHC(int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3, CFGUtils& cfgutils);
+int printCHC(bool spec, int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3, CFGUtils& cfgutils);
 
 int main(int argc, char** argv)
 {
@@ -43,6 +44,8 @@ int main(int argc, char** argv)
     outs() << "Must specify -n" << endl;
     exit(2);
   }
+
+  bool spec = getBoolValue("--spec", false, argc, argv);
 
   int debug = getIntValue("--debug", 0, argc, argv);
   SyGuSParams sparams(argc, argv);
@@ -80,7 +83,7 @@ int main(int argc, char** argv)
 
   prob.Analyze();
 
-  return printCHC(numcopies, prob, efac, z3, cfgutils);
+  return printCHC(spec, numcopies, prob, efac, z3, cfgutils);
 }
 
 // Replaces first occurance in a post-fix traversal of 'e'
@@ -118,12 +121,17 @@ void nonuniqfilter(const Expr& e, const std::function<bool(Expr)>& filt,
     nonuniqfilter(e->arg(i), filt, vec);
 }
 
-int printCHC(int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3, CFGUtils& cfgutils)
+int printCHC(bool spec, int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3, CFGUtils& cfgutils)
 {
   if (prob.gramFuncs.size() != prob.synthfuncs.size())
   {
     outs() << "SyGuS synth-fun's without grammars aren't supported." << endl;
     return 4;
+  }
+  if (prob.singleapps.size() != prob.synthfuncs.size())
+  {
+    outs() << "Only single-application functions are supported." << endl;
+    return 6;
   }
   if (prob.synthfuncs.size() != 1)
   {
@@ -171,8 +179,9 @@ int printCHC(int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3
     {
       relargs.push_back(mkConst(mkTerm(getTerm<string>(v->left()) + to_string(i), efac),
         typeOf(v)));
-      initargs.push_back(mkConst(mkTerm(getTerm<string>(v->left()) + to_string(i) + "init", efac),
-        typeOf(v)));
+      if (!spec)
+        initargs.push_back(mkConst(mkTerm(getTerm<string>(v->left()) + to_string(i) + "init", efac),
+          typeOf(v)));
       /*outs() << "(declare-var " << relargs.back() << " " <<
         z3.toSmtLib(typeOf(v)) << ")\n";*/
       //outs() << z3.toSmtLib(relargs.back()->left()) << "\n";
@@ -204,8 +213,9 @@ int printCHC(int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3
       {
         // Init(s)
         ExprVector body;
-        for (int i = 0; i < relargs.size(); ++i)
-          body.push_back(mk<EQ>(relargs[i], initargs[i]));
+        if (!spec)
+          for (int i = 0; i < relargs.size(); ++i)
+            body.push_back(mk<EQ>(relargs[i], initargs[i]));
         for (int i = 0; i < numcopies; ++i)
           body.push_back(mk<EQ>(getretcopy(nt, i), replaceAll(prod, varmappings[i])));
         ExprVector relapp;
@@ -254,20 +264,31 @@ int printCHC(int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3
     ExprVector apps;
     filter(allcons, [&](Expr e){return isOpX<FAPP>(e) && prob.declToFunc.count(e->left()) != 0;},
       inserter(apps, apps.begin()));
-    int x = 0;
-    for (const Expr& app : apps)
-    {
-      ExprVector rootrel;
-      rootrel.push_back(ntToRel[gram.root]);
-      extend(rootrel, relargs);
-      for (int i = 0; i < numcopies; ++i)
-        rootrel.push_back(getretcopy(gram.root, x));
-      body.push_back(mknary<FAPP>(rootrel));
-      allcons = replaceAll(allcons, app, getretcopy(gram.root, x));
-      ++x;
-    }
+    assert(apps.size() == 1);
+    Expr app = apps[0];
+    ExprVector rootrel;
+    rootrel.push_back(ntToRel[gram.root]);
+    extend(rootrel, relargs);
     for (int i = 0; i < numcopies; ++i)
-      body.push_back(replaceAll(allcons, varmappings[i]));
+    {
+      rootrel.push_back(getretcopy(gram.root, i));
+      body.push_back(replaceAll(
+          replaceAll(allcons, app, getretcopy(gram.root, i)),
+          varmappings[i]));
+    }
+    body.push_back(mknary<FAPP>(rootrel));
+    if (spec)
+    {
+      ExprVector input;
+      input.push_back(mkTerm(string("input_spec"), efac));
+      extend(input, relargs, true);
+      input.push_back(mk<BOOL_TY>(efac));
+      rels.push_back(mknary<FDECL>(input));
+      ExprVector input_app;
+      input_app.push_back(rels.back());
+      extend(input_app, relargs);
+      body.push_back(mknary<FAPP>(input_app));
+    }
     rules.push_back(mk<IMPL>(conjoin(body, efac), fapp(rels[0])));
   }
 
@@ -279,8 +300,9 @@ int printCHC(int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3
     outs() << " " << z3.toSmtLib(e->last()) << ")\n";
   };
 
-  for (const Expr& e : initargs)
-    printvar(e);
+  if (!spec)
+    for (const Expr& e : initargs)
+      printvar(e);
   for (const Expr& e : relargs)
     printvar(e);
   for (const auto& kv : retcopies)
@@ -300,7 +322,7 @@ int printCHC(int numcopies, const SynthProblem& prob, ExprFactory& efac, EZ3& z3
     outs() << "(rule "; u.print(e); outs() << ")\n";
   }
 
-  outs() << "(query fail :print-certificate true)\n";
+  outs() << "(query fail)\n";
 
   outs().flush();
   return 0;
