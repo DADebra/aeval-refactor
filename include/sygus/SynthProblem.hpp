@@ -73,7 +73,7 @@ class SynthProblem
   const string& logic;
   vector<SynthFunc>& synthfuncs;
   const vector<Expr>& vars;
-  const vector<Expr> constraints;
+  const vector<Expr>& constraints;
   // Funcs which are always called with same args, subset of synthfuncs
   // K: Func, V: FAPP (the single one)
   const unordered_map<const SynthFunc*,Expr>& singleapps;

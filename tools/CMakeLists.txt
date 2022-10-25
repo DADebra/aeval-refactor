@@ -13,3 +13,11 @@ target_link_libraries(sygussolver ${Z3_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${Boost_
 add_dependencies(sygussolver SyGuSParserBison)
 #endif()
 install(TARGETS sygussolver RUNTIME DESTINATION bin)
+
+add_executable(gram2chc gram2chc.cpp)
+target_link_libraries(gram2chc global)
+target_link_libraries(gram2chc ${Z3_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${Boost_CONTEXT_LIBRARY} ${Boost_COROUTINE_LIBRARY} ${GMPXX_LIB} ${GMP_LIB})
+#if (BISON_FOUND)
+add_dependencies(gram2chc SyGuSParserBison)
+#endif()
+install(TARGETS gram2chc RUNTIME DESTINATION bin)
