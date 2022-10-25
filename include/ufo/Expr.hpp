@@ -3269,6 +3269,9 @@ namespace expr
           return rangeTy (v->left ());
         }
 
+        if (isOpX<FDECL> (v))
+          return rangeTy (v);
+
         if (isOpX<ITE>(v)) return typeOf(v->last());
         if (isOp<BoolOp>(v) || isOp<ComparissonOp> (v)) return mk<BOOL_TY> (v->efac ());
         if (isOpX<EXISTS>(v) || isOpX<FORALL> (v)) return mk<BOOL_TY> (v->efac ());

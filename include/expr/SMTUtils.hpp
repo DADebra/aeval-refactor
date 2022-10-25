@@ -752,6 +752,21 @@ namespace ufo
         }
         out << ")";
       }
+      else if (isOpX<FAPP>(e))
+      {
+        if (e->arity() > 1)
+          out << "(";
+        out << getTerm<string>(e->left()->left());
+        if (e->arity() > 1)
+          out << " ";
+        for (int i = 1; i < e->arity(); ++i)
+        {
+          print(e->arg(i), out);
+          if (i != e->arity() - 1) out << " ";
+        }
+        if (e->arity() > 1)
+          out << ")";
+      }
       else out << z3.toSmtLib (e);
     }
 
