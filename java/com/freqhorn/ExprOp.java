@@ -1,5 +1,6 @@
 package com.freqhorn;
 
+/** The operation of an {@code Expr}. */
 public enum ExprOp {
   // ORDER IMPORTANT
   AND("and"), OR("or"), XOR("xor"), NEG("not"), IMPL("=>"), ITE("ite"),
@@ -19,10 +20,12 @@ public enum ExprOp {
 
   private String _op;
   private ExprOp(String __op) { _op = __op; }
+  /** Return the String representation of this operation. */
   public String op() { return _op; }
-  public String toString() { return _op; }
 
-  public Expr GetSort() {
+  /** Internal: return the Sort of this operation, or null if
+   * the operation can vary in sort. */
+  Expr GetSort() {
     switch (this) {
       case AND: case OR: case XOR: case NEG: case IMPL: case ITE:
       case EQ: case NEQ: case LEQ: case GEQ: case LT: case GT:
@@ -31,4 +34,6 @@ public enum ExprOp {
     }
     return null;
   }
+
+  public String toString() { return _op; }
 }

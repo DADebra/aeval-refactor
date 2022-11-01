@@ -12,4 +12,9 @@ public class ExprIntVal extends ExprVal {
   public String GetString() { throw new UnsupportedOperationException(); }
   public Expr GetSort()     { return ExprSorts.Int; }
   public String toString()  { return "" + val; }
+  public boolean equals(Object oth) {
+    if (oth.getClass() != ExprIntVal.class)
+      return false;
+    return GetInt() == ((ExprIntVal)oth).GetInt();
+  }
 }

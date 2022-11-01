@@ -12,4 +12,9 @@ public class ExprRealVal extends ExprVal {
   public String GetString() { throw new UnsupportedOperationException(); }
   public Expr GetSort()     { return ExprSorts.Real; }
   public String toString()  { return "" + val; }
+  public boolean equals(Object oth) {
+    if (oth.getClass() != ExprRealVal.class)
+      return false;
+    return GetReal() == ((ExprRealVal)oth).GetReal();
+  }
 }
