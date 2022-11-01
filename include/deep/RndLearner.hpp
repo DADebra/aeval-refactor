@@ -496,7 +496,8 @@ namespace ufo
         sf_after.gf.setParams(sf_before.gf.getParams());
         sf_after.gf.analyze(ruleManager);
         sf_after.gf.setTFFn(GramEnum::defaultTFFn);
-        sf_after.initialize_gram(gramfile, lexical_cast<string>(decls[ind]), sf_before.gf.b4simpl);
+        bool ret = sf_after.initialize_gram(gramfile, lexical_cast<string>(decls[ind]), sf_before.gf.b4simpl);
+        assert(ret);
 
         set<cpp_int> progConsts, intCoefs;
         ExprSet cands;
@@ -513,7 +514,7 @@ namespace ufo
       }
     }
 
-    void initializeDecl(Expr invDecl, TravParams gramparams, bool b4simpl)
+    bool initializeDecl(Expr invDecl, TravParams gramparams, bool b4simpl)
     {
       if (printLog) outs () << "\nINITIALIZE PREDICATE " << invDecl << "\n====================\n";
 //      assert (invDecl->arity() > 2);
@@ -557,9 +558,11 @@ namespace ufo
       sf.gf.setParams(gramparams);
       sf.gf.analyze(ruleManager);
       sf.gf.setTFFn(GramEnum::defaultTFFn);
-      sf.initialize_gram(gramfile, lexical_cast<string>(invDecl), b4simpl);
+      if (!sf.initialize_gram(gramfile, lexical_cast<string>(invDecl), b4simpl))
+        return false;
 
       invNumber++;
+      return true;
     }
 
     bool initializedDecl(Expr invDecl)
@@ -1082,12 +1085,12 @@ namespace ufo
       return success;
     }
 
-    void printSygus()
+    bool printSygus()
     {
       if (ruleManager.decls.size() > 1)
       {
         outs() << "SyGuS output for CHCs with multiple invariants is currently unsupported";
-        exit(9);
+        return false;
       }
       int invNum = 0;
       Expr rel = decls[invNum];
@@ -1136,6 +1139,7 @@ namespace ufo
         outs() << rel << "-inv_c" << i << " ";
       outs() << ")\n";
       outs() << "(check-synth)" << endl;
+      return true;
     }
   };
 
@@ -1146,7 +1150,8 @@ namespace ufo
     EZ3 z3(m_efac);
 
     CHCs ruleManager(to, m_efac, z3);
-    ruleManager.parse(smt);
+    if (!ruleManager.parse(smt))
+      return false;
     RndLearner ds(m_efac, z3, ruleManager, to, kind, b1, b2, b3, debug, smt, gramfile, sw, sl);
 
     ds.setupSafetySolver(to);
@@ -1175,14 +1180,14 @@ namespace ufo
     for (auto& dcl: ruleManager.decls)
     {
       //ds.initializeDecl(dcl, gramparams);
-      ds.initializeDecl(dcl->left(), gramparams, b4simpl);
+      if (!ds.initializeDecl(dcl->left(), gramparams, b4simpl))
+        return false;
       ds.prepareSeeds(dcl->left(), itpCands); // itpCands isn't used
     }
 
     if (printSygus)
     {
-      ds.printSygus();
-      return true;
+      return ds.printSygus();
     }
 
     ds.calculateStatistics();

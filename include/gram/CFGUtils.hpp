@@ -17,7 +17,7 @@ void CFGUtils::noNtDefError(NT nt, NT root)
   outs() << "ERROR: There is no definition for user-defined " <<
     "non-terminal " << nt << " in the CFG for " << root <<
     ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
-  exit(2);
+  //assert(0);
 }
 
 decltype(CFGUtils::varsNtNameCache) CFGUtils::varsNtNameCache = NULL;

@@ -106,7 +106,7 @@ namespace ufo
       gf.addIntConst(iconst);
     }
 
-    void initialize(ExprSet& arrCands, ExprVector& arrAccessVars, ExprSet& arrRange)
+    bool initialize(ExprSet& arrCands, ExprVector& arrAccessVars, ExprSet& arrRange)
     {
       bf.initialize();
       lf.initialize();
@@ -120,12 +120,13 @@ namespace ufo
       }
       initialized++;
       gf.initialize_consts();
+      return true;
     }
 
     // GRAMfactory requires two-stage initialization. This is the first part.
-    void initialize_gram(string gramFile, string invFname, bool b4simpl)
+    bool initialize_gram(string gramFile, string invFname, bool b4simpl)
     {
-      gf.initialize(gramFile, invFname, b4simpl);
+      return gf.initialize(gramFile, invFname, b4simpl);
     }
 
     Sampl& exprToSampl(Expr ex)

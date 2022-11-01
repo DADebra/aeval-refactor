@@ -89,7 +89,7 @@ namespace ufo
       return false;
     }
 
-    void splitBody (HornRuleExt& hr, ExprVector& srcVars, ExprSet& lin)
+    bool splitBody (HornRuleExt& hr, ExprVector& srcVars, ExprSet& lin)
     {
       getConj (simplifyBool(hr.body), lin);
       for (auto c = lin.begin(); c != lin.end(); )
@@ -104,7 +104,7 @@ namespace ufo
             errs () << "Nonlinear CHC is currently unsupported: ["
                     << *hr.srcRelation << " /\\ " << *rel->left() << " -> "
                     << *hr.dstRelation << "]\n";
-            exit(1);
+            return false;
           }
           hr.srcRelation = rel->left();
           for (auto it = cnj->args_begin()+1; it != cnj->args_end(); ++it)
@@ -113,9 +113,10 @@ namespace ufo
         }
         else ++c;
       }
+      return true;
     }
 
-    void addDecl (Expr a)
+    bool addDecl (Expr a)
     {
       if (invVars[a->left()].size() == 0)
       {
@@ -130,7 +131,7 @@ namespace ufo
               !isOpX<BVSORT> (arg))
           {
             errs() << "Argument #" << i << " of " << a << " is not supported\n";
-            exit(1);
+            return false;
           }
           while (true)
           {
@@ -149,6 +150,7 @@ namespace ufo
           }
         }
       }
+      return true;
     }
 
     bool normalize (Expr& r, HornRuleExt& hr)
@@ -236,9 +238,15 @@ namespace ufo
           if (head->left()->arity() == 2 &&
               (find(fp.m_queries.begin(), fp.m_queries.end(), head) !=
                fp.m_queries.end()))
-            addFailDecl(head->left()->left());
+          {
+            if (!addFailDecl(head->left()->left()))
+              return false;
+          }
           else
-            addDecl(head->left());
+          {
+            if (!addDecl(head->left()))
+              return false;
+          }
           hr.dstRelation = head->left()->left();
 
           for (auto it = head->args_begin()+1; it != head->args_end(); ++it)
@@ -247,7 +255,8 @@ namespace ufo
         else
         {
           if (!isOpX<FALSE>(head)) hr.body = mk<AND>(hr.body, mk<NEG>(head));
-          addFailDecl(mk<FALSE>(m_efac));
+          if (!addFailDecl(mk<FALSE>(m_efac)))
+            return false;
           hr.dstRelation = mk<FALSE>(m_efac);
         }
         hasBV |= containsOp<BVSORT>(hr.body);
@@ -263,14 +272,15 @@ namespace ufo
       {
         ExprVector origSrcSymbs, origDstSymbs;
         ExprSet lin;
-        splitBody(hr, origSrcSymbs, lin);
+        if (!splitBody(hr, origSrcSymbs, lin))
+          return false;
         if (hr.srcRelation == NULL)
         {
           if (hasUninterp(hr.body))
           {
             errs () << "Unsupported format\n";
             errs () << "   " << *hr.body << "\n";
-            exit (1);
+            return false;
           }
           hr.srcRelation = mk<TRUE>(m_efac);
         }
@@ -951,7 +961,7 @@ namespace ufo
       }
     }
 
-    void addFailDecl(Expr decl)
+    bool addFailDecl(Expr decl)
     {
       if (failDecl == NULL)
       {
@@ -962,9 +972,10 @@ namespace ufo
         if (failDecl != decl)
         {
           errs () << "Multiple queries are unsupported\n";
-          exit (1);
+          return false;
         }
       }
+      return true;
     }
 
     Expr getPrecondition (HornRuleExt* hr)

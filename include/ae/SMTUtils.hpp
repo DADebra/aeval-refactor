@@ -759,7 +759,7 @@ namespace ufo
       char str[3000];
       strncpy(str, e.msg(), 300);
       errs() << "Z3 ex: " << str << "...\n";
-      exit(55);
+      return NULL;
     }
 
     if (res) return NULL;

@@ -409,7 +409,8 @@ namespace ufo
     EZ3 z3(m_efac);
 
     CHCs ruleManager(to, m_efac, z3);
-    ruleManager.parse(smt);
+    if (!ruleManager.parse(smt))
+      return false;
     RndLearnerV2 ds(m_efac, z3, ruleManager, to, freqs, aggp, debug, smt, gramfile, sw, sl);
 
     ds.categorizeCHCs();

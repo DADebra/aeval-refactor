@@ -245,7 +245,7 @@ namespace ufo
       if (!exploreTraces(bnd1, bnd2))
       {
         outs() << "Base check failed at step " << bnd2 << "\n";
-        exit(0);
+        return false;
       }
 
       k_ind = ruleManager.chcs.size(); // == 3

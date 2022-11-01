@@ -287,14 +287,16 @@ namespace ufo
     TravParams getParams() { return globalparams; }
 
     // Parse the grammar file. Must be called after addVar(s).
-    void initialize(string gram_file, string inv_fname, bool _b4simpl)
+    bool initialize(string gram_file, string inv_fname, bool _b4simpl)
     {
       b4simpl = _b4simpl;
       gramenum.b4simpl = b4simpl;
       if (gram_file.empty())
-        return;
-      parseGramFile(gram_file, inv_fname);
+        return true;
+      if (!parseGramFile(gram_file, inv_fname))
+        return false;
       gramgiven = true;
+      return true;
     }
 
     void setTFFn(IsTrueFalseFn _tffn) { return gramenum.SetTFFn(_tffn); }
@@ -381,7 +383,7 @@ namespace ufo
     private:
     bool etob(Expr e) { return isOpX<TRUE>(e); }
 
-    void parseGramFile(string gram_file, string inv_fname)
+    bool parseGramFile(string gram_file, string inv_fname)
     {
       // gram_file will be empty if we don't pass `--grammar` option
       if (!gram_file.empty())
@@ -553,7 +555,7 @@ namespace ufo
 	  if (endpos == string::npos)
 	  {
 	    errs() << emsg << endl;
-	    exit(10);
+            return false;
 	  }
 	  while (emsg.substr(startpos, 9) != "declared:")
 	  {
@@ -564,13 +566,13 @@ namespace ufo
 	      break;
 	  }
 	  errs() << ")" << endl;
-	  exit(10);
+          return false;
 	}
 
 	if (!egram)
 	{
 	  errs() << "Invalid grammar file format: No assertions provided" << endl;
-	  exit(11);
+          return false;
 	}
 
 	if (!isOpX<AND>(egram))
@@ -587,14 +589,14 @@ namespace ufo
 	    if (!isOpX<FAPP>(ex->left()))
 	    {
 	      errs() << "Invalid format for production: " << ex << endl;
-	      assert(0);
+              return false;
 	    }
 	    string ex_fname = lexical_cast<string>(bind::fname(ex->left())->left());
 	    NT newnt = gram->addNt(ex_fname, typeOf(ex->left()));
             if (gram->prods.at(newnt).size() != 0)
             {
               errs() << "Invalid grammar file format: NT \"" << ex_fname << "\" is defined twice." << endl;
-              exit(11);
+              return false;
             }
 	    if (ex_fname == ANY_INV && !gram->root)
 	    {
@@ -692,7 +694,7 @@ namespace ufo
             {
               errs() << "Unknown top-level assertion \"" << z3.toSmtLib(ex) <<
                 "\"" << endl;
-              exit(1);
+              return false;
             }
 	  }
 	}
@@ -711,6 +713,8 @@ namespace ufo
       for (const auto& sort_vars : vars)
 	for (const auto& var : sort_vars.second)
 	  gram->addVar(var);
+
+      return true;
     }
   };
 }
