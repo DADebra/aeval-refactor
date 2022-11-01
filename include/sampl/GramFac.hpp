@@ -352,6 +352,8 @@ namespace ufo
       outs() << CFGUtils::toSyGuS(*gram, z3);
     }
 
+    std::shared_ptr<Grammar> getGrammar() const { return gram; }
+
     int getCurrDepth()
     {
       return gramenum.GetCurrDepth();

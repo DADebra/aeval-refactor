@@ -36,10 +36,10 @@ if (CUSTOM_BOOST_ROOT)
 endif()
 
 # put static libraries first
-set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ${CMAKE_FIND_LIBRARY_SUFFIXES})
+#set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ${CMAKE_FIND_LIBRARY_SUFFIXES})
 
 
-set (Boost_USE_STATIC_LIBS ON CACHE BOOL "Use static boost libraries.")
+#set (Boost_USE_STATIC_LIBS ON CACHE BOOL "Use static boost libraries.")
 set (BOOST_COMPONENTS system coroutine)
 if (UNIT_TESTS)
   set (BOOST_COMPONENTS ${BOOST_COMPONENTS} unit_test_framework)
@@ -172,3 +172,9 @@ include_directories(BEFORE
   ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 add_subdirectory(tools)
+
+find_package(Java 1.8 COMPONENTS Development)
+find_package(JNI)
+
+add_subdirectory(jni)
+add_subdirectory(java)

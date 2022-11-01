@@ -1,0 +1,8 @@
+find_package(JNI)
+if (JNI_FOUND)
+  add_library(libjfreqhorn SHARED LibJFreqhorn.cpp)
+  target_link_libraries(libjfreqhorn ${Z3_LIBRARY} ${Boost_SYSTEM_LIBRARY} ${Boost_CONTEXT_LIBRARY} ${Boost_COROUTINE_LIBRARY} ${GMPXX_LIB} ${GMP_LIB} ${ARMADILLO_LIBRARIES} ${JNI_LIBRARIES} jfreqhorn-native)
+  target_include_directories(libjfreqhorn PRIVATE ${JNI_INCLUDE_DIRS})
+  install(TARGETS libjfreqhorn RUNTIME DESTINATION lib)
+  set_target_properties(libjfreqhorn PROPERTIES OUTPUT_NAME jfreqhorn)
+endif()
