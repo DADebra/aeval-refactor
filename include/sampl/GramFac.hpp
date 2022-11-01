@@ -297,6 +297,8 @@ namespace ufo
       gramgiven = true;
     }
 
+    void setTFFn(IsTrueFalseFn _tffn) { return gramenum.SetTFFn(_tffn); }
+
     void analyze(const CHCs& chcs)
     {
       analyze_vars(chcs);

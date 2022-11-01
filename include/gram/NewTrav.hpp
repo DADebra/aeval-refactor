@@ -26,6 +26,7 @@ class NewTrav : public Traversal
   TravPos rootpos;
   function<bool(const Expr&, const Expr&)> shoulddefer;
   PrunePathFn prunePathFn;
+  IsTrueFalseFn trueFalseFn;
 
   ExprFactory& efac;
 
@@ -66,13 +67,6 @@ class NewTrav : public Traversal
   {
     pt.foreachPt([&] (const Expr& nt, const ParseTree& expand)
     { needdefer |= shoulddefer(nt, expand.data()); });
-  }
-
-  static inline tribool isTrueFalse(Expr e)
-  {
-    if (isOpX<TRUE>(e))       return true;
-    else if (isOpX<FALSE>(e)) return false;
-    else                      return indeterminate;
   }
 
   unordered_map<Path, Path> pathParent;
@@ -359,7 +353,7 @@ class NewTrav : public Traversal
     if (params.simplify)
     {
       std::tie(ignore, ignore, ret) =
-        std::move(ptsimpl.prunePT(root, newexpr, isTrueFalse));
+        std::move(ptsimpl.prunePT(root, newexpr, trueFalseFn));
     }
 
     if (!ret)
@@ -367,7 +361,7 @@ class NewTrav : public Traversal
 
     if (params.simplify)
     {
-      ParseTree rewriteRet = std::move(ptsimpl.rewritePT(ret, isTrueFalse));
+      ParseTree rewriteRet = std::move(ptsimpl.rewritePT(ret, trueFalseFn));
       if (rewriteRet)
         ret = std::move(rewriteRet);
     }
@@ -881,7 +875,7 @@ class NewTrav : public Traversal
       {
         vector<int> culprits, toprune;
         std::tie(culprits, toprune, ret) =
-          std::move(ptsimpl.prunePT(root, newexpr, isTrueFalse));
+          std::move(ptsimpl.prunePT(root, newexpr, trueFalseFn));
         if (!ro && toprune.size() != 0)
         {
           assert(toprune.size() != newexpr.size());
@@ -1018,7 +1012,7 @@ class NewTrav : public Traversal
       ret = ParseTree(root, std::move(newexpr), false);
     if (params.simplify)
     {
-      ParseTree rewriteRet = std::move(ptsimpl.rewritePT(ret, isTrueFalse));
+      ParseTree rewriteRet = std::move(ptsimpl.rewritePT(ret, trueFalseFn));
       if (rewriteRet)
         ret = std::move(rewriteRet);
     }
@@ -1069,10 +1063,11 @@ class NewTrav : public Traversal
   public:
 
   NewTrav(Grammar &_gram, const TravParams &gp, const NTParamMap &np,
-    function<bool(const Expr&, const Expr&)> sd, PrunePathFn ppfn) :
+    function<bool(const Expr&, const Expr&)> sd, PrunePathFn ppfn,
+    IsTrueFalseFn tffn) :
     gram(_gram), gparams(gp), ntparams(np), shoulddefer(sd),
     efac(_gram.root->efac()), ptsimpl(_gram.root->efac()), nosimplparams(gp),
-    prunePathFn(ppfn)
+    prunePathFn(ppfn), trueFalseFn(tffn)
   {
     if (gparams.iterdeepen)
       currmaxdepth = 0;

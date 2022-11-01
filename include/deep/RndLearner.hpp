@@ -495,6 +495,7 @@ namespace ufo
 
         sf_after.gf.setParams(sf_before.gf.getParams());
         sf_after.gf.analyze(ruleManager);
+        sf_after.gf.setTFFn(GramEnum::defaultTFFn);
         sf_after.initialize_gram(gramfile, lexical_cast<string>(decls[ind]), sf_before.gf.b4simpl);
 
         set<cpp_int> progConsts, intCoefs;
@@ -555,6 +556,7 @@ namespace ufo
 
       sf.gf.setParams(gramparams);
       sf.gf.analyze(ruleManager);
+      sf.gf.setTFFn(GramEnum::defaultTFFn);
       sf.initialize_gram(gramfile, lexical_cast<string>(invDecl), b4simpl);
 
       invNumber++;
