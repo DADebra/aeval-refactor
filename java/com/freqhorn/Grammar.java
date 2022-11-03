@@ -27,7 +27,6 @@ public class Grammar {
     if (nts.contains(ret)) {
       return null;
     }
-    prods.put(ret, new ArrayList<Expr>());
     nts.add(ret);
     return ret;
   }
@@ -44,6 +43,7 @@ public class Grammar {
    */
   public void AddProd(Expr nt, Expr prod) {
     if (!prods.containsKey(nt))
+      prods.put(nt, new ArrayList<Expr>());
     prods.get(nt).add(prod);
   }
   /** Add a new production at {@code pos} in the list of productions for
