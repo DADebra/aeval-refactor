@@ -6,7 +6,7 @@ import java.util.HashSet;
 import java.util.HashMap;
 import java.util.ArrayList;
 
-/** A context-free grammar which produces {@code Expr}s when traversed.
+/** A context-free grammar which produces {@link Expr}s when traversed.
  */
 public class Grammar {
   /** The root of the grammar, a non-terminal. */
@@ -19,18 +19,31 @@ public class Grammar {
     prods = new HashMap<Expr,ArrayList<Expr>>();
   }
 
-  /** Add a new non-terminal with the given name and sort, returning it. */
+  /** Add a new non-terminal with the given name and sort, returning it.
+   * <p>
+   * Will return null if a NT with that name and sort already exist. */
   public Expr AddNT(String name, Expr sort) {
     Expr ret = Expr.MkVar(name, sort);
+    if (nts.contains(ret)) {
+      return null;
+    }
+    prods.put(ret, new ArrayList<Expr>());
     nts.add(ret);
     return ret;
   }
+
+  /** Return a reference to the set of non-terminals in this grammar.
+   * <p>
+   * DO NOT MODIFY. */
+  public HashSet<Expr> GetNTs() {
+    return nts;
+  }
+
   /** Add a new production at the end of the list of productions for the given
    * non-terminal.
    */
   public void AddProd(Expr nt, Expr prod) {
     if (!prods.containsKey(nt))
-      prods.put(nt, new ArrayList<Expr>());
     prods.get(nt).add(prod);
   }
   /** Add a new production at {@code pos} in the list of productions for

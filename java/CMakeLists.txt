@@ -15,6 +15,9 @@ if (Java_FOUND)
       ${JAVA_SOURCE_DIR}/ExprOp.java
       ${JAVA_SOURCE_DIR}/ExprSorts.java
     GENERATE_NATIVE_HEADERS jfreqhorn-native)
+  create_javadoc(jfreqhorn-doc
+    PACKAGES com.freqhorn
+    SOURCEPATH ${CMAKE_CURRENT_SOURCE_DIR})
   add_jar(testparser
     SOURCES TestParser.java
     INCLUDE_JARS jfreqhorn
