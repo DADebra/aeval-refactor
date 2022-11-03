@@ -570,7 +570,7 @@ namespace expr
 
     template <typename Range>
     Expr mkNary (const Operator &o, const Range &r)
-    { return mkNary (o, begin (r), end (r)); }
+    { return mkNary (o, std::begin (r), std::end (r)); }
 
 
     template <typename Cache>

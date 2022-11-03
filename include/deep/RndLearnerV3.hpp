@@ -7,6 +7,8 @@
 #include "DataLearner.hpp"
 #endif
 
+#include <deque>
+
 using namespace std;
 using namespace boost;
 namespace ufo

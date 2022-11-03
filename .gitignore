@@ -36,6 +36,8 @@ test/context/files/commitsha
 test_output/
 tags
 compile_commands.json
+.vs
+CMakeSettings.json
 
 # A folder with a bunch of miscellaneous stuff that I don't want in the git repo
 old/
