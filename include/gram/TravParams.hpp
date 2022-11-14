@@ -22,6 +22,7 @@ struct TravParams
   int maxrecdepth = -2;
   boost::tribool simplify =  indeterminate;
   boost::tribool prune =     indeterminate; // NOTE: Mustn't be set per-NT
+  boost::tribool enumnts =   indeterminate; // T = Produce cands containing NTs
   boost::tribool propagate = indeterminate;
   boost::tribool goverride = indeterminate;
 
@@ -35,7 +36,7 @@ struct TravParams
     return method == oth.method && dir == oth.dir && order == oth.order &&
       type == oth.type && prio == oth.prio && bool(iterdeepen == oth.iterdeepen) &&
       maxrecdepth == oth.maxrecdepth && bool(simplify == oth.simplify) &&
-      bool(simplify == oth.simplify) &&
+      bool(prune == oth.prune) && bool(enumnts == oth.enumnts) &&
       bool(propagate == oth.propagate) && bool(goverride == oth.goverride);
   }
   bool operator!=(const TravParams& oth)
@@ -43,7 +44,7 @@ struct TravParams
     return method != oth.method || dir != oth.dir || order != oth.order ||
       type != oth.type || prio != oth.prio || bool(iterdeepen != oth.iterdeepen) ||
       maxrecdepth != oth.maxrecdepth || bool(simplify != oth.simplify) ||
-      bool(simplify != oth.simplify) &&
+      bool(prune != oth.prune) || bool(enumnts != oth.enumnts) ||
       bool(propagate != oth.propagate) || bool(goverride != oth.goverride);
   }
 
@@ -58,6 +59,7 @@ struct TravParams
     if (maxrecdepth == -2)          maxrecdepth = oth.maxrecdepth;
     if (indeterminate(simplify))    simplify = oth.simplify;
     if (indeterminate(prune))       prune = oth.prune;
+    if (indeterminate(enumnts))     enumnts = oth.enumnts;
     if (indeterminate(propagate))   propagate = oth.propagate;
     if (indeterminate(goverride))   goverride = oth.goverride;
   }
@@ -66,6 +68,7 @@ struct TravParams
   {
     CopyIfUnset(TravParams(TPMethod::NEWTRAV, TPDir::LTR, TPOrder::FOR,
       TPType::STRIPED, TPPrio::BFS, false, 1, true, true));
+    enumnts = false;
     propagate = true;
     goverride = false;
     if (maxrecdepth == -2)

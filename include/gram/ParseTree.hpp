@@ -53,6 +53,9 @@ class ParseTree
   ParseTree(const std::shared_ptr<ParseTreeNode>& cp) : ptr(cp) {}
   ParseTree(Expr _data) : ptr(new ParseTreeNode(_data)) {}
 
+  explicit ParseTree(intptr_t num, bool) :
+    ptr((ParseTreeNode*)num, [](ParseTreeNode *p){}) {}
+
   ParseTree() = default;
   ParseTree(const ParseTree& pt) = default;
   ParseTree(ParseTree&& pt) = default;
@@ -67,6 +70,8 @@ class ParseTree
 
   bool isNt() const { return ptr->isNt; }
 
+  const ParseTreeNode *px() const { return ptr.get(); }
+
   operator bool() const { return bool(ptr); }
 
   bool operator !() const { return !bool(ptr); }
@@ -77,6 +82,8 @@ class ParseTree
       return true;
     if (!ptr || !other.ptr)
       return false;
+    if (ptr == other.ptr)
+      return true;
     if (ptr->data != other.ptr->data)
       return false;
     if (ptr->children.size() != other.ptr->children.size())
@@ -213,6 +220,8 @@ class ParseTree
   }*/
   friend std::hash<ufo::ParseTree>;
 };
+
+ParseTree skipcand(1, true);
 }
 
 namespace std

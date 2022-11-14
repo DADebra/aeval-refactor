@@ -5,6 +5,8 @@
 #error __FILE__ " cannot be included directly. Use '#include \"gram/AllHeaders.hpp\""
 #endif
 
+#include <boost/optional.hpp>
+
 #include "utils/TupleHash.hpp"
 
 #include "gram/TravPos.hpp"
@@ -26,6 +28,7 @@ class NewTrav : public Traversal
   TravPos rootpos;
   function<bool(const Expr&, const Expr&)> shoulddefer;
   PrunePathFn prunePathFn;
+  optional<PruneArgFn> pruneArgFn;
   IsTrueFalseFn trueFalseFn;
 
   ExprFactory& efac;
@@ -87,7 +90,55 @@ class NewTrav : public Traversal
   }
 
   // K: path, V: <ctx, hole or expr of holes, e.g. '(+ hole hole)'>
-  unordered_map<Path, std::pair<std::shared_ptr<TravContext>,Expr>> pathToCtx;
+  typedef std::pair<std::shared_ptr<TravContext>,Expr> CtxHole;
+  unordered_map<Path, CtxHole> pathToCtx;
+
+  inline CtxHole _findNewCtx(const CtxHole &ctx_hole, int newdepth, Expr prod)
+  {
+    // NT -> Prod
+    std::shared_ptr<TravContext> newctx(new TravContext());
+    newctx->holes = ctx_hole.first->holes;
+    newctx->maxholes = ctx_hole.first->maxholes;
+    function<Expr(Expr)> holerw = [&] (Expr e)
+    {
+      if (e->arity() == 0)
+        return e;
+      if (gram.isNt(e))
+      {
+        Expr prevhole;
+        auto maxholeitr = newctx->maxholes.find(e);
+        if (maxholeitr != newctx->maxholes.end())
+          prevhole = maxholeitr->second;
+        else
+          prevhole = e;
+        Expr newe = newhole(prevhole);
+        newctx->holes[newe] = make_pair(e, newdepth);
+        newctx->maxholes[e] = newe;
+        return newe;
+      }
+
+      ExprVector newe;
+      bool needupdate = false;
+      for (int i = 0; i < e->arity(); ++i)
+      {
+        const Expr &arg = e->arg(i);
+        newe.push_back(holerw(arg));
+        if (newe.back() != arg)
+          needupdate = true;
+      }
+      if (!needupdate)
+        return e;
+      if (isOpX<FAPP>(e))
+        return fapp(e->left(), newe);
+      else
+        return mknary(e->op(), newe.begin(), newe.end());
+    };
+    Expr holeyProd = holerw(prod);
+    newctx->holes.erase(ctx_hole.second);
+    newctx->holeyCtx = replaceAll(ctx_hole.first->holeyCtx,
+      ctx_hole.second, holeyProd);
+    return make_pair(newctx, holeyProd);
+  }
 
   // 'prod' is mutually exclusive with 'child': only supply one.
   inline void findNewCtx(Path currpath, Path newpath, int newdepth,
@@ -95,56 +146,12 @@ class NewTrav : public Traversal
   {
     if (pathToCtx.count(newpath) != 0)
       return;
-    auto &ctx_hole = pathToCtx.at(currpath);
-    if (prod != NULL)
-    {
-      // NT -> Prod
-      std::shared_ptr<TravContext> newctx(new TravContext());
-      newctx->holes = ctx_hole.first->holes;
-      newctx->maxholes = ctx_hole.first->maxholes;
-      function<Expr(Expr)> holerw = [&] (Expr e)
-      {
-        if (e->arity() == 0)
-          return e;
-        if (gram.isNt(e))
-        {
-          Expr prevhole;
-          auto maxholeitr = newctx->maxholes.find(e);
-          if (maxholeitr != newctx->maxholes.end())
-            prevhole = maxholeitr->second;
-          else
-            prevhole = e;
-          Expr newe = newhole(prevhole);
-          newctx->holes[newe] = make_pair(e, newdepth);
-          newctx->maxholes[e] = newe;
-          return newe;
-        }
-
-        ExprVector newe;
-        bool needupdate = false;
-        for (int i = 0; i < e->arity(); ++i)
-        {
-          const Expr &arg = e->arg(i);
-          newe.push_back(holerw(arg));
-          if (newe.back() != arg)
-            needupdate = true;
-        }
-        if (!needupdate)
-          return e;
-        if (isOpX<FAPP>(e))
-          return fapp(e->left(), newe);
-        else
-          return mknary(e->op(), newe.begin(), newe.end());
-      };
-      Expr holeyProd = holerw(prod);
-      newctx->holes.erase(ctx_hole.second);
-      newctx->holeyCtx = replaceAll(ctx_hole.first->holeyCtx,
-        ctx_hole.second, holeyProd);
-      pathToCtx[newpath] = make_pair(newctx, holeyProd);
-    }
+    const auto &ctx_hole = pathToCtx.at(currpath);
+    if (prod)
+      pathToCtx[newpath] =
+        _findNewCtx(ctx_hole, newdepth, prod);
     else
     {
-      // (op hole hole) -> (op expr hole)
       pathToCtx[newpath] = make_pair(ctx_hole.first,
         ctx_hole.second->arg(child));
     }
@@ -155,16 +162,32 @@ class NewTrav : public Traversal
 
   // True: Should ignore production, False: Should definitely not ignore prod,
   // Indet: Unknown
-  inline tribool prunePath(Path path)
+  inline tribool prunePath(const Path &path, const Expr &nt, int depth,
+    const Expr &prod)
   {
     auto itr = _prunePathCache.find(path);
     if (itr != _prunePathCache.end())
       return itr->second;
     assert(pathToCtx.count(path) != 0);
-    tribool ret = prunePathFn(*pathToCtx.at(path).first);
+    const auto &ctx_hole = pathToCtx.at(path);
+    tribool ret = prunePathFn(prod, *ctx_hole.first, ctx_hole.second, nt, depth);
     if (!indeterminate(ret))
       _prunePathCache[path] = bool(ret);
     return ret;
+  }
+
+  inline PruneRetType pruneArg(const Path &path, const Expr &nt, int currdepth,
+    const Expr &oper, const vector<ParseTree> &newexpr)
+  {
+    if (pruneArgFn)
+    {
+      assert(pathToCtx.count(path) != 0);
+      const auto &ctx_hole = pathToCtx.at(path);
+      //auto midctx = _findNewCtx(ctx_hole, currdepth, newexpr.toSortedExpr());
+      return (*pruneArgFn)(oper, newexpr,
+        *ctx_hole.first, ctx_hole.second, nt, currdepth);
+    }
+    return ptsimpl.prunePT(oper, newexpr, trueFalseFn);
   }
 
   ParseTree gettrav(const Expr& root, const TravPos& travpos, int currdepth,
@@ -261,6 +284,9 @@ class NewTrav : public Traversal
       }
       const auto& prods = gram.prods.at(root);
 
+      if (params.enumnts && travpos.pos() == (unsigned short)-1)
+        return ParseTree(root);
+
       int newdepth;
       if (gram.isRecursive(prods[pos], root))
         newdepth = currdepth + 1;
@@ -327,7 +353,8 @@ class NewTrav : public Traversal
         if (i >= travpos.min() && i != pos)
         {
           Path newpath = np(path,C, dind(i));
-          if (params.prune) findNewCtx(path,newpath,currdepth,NULL,dind(i));
+          if (params.prune || pruneArgFn)
+            findNewCtx(path,newpath,currdepth,NULL,dind(i));
           newexpr[dind(i)] = gettrav(root->arg(dind(i)), travpos.childat(dind(i)), currdepth,
             localqvars, currnt, newpath, nextparams, needdefer, true, nocache);
           if (!newexpr[dind(i)])
@@ -353,8 +380,10 @@ class NewTrav : public Traversal
     if (params.simplify)
     {
       std::tie(ignore, ignore, ret) =
-        std::move(ptsimpl.prunePT(root, newexpr, trueFalseFn));
+        pruneArg(path, currnt, currdepth, root, newexpr);
     }
+
+    assert(ret.px() != skipcand.px());
 
     if (!ret)
       ret = ParseTree(root, std::move(newexpr), false);
@@ -436,6 +465,11 @@ class NewTrav : public Traversal
         assert(!ro);
         // First-time initialize
         travpos = TravPos(0, prods.size());
+        oldCands.erase(&travpos); // Our address might have been used already
+
+        if (params.enumnts)
+          return ParseTree(root);
+
         if (params.type != TPType::STRIPED)
         {
           if (params.order == TPOrder::FOR)
@@ -443,10 +477,9 @@ class NewTrav : public Traversal
           else if (params.order == TPOrder::REV)
             travpos.prevpos();
         }
-        oldCands.erase(&travpos); // Our address might have been used already
       }
 
-      if (!ro && params.type == TPType::STRIPED)
+      if (!ro && (params.type == TPType::STRIPED || (params.enumnts && travpos.pos() == (unsigned short)-1)))
       {
         if (params.order == TPOrder::FOR)
           travpos.nextpos();
@@ -515,15 +548,16 @@ class NewTrav : public Traversal
         assert(newdepth <= currmaxdepth);
 
         Path nextpath = np(path, C, travpos.pos());
-        if (params.prune)
+        if (params.prune || pruneArgFn)
           findNewCtx(path,nextpath,newdepth,prods[constpos.pos()],0);
 
-        if (params.prune && prunePath(nextpath))
-        {
-          travpos.childpop();
-          pathToCtx.erase(nextpath);
-          continue;
-        }
+        if (params.prune)
+          if (prunePath(nextpath, root, currdepth, prods[constpos.pos()]))
+          {
+            travpos.childpop();
+            pathToCtx.erase(nextpath);
+            continue;
+          }
 
         ret = ParseTree(root, std::move(newtrav(prods[travpos.pos()],
           alwaysro ? (TravPos&)constpos.childat(travpos.pos()) :
@@ -608,6 +642,8 @@ class NewTrav : public Traversal
     // Root is a Z3 function (e.g. (and ...))
     std::shared_ptr<ExprUSet> localqvars(new ExprUSet());
     vector<ParseTree> newexpr(root->arity());
+    for (int i = 0; i < root->arity(); ++i)
+      newexpr[i] = ParseTree(root->arg(i));
 
     if (qvars != NULL)
       for (auto& var : *qvars)
@@ -787,12 +823,16 @@ class NewTrav : public Traversal
 
       for (int i = 0; i < travpos.childlimit(); ++i)
       {
+        Path nextpath = np(path,C,dind(i));
+        if (params.prune || pruneArgFn)
+          findNewCtx(path,nextpath,currdepth,NULL,dind(i));
+        /*if (!wasnew && (bool)params.prune)
+          if (midtravPrune(path, currdepth, ParseTree(root, newexpr, false)))
+            --i;*/
         if (i != travpos.pos())
         {
           if (constposchildat(i).isnew())
           {
-            Path nextpath = np(path,C,dind(i));
-            if (params.prune) findNewCtx(path,nextpath,currdepth,NULL,dind(i));
             newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
               localqvars, currnt, nextpath, nextparams, mu, ro);
           }
@@ -801,9 +841,6 @@ class NewTrav : public Traversal
             bool needdefer = false;
             if (i >= travpos.childmin())
             {
-              Path nextpath = np(path,C,dind(i));
-              if (params.prune)
-                findNewCtx(path,nextpath,currdepth,NULL,dind(i));
               newexprat(i) = gettrav(rootarg(i), constposchildat(i), currdepth,
                 localqvars, currnt, nextpath, nextparams,
                 needdefer, true);
@@ -826,8 +863,6 @@ class NewTrav : public Traversal
         {
           if (!ro) assert(!constposchildat(i).isdone());
 
-          Path nextpath = np(path, C, dind(i));
-          if (params.prune) findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
             localqvars, currnt, nextpath, nextparams, mu, ro);
 
@@ -846,7 +881,7 @@ class NewTrav : public Traversal
               if (c == travpos.pos())
                 continue;
               childpos->childat(dind(c)) = TravPos();
-              if (params.prune)
+              if (params.prune || pruneArgFn)
                 findNewCtx(path,np(childpath,C,dind(c)),currdepth,NULL,dind(c));
               newtrav(rootarg(c), childpos->childat(dind(c)), currdepth,
                 localqvars, currnt, np(childpath,C,dind(c)),nextparams,mu,ro);
@@ -875,7 +910,7 @@ class NewTrav : public Traversal
       {
         vector<int> culprits, toprune;
         std::tie(culprits, toprune, ret) =
-          std::move(ptsimpl.prunePT(root, newexpr, trueFalseFn));
+          pruneArg(path, currnt, currdepth, root, newexpr);
         if (!ro && toprune.size() != 0)
         {
           assert(toprune.size() != newexpr.size());
@@ -943,7 +978,8 @@ class NewTrav : public Traversal
             travposchildat(i) = TravPos();
           }
           Path nextpath = np(path,C,dind(i));
-          if (params.prune) findNewCtx(path,nextpath,currdepth,NULL,dind(i));
+          if (params.prune || pruneArgFn)
+            findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
             localqvars, currnt, nextpath, nextparams, mu, ro);
           if (!newexprat(i) && !wasdone)
@@ -974,7 +1010,8 @@ class NewTrav : public Traversal
         {
           assert(!ro);
           Path nextpath = np(path,C,dind(i));
-          if (params.prune) findNewCtx(path,nextpath,currdepth,NULL,dind(i));
+          if (params.prune || pruneArgFn)
+            findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newtrav(rootarg(i), travposchildat(i), currdepth, localqvars,
             currnt, nextpath, nextparams, mu, ro);
         }
@@ -1006,8 +1043,14 @@ class NewTrav : public Traversal
           travpos.makedone();
         }
       }
+      if (params.simplify)
+        std::tie(ignore, ignore, ret) =
+          pruneArg(path, currnt, currdepth, root, newexpr);
     }
 
+    if (ret.px() == skipcand.px())
+      return std::move(newtrav(root, travpos, currdepth,
+        qvars, currnt, path, oldparams, mu, ro));
     if (!ret)
       ret = ParseTree(root, std::move(newexpr), false);
     if (params.simplify)
@@ -1064,10 +1107,10 @@ class NewTrav : public Traversal
 
   NewTrav(Grammar &_gram, const TravParams &gp, const NTParamMap &np,
     function<bool(const Expr&, const Expr&)> sd, PrunePathFn ppfn,
-    IsTrueFalseFn tffn) :
+    IsTrueFalseFn tffn, optional<PruneArgFn> pafn) :
     gram(_gram), gparams(gp), ntparams(np), shoulddefer(sd),
     efac(_gram.root->efac()), ptsimpl(_gram.root->efac()), nosimplparams(gp),
-    prunePathFn(ppfn), trueFalseFn(tffn)
+    prunePathFn(ppfn), trueFalseFn(tffn), pruneArgFn(pafn)
   {
     if (gparams.iterdeepen)
       currmaxdepth = 0;

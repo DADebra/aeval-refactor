@@ -40,6 +40,7 @@ class GramEnum
   NTParamMap ntparams;
   PrunePathFn ppfn;
   IsTrueFalseFn tffn;
+  optional<PruneArgFn> pafn;
 
   ParseTree lastpt;
   Expr lastexpr;
@@ -114,7 +115,7 @@ class GramEnum
       case TPMethod::NEWTRAV:
         traversal = new NewTrav(gram, globalparams, compparams,
           [&] (const Expr& ei, const Expr& exp)
-          { return shoulddefer(gram, ei, exp); }, ppfn, tffn);
+          { return shoulddefer(gram, ei, exp); }, ppfn, tffn, pafn);
         break;
       case TPMethod::NONE:
         errs() << "WARNING: Traversal method set to NONE. Segfaults inbound!" << endl;
@@ -174,7 +175,7 @@ class GramEnum
 
   GramEnum(Grammar& _gram, const TravParams* _params, PrunePathFn _ppfn,
     int _debug) : gram(_gram), debug(_debug), gramCands(), ppfn(_ppfn),
-    tffn(defaultTFFn)
+    tffn(defaultTFFn), pafn(none)
   {
     if (_params)
       SetParams(*_params, NTParamMap());
@@ -189,6 +190,8 @@ class GramEnum
   }
 
   void SetTFFn(IsTrueFalseFn _tffn) { tffn = _tffn; }
+
+  void SetPAFn(PruneArgFn _pafn) { pafn = _pafn; }
 
   void SetGrammar(Grammar& _gram)
   {
