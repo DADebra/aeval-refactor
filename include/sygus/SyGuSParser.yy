@@ -89,29 +89,20 @@ yy::parser::symbol_type yylex()
         break; // Only recognize an independent _ as USCORE
       return yy::parser::make_USCORE('_', loc);
     case ';':
-      isComment = true;
-      break;
+      while (c != '\n')
+      {
+        c = fgetc(infile);
+      }
+      return yylex();
   }
 
-  if (isComment)
+  while (c != ' ' && c != '\n' && c != '\t' && c != ')' && c != '(')
   {
-    while (c != '\n')
-    {
-      s += c;
-      c = fgetc(infile);
-    }
+    s += c;
+    c = fgetc(infile);
   }
-  else
-    while (c != ' ' && c != '\n' && c != '\t' && c != ')' && c != '(')
-    {
-      s += c;
-      c = fgetc(infile);
-    }
   ungetc(c, infile);
   loc.columns(s.length() - 1);
-
-  if (isComment)
-    return yy::parser::make_COMMENT(s, loc);
 
   if (s == "Array")
     return yy::parser::make_ARRAY(s, loc);
@@ -372,8 +363,7 @@ topvardecl:
         ;
 
 topcommand:
-           COMMENT
-           | LPAR SETLOGIC ID RPAR { prob._logic = $3; }
+           LPAR SETLOGIC ID RPAR { prob._logic = $3; }
            | LPAR SYNTHFUN ID LPAR funcvars RPAR sort grammar RPAR
                {
                   /* TODO: Ignoring grammar for now */
