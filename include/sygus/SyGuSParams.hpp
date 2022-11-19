@@ -7,7 +7,7 @@
 
 #include "gram/TravParams.hpp"
 
-enum class SPMethod { NONE, /*AUTO,*/ SINGLE, ENUM };
+enum class SPMethod { NONE, /*AUTO,*/ SINGLE, ENUM, PRUNE };
 SPMethod strtospmethod(const char* str);
 
 struct SyGuSParams
@@ -51,7 +51,7 @@ struct SyGuSParams
     outs() << "  --help                 print this message\n";
     outs() << "  --debug <lvl>          enable debug logging (higher = more)\n";
     outs() << "  --nonvac               don't produce always true/false for predicates\n";
-    outs() << "  --sygus-method <single,enum> method of solving problem\n";
+    outs() << "  --sygus-method <single,enum,prune> method of solving problem\n";
   }
 };
 
@@ -63,6 +63,8 @@ SPMethod strtospmethod(const char* str)
     return SPMethod::SINGLE;
   if (!strcmp(str, "enum"))
     return SPMethod::ENUM;
+  if (!strcmp(str, "prune"))
+    return SPMethod::PRUNE;
   if (!strcmp(str, "none"))
     return SPMethod::NONE;
   errs() << "Error: Unrecognized --sygus-method \"" << str << "\"" << endl;

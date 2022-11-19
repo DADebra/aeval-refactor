@@ -6,6 +6,7 @@
 #include "sygus/BaseSolver.hpp"
 #include "sygus/SISolver.hpp"
 #include "sygus/EnumSolver.hpp"
+#include "sygus/PruningSolver.hpp"
 
 namespace ufo
 {
@@ -35,6 +36,12 @@ class SyGuSSolver : public BaseSolver
       EnumSolver enums(prob, efac, z3, params);
       ret = enums.Solve();
       _errmsg = enums.errmsg; _foundfuncs = enums.foundfuncs;
+    }
+    else if (params.method == SPMethod::PRUNE)
+    {
+      PruningSolver prunes(prob, efac, z3, params);
+      ret = prunes.Solve();
+      _errmsg = prunes.errmsg; _foundfuncs = prunes.foundfuncs;
     }
     else
     {

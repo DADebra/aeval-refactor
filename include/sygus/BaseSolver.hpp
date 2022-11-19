@@ -4,8 +4,6 @@
 #include <boost/logic/tribool.hpp>
 #include "ufo/Expr.hpp"
 #include "ufo/ExprLlvm.hpp"
-#include "expr/ExprEval.hpp"
-#include "utils/SetHash.hpp"
 #include <fstream>
 
 namespace ufo
