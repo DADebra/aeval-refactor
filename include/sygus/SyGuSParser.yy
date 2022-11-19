@@ -435,6 +435,8 @@ topcommand:
                   funcvars.clear();
                   gram.~Grammar();
 
+                  prob.Analyze();
+
                   return 0;
                }
            ;

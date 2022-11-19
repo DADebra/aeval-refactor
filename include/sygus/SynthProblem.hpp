@@ -217,7 +217,16 @@ class SynthProblem
     declToFunc((decltype(declToFunc))_declToFunc),
     gramFuncs((decltype(gramFuncs))_gramFuncs) {}
 
-  SynthProblem(const SynthProblem& o) = delete;
+  /*SynthProblem(const SynthProblem& o) :
+    _logic(o._logic), _synthfuncs(o._synthfuncs),
+    _constraints(o._constraints),
+    _vars(o._vars),
+    _singleapps(o._singleapps),
+    logic(_logic), synthfuncs(_synthfuncs), constraints(_constraints),
+    vars((decltype(vars))_vars),
+    singleapps((decltype(singleapps))_singleapps),
+    declToFunc((decltype(declToFunc))_declToFunc),
+    gramFuncs((decltype(gramFuncs))_gramFuncs) {}
 
   SynthProblem(SynthProblem&& o) :
     _logic(std::move(o._logic)), _synthfuncs(std::move(o._synthfuncs)),
@@ -230,14 +239,24 @@ class SynthProblem
     declToFunc((decltype(declToFunc))_declToFunc),
     gramFuncs((decltype(gramFuncs))_gramFuncs) {}
 
-  SynthProblem& operator=(const SynthProblem& o) = delete;
+  SynthProblem& operator=(const SynthProblem& o)
+  {
+    this->~SynthProblem();
+    new (this) SynthProblem(o);
+    return *this;
+  }
 
   SynthProblem& operator=(SynthProblem&& o)
   {
     this->~SynthProblem();
     new (this) SynthProblem(std::move(o));
     return *this;
-  }
+  }*/
+
+  SynthProblem(const SynthProblem& o) = delete;
+  SynthProblem(SynthProblem&& o) = delete;
+  SynthProblem& operator=(const SynthProblem& o) = delete;
+  SynthProblem& operator=(SynthProblem&& o) = delete;
 };
 
 }
