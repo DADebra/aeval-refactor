@@ -49,7 +49,7 @@ class NewTrav : public Traversal
 
   unordered_map<const TravPos*, unordered_set<Expr>> oldCands;
   // True if all of the given NTs productions are unique
-  unordered_map<std::pair<Expr,int>,tribool> _isUnique;
+  unordered_map<NTDepth,tribool> _isUnique;
 
   inline int oldCandsSize(const TravPos* pos)
   {
@@ -59,7 +59,7 @@ class NewTrav : public Traversal
 
   inline tribool& isUnique(Expr nt, int depth)
   {
-    auto key = make_pair(nt, depth);
+    auto key = NTDepth(nt, depth);
     auto itr = _isUnique.find(key);
     if (itr == _isUnique.end())
       itr = _isUnique.emplace(key, indeterminate).first;
@@ -112,7 +112,7 @@ class NewTrav : public Traversal
         else
           prevhole = e;
         Expr newe = newhole(prevhole);
-        newctx->holes[newe] = make_pair(e, newdepth);
+        newctx->holes[newe] = NTDepth(e, newdepth);
         newctx->maxholes[e] = newe;
         return newe;
       }
@@ -134,7 +134,15 @@ class NewTrav : public Traversal
         return mknary(e->op(), newe.begin(), newe.end());
     };
     Expr holeyProd = holerw(prod);
-    newctx->holes.erase(ctx_hole.second);
+    if (isOpX<FAPP>(ctx_hole.second))
+      newctx->holes.erase(ctx_hole.second);
+    else
+    {
+      Expr *itr = NULL;
+      filter(ctx_hole.second,
+        [&](Expr e){if (isOpX<FAPP>(e)) newctx->holes.erase(e); return false;},
+        itr);
+    }
     newctx->holeyCtx = replaceAll(ctx_hole.first->holeyCtx,
       ctx_hole.second, holeyProd);
     return make_pair(newctx, holeyProd);
@@ -183,9 +191,13 @@ class NewTrav : public Traversal
     {
       assert(pathToCtx.count(path) != 0);
       const auto &ctx_hole = pathToCtx.at(path);
-      //auto midctx = _findNewCtx(ctx_hole, currdepth, newexpr.toSortedExpr());
-      return (*pruneArgFn)(oper, newexpr,
-        *ctx_hole.first, ctx_hole.second, nt, currdepth);
+      ParseTree ret3(oper, newexpr, false);
+      auto midctx = _findNewCtx(ctx_hole, currdepth, ret3.toSortedExpr());
+      auto ret = (*pruneArgFn)(oper, newexpr,
+        *midctx.first, midctx.second, nt, currdepth);
+      if (!get<2>(ret))
+        get<2>(ret) = std::move(ret3);
+      return std::move(ret);
     }
     return ptsimpl.prunePT(oper, newexpr, trueFalseFn);
   }
@@ -1049,8 +1061,12 @@ class NewTrav : public Traversal
     }
 
     if (ret.px() == skipcand.px())
+    {
+      if (travpos.isdone())
+        return NULL;
       return std::move(newtrav(root, travpos, currdepth,
         qvars, currnt, path, oldparams, mu, ro));
+    }
     if (!ret)
       ret = ParseTree(root, std::move(newexpr), false);
     if (params.simplify)
@@ -1098,7 +1114,7 @@ class NewTrav : public Traversal
     std::shared_ptr<TravContext> rootctx(new TravContext());
     Expr roothole = newhole(gram.root);
     rootctx->holeyCtx = roothole;
-    rootctx->holes[roothole] = make_pair(gram.root, 0);
+    rootctx->holes[roothole] = NTDepth(gram.root, 0);
     rootctx->maxholes[gram.root] = roothole;
     pathToCtx.emplace(rootpath, make_pair(std::move(rootctx), roothole));
   }

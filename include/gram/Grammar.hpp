@@ -37,6 +37,7 @@ void Grammar::generateGraph()
 
 void Grammar::generateGraph(NT start)
 {
+  if (!start) return;
   auto& reachable = _graph[start];
   for (const Expr& prod : _prods.at(start))
   {
@@ -65,11 +66,16 @@ void Grammar::generateGraph(NT start)
 
 void Grammar::calcIsInfinite()
 {
-  // Technically, we need to remove unreachable/useless prods/NTs first.
-  // But I doubt that many grammars will include these features, so I'm
-  // going to skip that step and just look for loops instead.
   if (graphIsOld)
     generateGraph();
+  // Technically, we need to remove unreachable/useless prods/NTs first.
+  // As long as the root isn't useless, this should be enough.
+  if (_graph[root].count(root) != 0)
+    _isInfinite = true;
+  else
+    _isInfinite = false;
+  /*// But I doubt that many grammars will include these features, so I'm
+  // going to skip that step and just look for loops instead.
   for (const auto& kv : _graph)
     for (const NT& ntto : kv.second)
       if (ntto == kv.first)
@@ -77,7 +83,7 @@ void Grammar::calcIsInfinite()
         _isInfinite = true;
         return;
       }
-  _isInfinite = false;
+  _isInfinite = false;*/
   return;
 }
 

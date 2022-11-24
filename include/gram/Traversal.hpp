@@ -48,13 +48,29 @@ inline Path nextpath(Path currhash, PathClass pclass, unsigned index)
   return currhash;
 }
 
+struct NTDepth
+{
+  Expr nt;
+  int depth;
+  NTDepth() : nt(NULL), depth(-1) {}
+  NTDepth(Expr _nt, int _depth) : nt(_nt), depth(_depth) {}
+
+  operator Expr() const { return nt; }
+
+  operator bool() const { return bool(nt); }
+
+  bool operator==(const NTDepth& oth) const
+  { return nt == oth.nt && depth == oth.depth; }
+  bool operator!=(const NTDepth& oth) const { return !(*this == oth); }
+};
+
 struct TravContext
 {
   // The context of the current position, with holes.
   // E.g. '(+ Start! Start!!)'
   Expr holeyCtx;
   // K: Hole (e.g. 'Start!'), V: <1st: NT (e.g. 'Start'), 2nd: Curr rec depth>
-  unordered_map<Expr, std::pair<Expr, int>> holes;
+  unordered_map<Expr, NTDepth> holes;
   // For internal use (allocating new holes)
   // K: NT, V: max hole for that NT
   unordered_map<Expr, Expr> maxholes;
@@ -106,4 +122,19 @@ class Traversal
 };
 
 }
+
+namespace std
+{
+  template <>
+  struct hash<ufo::NTDepth>
+  {
+    size_t operator()(const ufo::NTDepth& ntd) const
+    {
+      auto hash = std::hash<ufo::Expr>()(ntd.nt);
+      boost::hash_combine(hash, std::hash<int>()(ntd.depth));
+      return hash;
+    }
+  };
+}
+
 #endif
