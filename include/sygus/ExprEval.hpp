@@ -12,7 +12,7 @@ using namespace expr::op::bind;
 namespace ufo
 {
 
-static inline Expr OpIneqs(Expr op, Expr l, Expr r)
+static inline Expr OpIneqs(Expr op, Expr l, Expr r, const ExprUSet& vars)
 {
   Expr lvar, rvar, lbound, rbound;
   assert(isOpX<LT>(l) || isOpX<LEQ>(l) || isOpX<GT>(l) || isOpX<GEQ>(l));
@@ -40,7 +40,7 @@ static inline Expr OpIneqs(Expr op, Expr l, Expr r)
     return mk<GEQ>(lvar, simplifyArithm(mk(op->op(), lbound, rbound)));
 }
 
-inline Expr EvalPred(SMTUtils& u, const ExprUMap &assms, Expr toeval, Expr out)
+inline ExprVector EvalPred(SMTUtils& u, const ExprUMap &assms, Expr toeval, Expr out, const ExprUSet &vars)
 {
   /*Expr tmpvar = mkConst(mkTerm(string("tmpqevar"), out->efac()), typeOf(out));
   ExprVector toelim, elimvars{tmpvar};
@@ -55,38 +55,79 @@ inline Expr EvalPred(SMTUtils& u, const ExprUMap &assms, Expr toeval, Expr out)
   Expr afterelim = eliminateQuantifiers(mknary<AND>(toelim), elimvars);*/
 
   if (assms.count(toeval) != 0)
-    return replaceAll(assms.at(toeval), toeval, out);
+  {
+    Expr ret = replaceAll(assms.at(toeval), toeval, out);
+    /*ret = mk<AND>(
+      mk<GEQ>(out, normalizeLIA(ret->left()->right(), vars)),
+      mk<LEQ>(out, normalizeLIA(ret->right()->right(), vars)));*/
+    return ExprVector{ret};
+  }
   if (isOpX<FAPP>(toeval) || isLit(toeval))
-    return mk<AND>(mk<GEQ>(out, toeval), mk<LEQ>(out, toeval));
+  {
+    Expr ret = /*normalizeLIA(toeval, vars)*/ toeval;
+    return ExprVector{mk<AND>(mk<GEQ>(out, ret), mk<LEQ>(out, ret))};
+  }
   if (isOpX<ITE>(toeval))
   {
-    Expr l = EvalPred(u, assms, toeval->right(), out);
-    Expr r = EvalPred(u, assms, toeval->last(), out);
+    ExprVector l = EvalPred(u, assms, toeval->right(), out, vars);
+    ExprVector r = EvalPred(u, assms, toeval->last(), out, vars);
     if (l == r)
-      return l;
+      return std::move(l);
     ExprVector conjs;
     for (const auto &hole_assm : assms)
       conjs.push_back(hole_assm.second);
     conjs.push_back(mk<NEG>(toeval->left()));
     if (!u.isSat(conjs))
-      return l;
+      return std::move(l);
     conjs.back() = toeval->left();
     if (!u.isSat(conjs))
-      return r;
-    assert(0 && "EvalPred can't handle non-tautology ITE");
+      return std::move(r);
+    ExprVector condholes;
+    filter(toeval->left(), [&](Expr e){return assms.count(e) != 0;},
+      inserter(condholes, condholes.begin()));
+    ExprVector vvars;
+    for (const Expr& hole : condholes)
+    {
+      filter(assms.at(hole), [&](Expr e){return isOpX<MULT>(e) &&
+        getTerm<mpz_class>(e->left()) != 0 && isOpX<FAPP>(e->right()); },
+        inserter(vvars, vvars.begin()));
+      if (vvars.size() != 0)
+        break;
+    }
+    if (vvars.size() == 0)
+    {
+      l.insert(l.end(), r.begin(), r.end());
+      return std::move(l);
+    }
+    ExprVector ret;
+    ExprVector tmp{NULL, NULL};
+    for (int i = 0; i < l.size() * r.size(); ++i)
+    {
+      tmp[0] = l[i % l.size()];
+      tmp[1] = r[i / l.size()];
+      ret.push_back(convexHull(tmp.begin(), tmp.end(), vars, out));
+    }
+    return std::move(ret);
   }
   if (isOpX<PLUS>(toeval) || isOpX<MINUS>(toeval))
   {
     assert(toeval->arity() == 2);
-    Expr l = EvalPred(u, assms, toeval->left(), out);
-    assert(isOpX<AND>(l) && l->arity() == 2);
+    ExprVector lv = EvalPred(u, assms, toeval->left(), out, vars);
 
-    Expr r = EvalPred(u, assms, toeval->right(), out);
-    assert(isOpX<AND>(r) && r->arity() == 2);
+    ExprVector rv = EvalPred(u, assms, toeval->right(), out, vars);
 
-    return mk<AND>(
-      OpIneqs(toeval, l->left(), r->left()),
-      OpIneqs(toeval, l->right(), r->right()));
+    ExprVector out;
+    for (int i = 0; i < lv.size() * rv.size(); ++i)
+    {
+      const Expr& l = lv[i % lv.size()];
+      const Expr& r = rv[i / lv.size()];
+      assert(isOpX<AND>(l) && l->arity() == 2);
+      assert(isOpX<AND>(r) && r->arity() == 2);
+      out.push_back(mk<AND>(
+        OpIneqs(toeval, l->left(), r->left(), vars),
+        OpIneqs(toeval, l->right(), r->right(), vars)));
+    }
+    return std::move(out);
   }
   assert(0 && "EvalPred unimplemented for this op type");
 }

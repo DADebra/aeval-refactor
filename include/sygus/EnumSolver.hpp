@@ -105,9 +105,9 @@ class EnumSolver : public BaseSolver
       ExprVector conj;
       for (const auto& kv : ctx.holes)
       {
-        if (kv.second.first != supergram.root)
+        if (kv.second.nt != supergram.root)
           return false; // TODO: Handle assumptions for non-root NTs
-        if (kv.second.second >= oldmaxdepth)
+        if (kv.second.depth >= oldmaxdepth)
           return indeterminate; // Not sure, haven't gotten to that depth yet.
         conj.push_back(replaceAll(negallcons, fnapp, kv.first));
       }
