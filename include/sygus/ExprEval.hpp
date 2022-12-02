@@ -73,7 +73,7 @@ inline ExprVector EvalPred(SMTUtils& u, const ExprUMap &assms, Expr toeval, Expr
     ExprVector r = EvalPred(u, assms, toeval->last(), out, vars);
     if (l == r)
       return std::move(l);
-    ExprVector conjs;
+    /*ExprVector conjs;
     for (const auto &hole_assm : assms)
       conjs.push_back(hole_assm.second);
     conjs.push_back(mk<NEG>(toeval->left()));
@@ -98,7 +98,7 @@ inline ExprVector EvalPred(SMTUtils& u, const ExprUMap &assms, Expr toeval, Expr
     {
       l.insert(l.end(), r.begin(), r.end());
       return std::move(l);
-    }
+    }*/
     ExprVector ret;
     ExprVector tmp{NULL, NULL};
     for (int i = 0; i < l.size() * r.size(); ++i)

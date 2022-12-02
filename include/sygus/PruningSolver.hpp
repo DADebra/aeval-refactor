@@ -271,15 +271,20 @@ class PruningSolver : public BaseSolver
       for (const Expr& newout : newoutv)
       {
         assert(isOpX<AND>(newout));
-        /*for (const Expr& conj : *newout)
+        Expr normout = mk<AND>(
+          mk<GEQ>(nt, normalizeLIA(newout->left()->right(), vars)),
+          mk<LEQ>(nt, normalizeLIA(newout->right()->right(), vars)));
+        for (const Expr& conj : *normout)
           for (const Expr& arg : *conj->right())
             if (getTerm<mpz_class>(arg->left()) != 0 && arg->right() != eone)
-              thisvars.insert(arg->right());*/
-        filter(newout, isvar, inserter(thisvars, thisvars.end()));
-        partitions[thisvars].emplace_back(newout, &func);
+              thisvars.insert(arg->right());
+        /*Expr normout = newout;
+        filter(normout, isvar, inserter(thisvars, thisvars.end()));*/
+        partitions[thisvars].emplace_back(normout, &func);
         thisvars.clear();
       }
     }
+
     wsolver.push();
     ExprVector out;
     unordered_map<Expr,vector<const SynthPred*>> out2;
@@ -609,17 +614,32 @@ class PruningSolver : public BaseSolver
     allpositive.back() = etrue;
     Expr eallpositive = conjoin(allpositive, efac);
 
+    if (params.debug > 1)
+      outs() << disjs.size() << " initial input sets";
+    if (params.debug > 2)
+    {
+      outs() << ":";
+      for (const Expr& in : disjs)
+        outs() << "\n  " << in;
+    }
+    if (params.debug > 1)
+      outs() << endl;
+
     for (const Expr &in : disjs)
     {
       addInput(in, gram.root, funcvars);
     }
     for (int maxdepth = 0; true; ++maxdepth)
     {
+      if (params.debug)
+        outs() << gram.root << " at depth " << maxdepth << ":" << endl;
       const auto thiskey = make_pair(gram.root, maxdepth);
-      for (const auto& i_summ : summ)
+      for (int j = 0; j < summ.size(); ++j)
       {
-        const Expr& input = i_summ.first;
-        const ExprVector& prevsumm = i_summ.second->at(make_pair(gram.root, maxdepth - 1));
+        const Expr& input = summ[j].first;
+        const ExprVector& prevsumm = summ[j].second->at(make_pair(gram.root, maxdepth - 1));
+        if (params.debug)
+          outs() << "  Enumerating productions for input " << j << endl;
         // Enumerate productions
         vector<SynthPred> funcs;
         for (const auto& prod_holes : prods)
@@ -648,11 +668,44 @@ class PruningSolver : public BaseSolver
           perm(0);
         }
 
+        if (params.debug > 1)
+          outs() << "    " << funcs.size() << " functions generated";
+        if (params.debug > 2 && (funcs.size() < 16 || params.debug > 3))
+        {
+          outs() << ":";
+          ExprVector evald;
+          for (const SynthPred &func : funcs)
+          {
+            evald = EvalPred(u, func.first, func.second->right(), gram.root,
+              funcvarsset);
+            for (const Expr& e : evald)
+              outs() << "\n      " << e;
+          }
+        }
+        if (params.debug > 1)
+          outs() << endl;
+
         // Generate (weaker) equivalence classes
         auto eqclasses = weakenClasses(gram.root, input, funcvarsset, allholes, funcs);
 
+        if (params.debug > 1)
+        {
+          outs() << "    " << eqclasses.first.size() << " partitions: [ ";
+          for (const auto &eqc_funcs : eqclasses.second)
+            outs() << eqc_funcs.second.size() << " ";
+          outs() << "]";
+        }
+        if (params.debug > 2)
+        {
+          outs() << ":";
+          for (const Expr &eqc : eqclasses.first)
+            outs() << "\n      " << eqc;
+        }
+        if (params.debug > 1)
+          outs() << endl;
+
         // Fill grammar
-        Grammar &ig = btgram[i_summ.second.get()];
+        Grammar &ig = btgram[summ[j].second.get()];
         for (int i = 0; i < eqclasses.first.size(); ++i)
         {
           Expr eqcnt = ig.addNt(string("eq")+to_string(i)+"@"+to_string(maxdepth), gram.root->left()->last());
@@ -671,18 +724,20 @@ class PruningSolver : public BaseSolver
                 ig.addNt(mkeqc(eqc, maxdepth-1, gram.root->left()->last())));
             }
             ig.addProd(eqcnt, prod);
-            btnt_to_summ[i_summ.second.get()][eqcnt] = eqclasses.first[i];
-            btnt_to_eqc[i_summ.second.get()][eqcnt] = make_pair(thiskey, i);
+            btnt_to_summ[summ[j].second.get()][eqcnt] = eqclasses.first[i];
+            btnt_to_eqc[summ[j].second.get()][eqcnt] = make_pair(thiskey, i);
           }
         }
 
-        (*i_summ.second)[thiskey] = eqclasses.first;
+        (*summ[j].second)[thiskey] = eqclasses.first;
       }
 
       // Fix input
 
       bool backtrack = false;
       int numsumms = (*summ.begin()->second)[thiskey].size();
+      if (params.debug)
+        outs() << "  " << numsumms << " summaries" << endl;
       for (int i = 0; i < numsumms; ++i)
       {
         bool good = false;
@@ -697,6 +752,8 @@ class PruningSolver : public BaseSolver
           {
             // Already good, nothing to do
             good = true;
+            if (params.debug > 1)
+              outs() << "    Class " << i << " OK" << endl;
             break;
           }
 
@@ -706,6 +763,13 @@ class PruningSolver : public BaseSolver
           if (!modin)
             continue; // Can't strengthen
 
+          if (params.debug > 1)
+            outs() << "    Strengthening input " << j << " for Class " << i;
+          if (params.debug > 2)
+            outs() << ":\n      " << modin;
+          if (params.debug > 1)
+            outs() << endl;
+
           summ[j].first = modin;
           summ_to_in[i_summ.second.get()] = modin;
           good = true;
@@ -714,16 +778,22 @@ class PruningSolver : public BaseSolver
         if (good)
           continue;
 
+        if (params.debug > 1)
+          outs() << "    Backtracking on Class " << i << ":" << endl;
+
         btprobs.clear();
         ExprUSet donesumms;
-        for (const auto &i_summ : summ)
+        for (int i = 0; i < summ.size(); ++i)
         {
+          const auto& i_summ = summ[i];
           if (i_summ.second->count(thiskey) == 0)
             continue; // Can happen when we add a new input in a previous eqc
           if (!donesumms.insert(i_summ.second->at(thiskey)[i]).second)
             continue; // An eqc can be the same across several inputs
 
           Expr in = i_summ.first;
+          if (params.debug > 1)
+            outs() << "      for input " << i << ":" << endl;
 
           tparams.maxrecdepth = maxdepth;
           Grammar &ig = btgram.at(i_summ.second.get());
@@ -732,6 +802,7 @@ class PruningSolver : public BaseSolver
           for (const Expr &nt : ig.nts)
             if (ig.pathExists(ig.root, nt))
               needrefine.emplace(nt, ExprUSet());
+          needrefine.emplace(ig.root, ExprUSet());
 
           /*if (ig.prods.count(gram.root) != 0)
           {
@@ -754,7 +825,7 @@ class PruningSolver : public BaseSolver
               inserter(holes, holes.begin()));
             if (holes.size() == 0)
             {
-              if (params.debug > 1)
+              if (params.debug)
                 outs() << "Candidate: " << ret << endl;
               cands[&func] = ret;
               if (checkCands(cands))
@@ -762,7 +833,7 @@ class PruningSolver : public BaseSolver
                 cands[&func] = ie.GetUnsimplifiedCand();
                 _foundfuncs = cands;
                 if (params.debug)
-                  errs() << "Candidate found at recursion depth " <<
+                  errs() << "Solution found at recursion depth " <<
                     maxdepth << endl;
                 return true;
               }
@@ -779,30 +850,33 @@ class PruningSolver : public BaseSolver
           }
         }
 
+        if (params.debug > 1 && btprobs.size() != 0)
+        {
+          outs() << "    Problems found:\n";
+          outs() << "      NEWIN: " << btprobs[NEWIN].size() << "\n";
+          outs() << "      REFINE: " << btprobs[REFINE].size() << endl;
+        }
+
         int oldsummnum = summ.size();
 
         for (const Problem &prob : btprobs[NEWIN])
         {
-          bool good = false;
+          bool probgood = false;
           int strenin = -1;
           Expr out = mk<EQ>(gram.root, prob.cause);
-          for (int i = oldsummnum; i < summ.size(); ++i)
+          for (int j = oldsummnum; j < summ.size(); ++j)
           {
-            if (isUnreal(summ[i].first, out))
-            {
-              good = true;
-              break;
-            } else if (canStrengthen(summ[i].first, out, gram.root))
-            {
-              strenin = i;
-              break;
-            }
+            if (isUnreal(summ[j].first, out))
+            { probgood = true; break; }
+            else if (canStrengthen(summ[j].first, out, gram.root))
+            { strenin = j; break; }
           }
-          if (good)
+          if (probgood)
             continue;
+          Expr newin;
           if (strenin == -1)
           {
-            Expr newin = strengthen(eallpositive, out, gram.root, funcvars);
+            newin = strengthen(eallpositive, out, gram.root, funcvars);
             if (!newin)
             {
               assert(0 && "Can't handle non-positive NEWIN");
@@ -811,18 +885,41 @@ class PruningSolver : public BaseSolver
           }
           else
           {
-            Expr modin = strengthen(summ[strenin].first,out,gram.root,funcvars);
-            assert(modin);
-            summ[strenin].first = modin;
-            summ_to_in[summ[strenin].second.get()] = modin;
+            newin = strengthen(summ[strenin].first,out,gram.root,funcvars);
+            assert(newin);
+            summ[strenin].first = newin;
+            summ_to_in[summ[strenin].second.get()] = newin;
           }
           backtrack = true;
         }
         if (btprobs[REFINE].size() != 0)
           assert(0 && "Refining summaries unimplemented");
 
-        /*if (backtrack)
-          break;*/
+        /*for (int j = 0; j < summ.size(); ++j)
+        {
+          if (summ[j].second->count(thiskey) == 0)
+            continue;
+          Expr out = summ[j].second->at(thiskey)[i];
+          if (isUnreal(summ[j].first, out))
+          { good = true; break; }
+        }
+        assert(good);*/
+
+        if (backtrack)
+        {
+          if (params.debug)
+            outs() << "  " << summ.size() << " input sets after backtracking";
+          if (params.debug > 2)
+          {
+            outs() << ":";
+            for (const auto& i_summ : summ)
+              outs() << "\n    " << i_summ.first;
+          }
+          if (params.debug)
+            outs() << endl;
+
+          break; // TODO: Maybe should continue instead? When?
+        }
 
         /*assert(0 && "Adding new inputs unimplemented");
 
@@ -866,10 +963,16 @@ class PruningSolver : public BaseSolver
       }
 
       if (params.debug)
-        outs() << "Done with depth " << maxdepth << endl;
+        outs() << "Done with depth " << maxdepth << "\n";
 
       if (backtrack)
+      {
+        if (params.debug)
+          outs() << "Backtracking to depth 0\n";
         maxdepth = -1;
+      }
+      if (params.debug)
+        outs() << endl;
     }
   }
 };

@@ -161,7 +161,7 @@ class EnumSolver : public BaseSolver
         parseExpr(ge.GetUnsimplifiedCand());
         assert(bool(checkCands(cands)));
         _foundfuncs = cands;
-        if (params.debug) errs() << "Candidate found at recursion depth " <<
+        if (params.debug) errs() << "Solution found at recursion depth " <<
           to_string(ge.GetCurrDepth()) << endl;
         if (params.debug) errs() << "after " << candnum <<
           " iterations" << endl;

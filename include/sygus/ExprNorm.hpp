@@ -169,8 +169,6 @@ Expr convexHull(const T& funcs_begin, const T& funcs_end,
   for (auto itr = funcs_begin; itr != funcs_end; ++itr)
   {
     Expr func = *itr;
-    /*Expr lbound = func->left()->right(),
-         ubound = func->right()->right();*/
     Expr lbound = normalizeLIA(func->left()->right(), vars),
          ubound = normalizeLIA(func->right()->right(), vars);
     for (const Expr &arg : *lbound)
