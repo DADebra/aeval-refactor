@@ -302,7 +302,7 @@ class GramEnum
         outs() << "Before simplification: " <<
           traversal->GetUnsimplifiedCand().toExpr() << endl;
 
-      if (!gram.satsConstraints(nextpt))
+      if (!gram.satsConstraints(nextpt).first)
       {
         nextcand = NULL;
         nextpt = NULL;

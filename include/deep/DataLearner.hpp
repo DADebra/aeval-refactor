@@ -415,7 +415,7 @@ namespace ufo
 
       arma::mat basis = gaussjordan(monomialMatrix);
 
-      //      printmsg(INFO, "before basis check ", basis);
+            printmsg(DEBUG, "before basis check ", basis);
 
       if (basis.n_cols == 0) {
         return 0;

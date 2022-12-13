@@ -457,21 +457,25 @@ class TravPos
     queue_cap = 0;
   }
 
-  inline void queuepop()
+  inline void queuepop() { return queuepop(val); }
+
+  inline void queuepop(unsigned int pos)
   {
-    auto& que = queue[val];
+    auto& que = queue[pos];
     if (que.owned())
       delete que.ptr();
-    if (val == queue_size - 1)
+    if (pos == queue_size - 1)
     {
       --queue_size;
-      val = 0;
+      if (inqueue())
+        val = 0;
     }
     else
     {
       que.setowned(false);
       que.setptr(&done_pos);
-      nextpos();
+      if (inqueue())
+        nextpos();
     }
     if (queue_size == 0)
       emptyqueue();

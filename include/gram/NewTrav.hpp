@@ -30,6 +30,7 @@ class NewTrav : public Traversal
   PrunePathFn prunePathFn;
   optional<PruneArgFn> pruneArgFn;
   IsTrueFalseFn trueFalseFn;
+  bool ntdeferror = false;
 
   ExprFactory& efac;
 
@@ -145,6 +146,7 @@ class NewTrav : public Traversal
     }
     newctx->holeyCtx = replaceAll(ctx_hole.first->holeyCtx,
       ctx_hole.second, holeyProd);
+    newctx->ctx = replaceAll(newctx->holeyCtx, newctx->holes);
     return make_pair(newctx, holeyProd);
   }
 
@@ -184,21 +186,49 @@ class NewTrav : public Traversal
     return ret;
   }
 
+  // K: Path, V: { K: Sorted newexpr, V: Return }
+  unordered_map<Path,unordered_map<Expr,PruneRetType>> _pruneArgCache;
+
   inline PruneRetType pruneArg(const Path &path, const Expr &nt, int currdepth,
-    const Expr &oper, const vector<ParseTree> &newexpr)
+    const Expr &oper, const vector<ParseTree> &newexpr, int min)
   {
+    ParseTree ret3(oper, newexpr, false);
+    auto &pathcache = _pruneArgCache[path];
+    auto itrcache = pathcache.find(ret3.toSortedExpr());
+    if (itrcache != pathcache.end())
+      return itrcache->second;
     if (pruneArgFn)
     {
-      assert(pathToCtx.count(path) != 0);
-      const auto &ctx_hole = pathToCtx.at(path);
-      ParseTree ret3(oper, newexpr, false);
-      auto midctx = _findNewCtx(ctx_hole, currdepth, ret3.toSortedExpr());
+      auto ctxitr = pathToCtx.find(path);
+      assert(ctxitr != pathToCtx.end());
+      auto midctx = _findNewCtx(ctxitr->second, currdepth, ret3.toSortedExpr());
       auto ret = (*pruneArgFn)(oper, newexpr,
-        *midctx.first, midctx.second, nt, currdepth);
+        *midctx.first, midctx.second, nt, currdepth, min);
       if (!get<2>(ret))
-        get<2>(ret) = std::move(ret3);
+        get<2>(ret) = ret3;
+      pathcache.emplace(ret3.toSortedExpr(), ret);
       return std::move(ret);
     }
+    /*PruneRetType ret;
+    get<2>(ret) = ret3;
+    bool doskipcand = false;
+    for (int i = 0; i < newexpr.size(); ++i)
+    {
+      auto sats_prune = gram.satsConstraints(newexpr[i]);
+      if (!sats_prune.first && sats_prune.second)
+      {
+        doskipcand = true;
+        get<0>(ret).push_back(i);
+      }
+      else
+        get<1>(ret).push_back(i);
+    }
+    if (doskipcand)
+    {
+      get<2>(ret) = skipcand;
+      //pathcache.emplace(ret3.toSortedExpr(), ret);
+      return std::move(ret);
+    }*/
     return ptsimpl.prunePT(oper, newexpr, trueFalseFn);
   }
 
@@ -238,6 +268,7 @@ class NewTrav : public Traversal
         // Should never happen
         // There's no definition, we're expanding an empty *_VARS
         CFGUtils::noNtDefError(root, gram.root);
+        ntdeferror = true;
         return NULL;
       }
     }
@@ -392,7 +423,7 @@ class NewTrav : public Traversal
     if (params.simplify)
     {
       std::tie(ignore, ignore, ret) =
-        pruneArg(path, currnt, currdepth, root, newexpr);
+        pruneArg(path, currnt, currdepth, root, newexpr, travpos.min());
     }
 
     assert(ret.px() != skipcand.px());
@@ -433,6 +464,9 @@ class NewTrav : public Traversal
       assert(("Cannot increment TravPos which is done!" && !travpos.isdone()));
       assert(("Cannot increment TravPos which is r/o!" && !travpos.readonly()));
     }
+
+    if (ntdeferror)
+      return NULL;
 
     if (ro && travpos.isnull())
       return NULL;
@@ -575,6 +609,8 @@ class NewTrav : public Traversal
           alwaysro ? (TravPos&)constpos.childat(travpos.pos()) :
           travpos.childat(travpos.pos()), newdepth, qvars, currnt,
           nextpath, nextparams, mu, ro)), true);
+        if (ntdeferror)
+          return NULL;
 
         if (!ret.children()[0])
           // The either we picked is done at that recursive depth. Pick another
@@ -647,6 +683,7 @@ class NewTrav : public Traversal
       {
         // There's no definition, we're expanding an empty *_VARS
         CFGUtils::noNtDefError(root, gram.root);
+        ntdeferror = true;
         return NULL;
       }
     }
@@ -793,6 +830,8 @@ class NewTrav : public Traversal
         ret = std::move(newtrav(root, alwaysro ?
           (TravPos&)constpos.queueat(travpos.pos()) : travpos.queueat(travpos.pos()),
           currdepth, localqvars, currnt, np(path,Q,travpos.pos()), oldparams, mu, ro));
+        if (ntdeferror)
+          return NULL;
         if (!ret)
           return std::move(newtrav(root, travpos, currdepth,
             qvars, currnt, path, oldparams, mu, ro));
@@ -833,6 +872,7 @@ class NewTrav : public Traversal
         return std::move(ret);
       }
 
+      bool didqueuepush = false;
       for (int i = 0; i < travpos.childlimit(); ++i)
       {
         Path nextpath = np(path,C,dind(i));
@@ -847,6 +887,8 @@ class NewTrav : public Traversal
           {
             newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
               localqvars, currnt, nextpath, nextparams, mu, ro);
+            if (ntdeferror)
+              return NULL;
           }
           else
           {
@@ -877,6 +919,8 @@ class NewTrav : public Traversal
 
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
             localqvars, currnt, nextpath, nextparams, mu, ro);
+          if (ntdeferror)
+            return NULL;
 
           if (!ro && !wasnew && travpos.pos() < travpos.childlimit() - 1)
           {
@@ -897,6 +941,8 @@ class NewTrav : public Traversal
                 findNewCtx(path,np(childpath,C,dind(c)),currdepth,NULL,dind(c));
               newtrav(rootarg(c), childpos->childat(dind(c)), currdepth,
                 localqvars, currnt, np(childpath,C,dind(c)),nextparams,mu,ro);
+              if (ntdeferror)
+                return NULL;
             }
 
             bool done = true;
@@ -909,7 +955,10 @@ class NewTrav : public Traversal
               }
 
             if (!done)
+            {
               travpos.queuepush_back(childpos);
+              didqueuepush = true;
+            }
           }
         }
       }
@@ -922,8 +971,8 @@ class NewTrav : public Traversal
       {
         vector<int> culprits, toprune;
         std::tie(culprits, toprune, ret) =
-          pruneArg(path, currnt, currdepth, root, newexpr);
-        if (!ro && toprune.size() != 0)
+          pruneArg(path, currnt, currdepth, root, newexpr, constpos.min());
+        if (!ro && culprits.size() != 0)
         {
           assert(toprune.size() != newexpr.size());
           assert(ret);
@@ -931,8 +980,11 @@ class NewTrav : public Traversal
           bool docontinue = false;
           bool doPrune = false;
           for (const int &ci : culprits)
-            if (dind(ci) < constpos.childmin())
-            { doPrune = true; break; }
+            if (dind(ci) < constpos.childmin()) doPrune = true;
+            else if (dind(ci) == constpos.pos() && didqueuepush)
+              // The queue item we just pushed will have the culprit below
+              // its minimum, so will be done.
+              travpos.queuepop(travpos.queuelimit()-1);
 
           if (doPrune)
           {
@@ -943,7 +995,10 @@ class NewTrav : public Traversal
               // This child is useless, so just set it as done so we skip
               // over it.
               if (dind(pi) >= constpos.childmin())
-                travposchildat(dind(pi)).makedone();
+              {
+                travpos.childat(pi).makedone();
+                gettravCache.erase(&travpos.childat(pi));
+              }
             }
           }
           // Otherwise, no more to do, just use the new candidate
@@ -994,6 +1049,8 @@ class NewTrav : public Traversal
             findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
             localqvars, currnt, nextpath, nextparams, mu, ro);
+          if (ntdeferror)
+            return NULL;
           if (!newexprat(i) && !wasdone)
             continue;
           break;
@@ -1026,6 +1083,8 @@ class NewTrav : public Traversal
             findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newtrav(rootarg(i), travposchildat(i), currdepth, localqvars,
             currnt, nextpath, nextparams, mu, ro);
+          if (ntdeferror)
+            return NULL;
         }
         bool needdefer = false;
         newexprat(i) = gettrav(rootarg(i), constposchildat(i), currdepth,
@@ -1057,13 +1116,16 @@ class NewTrav : public Traversal
       }
       if (params.simplify)
         std::tie(ignore, ignore, ret) =
-          pruneArg(path, currnt, currdepth, root, newexpr);
+          pruneArg(path, currnt, currdepth, root, newexpr, constpos.min());
     }
 
     if (ret.px() == skipcand.px())
     {
       if (travpos.isdone())
+      {
+        travpos.makenull();
         return NULL;
+      }
       return std::move(newtrav(root, travpos, currdepth,
         qvars, currnt, path, oldparams, mu, ro));
     }
@@ -1103,6 +1165,8 @@ class NewTrav : public Traversal
   void onGramMod(ModClass cl, ModType ty)
   {
     if (cl == ModClass::CONSTRAINT && ty == ModType::ADD)
+      return;
+    if (rootpos.isdone() || rootpos.isnew())
       return;
     grammodified = true;
     lastcand = NULL;
@@ -1154,7 +1218,7 @@ class NewTrav : public Traversal
 
   virtual bool IsDone()
   {
-    return IsDepthDone() && currmaxdepth == gparams.maxrecdepth;
+    return ntdeferror || (IsDepthDone() && currmaxdepth == gparams.maxrecdepth);
   }
 
   virtual bool IsDepthDone()

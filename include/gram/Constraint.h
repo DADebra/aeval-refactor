@@ -35,7 +35,8 @@ class Constraint
 
   static Expr stoe(Expr e);
 
-  static optional<cpp_int> evaluateArithExpr(Expr arith, const PtExpMap& expmap,
+  // <result, T=good,ind=can't eval,F=unsupported>
+  static std::pair<mpz_class,tribool> evaluateArithExpr(Expr arith, const PtExpMap& expmap,
     seen_type& se);
 
   static tribool evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,

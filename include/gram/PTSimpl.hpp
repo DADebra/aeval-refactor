@@ -55,6 +55,8 @@ class PTSimpl {
         return pt.children()[1];
       else if (!firstTF)
         return pt.children()[2];
+      else if (pt.children()[1] == pt.children()[2])
+        return pt.children()[1];
     }
     Expr optype = typeOf(pt.data());
     if (isOpX<BVSORT>(optype))
@@ -96,6 +98,8 @@ class PTSimpl {
         return make_tuple(vector<int>{0}, vector<int>{2}, args[1]);
       else if (!firstTF)
         return make_tuple(vector<int>{0}, vector<int>{1}, args[2]);
+      else if (args[1] == args[2])
+        return make_tuple(vector<int>{1,2}, vector<int>{0}, args[1]);
     }
     if (isOpX<BVSORT>(optype))
       return std::move(pruneBVPT(oper, args, isTrueFalse));

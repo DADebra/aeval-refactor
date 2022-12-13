@@ -901,7 +901,11 @@ namespace ufo
             outs () << "  Deferred cand for " << a.first << ": " << b << "\n";
 
       map<int, int> defSz;
-      for (auto & a : deferredCandidates) defSz[a.first] = a.second.size();
+      for (auto & a : deferredCandidates)
+      {
+        defSz[a.first] = a.second.size();
+        maxAttempts += a.second.size();
+      }
       ExprSet cands;
       bool rndStarted = false;
       for (int i = 0; i < maxAttempts; i++)

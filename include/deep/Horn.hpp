@@ -15,7 +15,7 @@ namespace ufo
     ExprVector dstVars;
     ExprVector locVars;
 
-    Expr body;
+    Expr body, origbody;
 
     Expr srcRelation;
     Expr dstRelation;
@@ -297,6 +297,8 @@ namespace ufo
 
         if (doElim)
         {
+          hr.origbody = eliminateQuantifiers(conjoin(lin, m_efac), hr.locVars,
+                                                      false, false, false);
           hr.body = eliminateQuantifiers(conjoin(lin, m_efac), hr.locVars,
                                                       !hasBV && doArithm, false);
           hr.body = u.removeITE(hr.body);
@@ -304,7 +306,10 @@ namespace ufo
           hr.shrinkLocVars();
         }
         else
+        {
           hr.body = conjoin(lin, m_efac);
+          hr.origbody = hr.body;
+        }
       }
 
       if (doElim)

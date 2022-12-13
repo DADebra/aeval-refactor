@@ -90,9 +90,11 @@ void Constraint::foreachExpans(Expr con, const ExpansionsMap& expmap,
   perm(0);
 }
 
-optional<cpp_int> Constraint::evaluateArithExpr(Expr arith, const PtExpMap& expmap,
+std::pair<mpz_class,tribool> Constraint::evaluateArithExpr(Expr arith, const PtExpMap& expmap,
   seen_type& se)
 {
+  std::pair<mpz_class,tribool> indret(-666, indeterminate);
+  std::pair<mpz_class,tribool> noret(-666, false);
   auto aritharg = [&] (int i) -> Expr
   {
     if (expmap.count(arith->arg(i)) != 0)
@@ -105,39 +107,40 @@ optional<cpp_int> Constraint::evaluateArithExpr(Expr arith, const PtExpMap& expm
     if (expmap.count(arith) != 0)
       return evaluateArithExpr(expmap.at(arith).toExpr(), expmap, se);
     else
-      return none;
+      return std::move(indret);
   }
 
   if (isOpX<ITE>(arith))
   {
     tribool res = evaluateCmpExpr(aritharg(0), expmap, se);
     if (indeterminate(res))
-      return none;
+      return std::move(indret);
     if (res)
       return evaluateArithExpr(aritharg(1), expmap, se);
     else
       return evaluateArithExpr(aritharg(2), expmap, se);
   }
 
-  if (isOpX<MPZ>(arith))   return lexical_cast<cpp_int>(arith);
-  if (arith->arity() != 2) return none;
+  if (isOpX<MPZ>(arith))   return make_pair(getTerm<mpz_class>(arith), true);
+  if (arith->arity() != 2) return std::move(noret);
 
-  optional<cpp_int> lhs = evaluateArithExpr(aritharg(0), expmap, se);
-  if (!lhs) return none;
-  cpp_int ilhs = *lhs;
+  auto lhs = evaluateArithExpr(aritharg(0), expmap, se);
+  if (lhs.second != true) return std::move(lhs);
+  mpz_class ilhs = lhs.first;
 
-  if (isOpX<UN_MINUS>(arith)) return optional<cpp_int>(-ilhs);
-  if (isOpX<ABS>(arith))   return ilhs > 0 ? ilhs : -ilhs;
+  if (isOpX<UN_MINUS>(arith)) return std::pair<mpz_class,tribool>(-ilhs, true);
+  if (isOpX<ABS>(arith))
+    return std::pair<mpz_class,tribool>(ilhs > 0 ? ilhs : -ilhs, true);
 
-  optional<cpp_int> rhs = evaluateArithExpr(aritharg(1), expmap, se);
-  if (!rhs) return none;
-  cpp_int irhs = *rhs;
+  auto rhs = evaluateArithExpr(aritharg(1), expmap, se);
+  if (rhs.second != true) return std::move(rhs);
+  mpz_class irhs = rhs.first;
 
-  if (isOpX<PLUS>(arith))  return optional<cpp_int>(ilhs + irhs);
-  if (isOpX<MINUS>(arith)) return optional<cpp_int>(ilhs - irhs);
-  if (isOpX<MULT>(arith))  return optional<cpp_int>(ilhs * irhs);
+  if (isOpX<PLUS>(arith))  return std::pair<mpz_class,tribool>(ilhs + irhs, true);
+  if (isOpX<MINUS>(arith)) return std::pair<mpz_class,tribool>(ilhs - irhs, true);
+  if (isOpX<MULT>(arith))  return std::pair<mpz_class,tribool>(ilhs * irhs, true);
   if (isOpX<DIV>(arith) || isOpX<IDIV>(arith))
-    return optional<cpp_int>(ilhs / irhs);
+    return std::pair<mpz_class,tribool>(ilhs / irhs, true);
   if (isOpX<MOD>(arith))
   {
     // Copied from include/ae/ExprSimpl.hpp
@@ -146,9 +149,9 @@ optional<cpp_int> Constraint::evaluateArithExpr(Expr arith, const PtExpMap& expm
     if (ilhs < 0)
       ilhs += ((-ilhs / irhs) + 1) * irhs;
     ilhs = ilhs % irhs;
-    return ilhs;
+    return std::pair<mpz_class,tribool>(ilhs, true);
   }
-  return none;
+  return std::move(noret);
 }
 
 tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
@@ -176,20 +179,21 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
   if (isOpX<EQ>(cmp) || (conn == "equal" && cmp->arity() > 2))
   {
     int si = conn == "equal" ? 1 : 0;
-    optional<cpp_int> first = evaluateArithExpr(cmparg(si),
+    auto first = evaluateArithExpr(cmparg(si),
       expmap, seenexpans);
-    if (!first && !isOpX<FAPP>(cmparg(si)) && !isOpX<MPZ>(cmparg(si)) &&
-    !isOpX<MPQ>(cmparg(si)))
+    if (!first.second) return indeterminate;
+    if (indeterminate(first.second) && !isOpX<FAPP>(cmparg(si)) &&
+    !isOpX<MPZ>(cmparg(si)) && !isOpX<MPQ>(cmparg(si)))
       return indeterminate;
     for (int i = si + 1; i < cmp->arity(); ++i)
     {
-      if (first)
+      if (first.second)
       {
-        optional<cpp_int> inti = evaluateArithExpr(cmparg(i),
+        auto inti = evaluateArithExpr(cmparg(i),
           expmap, seenexpans);
-        if (!inti)
-          return indeterminate;
-        if (inti != first)
+        if (indeterminate(inti.second)) return true;
+        else if (!inti.second) return indeterminate;
+        if (inti.first != first.first)
           return false;
       }
       else
@@ -207,17 +211,18 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
   {
     for (int p1 = 0; p1 < cmp->arity(); ++p1)
     {
-      optional<cpp_int> first = evaluateArithExpr(cmparg(p1),
+      auto first = evaluateArithExpr(cmparg(p1),
         expmap, seenexpans);
+      if (!first.second) return indeterminate;
       for (int p2 = p1 + 1; p2 < cmp->arity(); ++p2)
       {
-        if (first)
+        if (first.second)
         {
-          optional<cpp_int> second = evaluateArithExpr(cmparg(0),
+          auto second = evaluateArithExpr(cmparg(0),
             expmap, seenexpans);
-          if (!second)
-            return indeterminate;
-          if (*first == *second)
+          if (indeterminate(second.second)) return true;
+          else if (!second.second) return indeterminate;
+          if (first.first == second.first)
             return false;
         }
         if (!isOpX<FAPP>(cmparg(p1)) && !isOpX<MPZ>(cmparg(p1)) &&
@@ -358,11 +363,13 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
   if (cmp->arity() > 2)
     return indeterminate;
 
-  optional<cpp_int> lo= evaluateArithExpr(cmp->arg(0),expmap,seenexpans),
-                    ro= evaluateArithExpr(cmp->arg(1),expmap,seenexpans);
-  if (!lo || !ro)
+  auto lo= evaluateArithExpr(cmp->arg(0),expmap,seenexpans),
+       ro= evaluateArithExpr(cmp->arg(1),expmap,seenexpans);
+  if (indeterminate(lo.second) || indeterminate(ro.second))
+    return true;
+  if (!lo.second || !ro.second)
     return indeterminate;
-  cpp_int li = *lo, ri = *ro;
+  const mpz_class &li = lo.first, &ri = ro.first;
 
   if (isOpX<LEQ>(cmp))
     return li <= ri;
@@ -519,7 +526,7 @@ bool Constraint::doesSat(const ParseTree& pt) const
       {
         Expr lhs = stoe(e->arg(1));
         if (expmap.count(lhs) == 0)
-          return mkMPZ(cpp_int(0), e->efac());
+          return mkMPZ(0, e->efac());
         int deepest = 0;
         for (const auto &pt : expmap.at(lhs))
         {
@@ -527,7 +534,7 @@ bool Constraint::doesSat(const ParseTree& pt) const
           if (depth > deepest)
             deepest = std::move(depth);
         }
-        return mkMPZ(cpp_int(deepest), e->efac());
+        return mkMPZ(deepest, e->efac());
       }
       else
         return e;

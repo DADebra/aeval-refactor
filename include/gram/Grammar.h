@@ -121,7 +121,11 @@ class Grammar
   bool delModListener(std::shared_ptr<ModListener> listener);
 
   /*** UTILITIES ***/
-  bool satsConstraints(const ParseTree& pt) const;
+
+  // <Y/N, Can prune?>
+  // If 'Can prune?' is 'true', then all super-expressions will have the same
+  // result.
+  std::pair<bool,bool> satsConstraints(const ParseTree& pt) const;
 
   inline bool isNt(Expr e) const { return isOpX<FAPP>(e) && _prods.count(e) != 0; }
   inline bool isVar(Expr e) const

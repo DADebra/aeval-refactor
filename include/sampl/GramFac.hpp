@@ -49,6 +49,7 @@ namespace ufo
     unordered_map<Expr, unordered_map<VarType, VarMap::mapped_type>> vars_analyzed;
 
     Expr precond, postcond;
+    ExprVector bexprs;
 
     // Whether to print debugging information or not.
     int debug;
@@ -238,7 +239,7 @@ namespace ufo
         if (chc.isQuery)
         {
           assert(!postcond);
-          postcond = mkNeg(getExists(chc.body, chc.locVars));
+          postcond = mk<NEG>(getExists(chc.origbody, chc.locVars));
         }
     }
 
@@ -248,7 +249,27 @@ namespace ufo
         if (chc.isFact)
         {
           assert(!precond);
-          precond = replaceAll(getExists(chc.body, chc.locVars), chc.dstVars, chcs.invVars.at(chc.dstRelation));
+          precond = replaceAll(getExists(chc.origbody, chc.locVars), chc.dstVars, chcs.invVars.at(chc.dstRelation));
+        }
+    }
+
+    void extract_boolexprs(const CHCs& chcs)
+    {
+      for (const auto& chc : chcs.chcs)
+        if (chc.isInductive)
+        {
+          Expr body = isOpX<AND>(chc.origbody) ?
+            chc.origbody : mk<AND>(chc.origbody);
+          for (const Expr& conj : *body)
+          {
+            const auto dstbeg = chc.dstVars.begin(),
+                       dstend = chc.dstVars.end();
+            filter(conj, [&](const Expr& e){
+              return !isLit(e) && !IsConst()(e) && !isOpX<FDECL>(e) &&
+                !(isOpX<EQ>(e) && find(dstbeg, dstend, e->left()) != dstend) &&
+                isOpX<BOOL_TY>(typeOf(e)); },
+              std::inserter(bexprs, bexprs.end()));
+          }
         }
     }
 
@@ -307,6 +328,7 @@ namespace ufo
       extract_consts(chcs);
       extract_postcond(chcs);
       extract_precond(chcs);
+      extract_boolexprs(chcs);
     }
 
     // Properly initialize *_CONSTS now that we've found them
@@ -332,16 +354,31 @@ namespace ufo
             gram->addProd(nt, var);
         }
 
+      NT bexprsnt = gram->addNt<BOOL_TY>("BOOL_EXPRS", m_efac);
+      for (const Expr& e : bexprs)
+        gram->addProd(bexprsnt, e);
+
       if (postcond)
+      {
         gram->addProd(gram->addNt<BOOL_TY>("POST_COND", m_efac), postcond);
+        NT postcondpart = gram->addNt<BOOL_TY>("POST_COND_PART", m_efac);
+        assert(isOpX<NEG>(postcond));
+        if (isOpX<AND>(postcond->last()))
+          for (int i = 0; i < postcond->last()->arity(); ++i)
+            gram->addProd(postcondpart, postcond->last()->arg(i));
+        else
+          gram->addProd(postcondpart, postcond->last());
+      }
       if (precond)
+      {
         gram->addProd(gram->addNt<BOOL_TY>("PRE_COND", m_efac), precond);
-      NT precondpart = gram->addNt<BOOL_TY>("PRE_COND_PART", m_efac);
-      if (isOpX<AND>(precond))
-        for (int i = 0; i < precond->arity(); ++i)
-          gram->addProd(precondpart, precond->arg(i));
-      else
-        gram->addProd(precondpart, precond);
+        NT precondpart = gram->addNt<BOOL_TY>("PRE_COND_PART", m_efac);
+        if (isOpX<AND>(precond))
+          for (int i = 0; i < precond->arity(); ++i)
+            gram->addProd(precondpart, precond->arg(i));
+        else
+          gram->addProd(precondpart, precond);
+      }
 
       initialized = true;
       gramenum.SetParams(globalparams, ntparams);
@@ -532,7 +569,10 @@ namespace ufo
       // Generate unary `maxrecdepth` function declaration
       aug_gram << "(declare-fun maxrecdepth (String) Int)\n";
 
+      aug_gram << "(declare-fun BOOL_EXPRS () Bool)\n";
+
       aug_gram << "(declare-fun POST_COND () Bool)\n";
+      aug_gram << "(declare-fun POST_COND_PART () Bool)\n";
       aug_gram << "(declare-fun PRE_COND () Bool)\n";
       aug_gram << "(declare-fun PRE_COND_PART () Bool)\n";
 

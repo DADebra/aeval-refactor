@@ -53,13 +53,15 @@ void Grammar::generateGraph(NT start)
         if (_graph.count(prodnt) == 0)
           generateGraph(prodnt);
         for (const Expr& rnt : _graph[prodnt])
+        {
           reachable.insert(rnt);
+          if (rnt == start)
+            isRec = true;
+        }
       }
       else
         isRec = true;
     }
-    if (!isRec && prodnts.size() != 0 && reachable.count(start) != 0)
-      isRec = true;
     _isRecCache[start][prod] = isRec;
   }
 }
@@ -69,21 +71,15 @@ void Grammar::calcIsInfinite()
   if (graphIsOld)
     generateGraph();
   // Technically, we need to remove unreachable/useless prods/NTs first.
-  // As long as the root isn't useless, this should be enough.
-  if (_graph[root].count(root) != 0)
-    _isInfinite = true;
-  else
-    _isInfinite = false;
-  /*// But I doubt that many grammars will include these features, so I'm
+  // But I doubt that many grammars will include these features, so I'm
   // going to skip that step and just look for loops instead.
   for (const auto& kv : _graph)
-    for (const NT& ntto : kv.second)
-      if (ntto == kv.first)
-      {
-        _isInfinite = true;
-        return;
-      }
-  _isInfinite = false;*/
+    if (kv.second.count(kv.first) != 0 && _graph[root].count(kv.first) != 0)
+    {
+      _isInfinite = true;
+      return;
+    }
+  _isInfinite = false;
   return;
 }
 
@@ -180,7 +176,10 @@ bool Grammar::addConst(Expr c, mpq_class prio)
     _constsCache.insert(c);
     Expr constNt = CFGUtils::constsNtName(bind::typeOf(c));
     if (_prods.count(constNt) == 0)
+    {
+      addNt(constNt);
       _prods[constNt].push_back(c);
+    }
     else
     {
       constless cl;
@@ -304,12 +303,18 @@ bool Grammar::delModListener(std::shared_ptr<ModListener> listener)
   return modListeners.erase(listener) != 0;
 }
 
-bool Grammar::satsConstraints(const ParseTree& pt) const
+std::pair<bool,bool> Grammar::satsConstraints(const ParseTree& pt) const
 {
+  bool allprune = true;
   for (const auto& con : constraints)
-    if (!con.doesSat(pt))
-      return false;
-  return true;
+  {
+    bool doessat = con.doesSat(pt);
+    bool canprune = con.any ? doessat : !doessat;
+    if (!doessat)
+      return make_pair(doessat, canprune);
+    allprune &= canprune;
+  }
+  return make_pair(true, allprune);
 }
 
 }

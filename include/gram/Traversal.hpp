@@ -69,6 +69,9 @@ struct TravContext
   // The context of the current position, with holes.
   // E.g. '(+ Start! Start!!)'
   Expr holeyCtx;
+  // The context of the current position, without holes.
+  // E.g. '(+ Start Start)'
+  Expr ctx;
   // K: Hole (e.g. 'Start!'), V: <1st: NT (e.g. 'Start'), 2nd: Curr rec depth>
   unordered_map<Expr, NTDepth> holes;
   // For internal use (allocating new holes)
@@ -81,7 +84,7 @@ typedef function<tribool(const Expr&,const TravContext&,const Expr&,const Expr&,
 tribool DefaultPrunePathFn(const Expr &prod, const TravContext& ctx, const Expr& hole, const Expr& nt, int currdepth)
 { return false; }
 
-typedef function<PruneRetType(const Expr&,const vector<ParseTree>&,const TravContext&,const Expr&,const Expr&,int)> PruneArgFn;
+typedef function<PruneRetType(const Expr&,const vector<ParseTree>&,const TravContext&,const Expr&,const Expr&,int,int)> PruneArgFn;
 
 class Traversal
 {

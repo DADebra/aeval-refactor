@@ -16,7 +16,7 @@ void CFGUtils::noNtDefError(NT nt, NT root)
 {
   outs() << "ERROR: There is no definition for user-defined " <<
     "non-terminal " << nt << " in the CFG for " << root <<
-    ". Might be a quantifier variable used outside of a quantifier? Exiting." << endl;
+    ". Might be a quantifier variable used outside of a quantifier? Finishing." << endl;
   //assert(0);
 }
 
@@ -117,7 +117,7 @@ string CFGUtils::toSyGuS(Grammar &gram, EZ3 &z3)
   vector<NT> nts;
   nts.push_back(gram.root);
   for (const auto &nt : gram.nts)
-    if (nt != gram.root)
+    if (nt != gram.root && gram.prods.at(nt).size() != 0)
       nts.push_back(nt);
 
   // Include quantified variables as uninterpreted non-terminals
@@ -127,15 +127,13 @@ string CFGUtils::toSyGuS(Grammar &gram, EZ3 &z3)
   unordered_set<Expr> constNts, varNts;
   for (const auto &kv : gram.vars)
   {
-    nts.push_back(varsNtName(kv.first));
-    varNts.insert(nts.back());
-    // Note that the sets of analyzed variables (e.g. *_VARS_INC) will be
-    // included as normal non-terminals
+    Expr nt = varsNtName(kv.first);
+    varNts.insert(nt);
   }
   for (const auto &kv : gram.consts)
   {
-    nts.push_back(constsNtName(kv.first));
-    constNts.insert(nts.back());
+    Expr nt = constsNtName(kv.first);
+    constNts.insert(nt);
   }
 
   // Declare non-terminals

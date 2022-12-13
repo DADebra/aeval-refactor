@@ -746,7 +746,7 @@ namespace ufo
   }
 
   template<typename Range> static Expr eliminateQuantifiers(Expr fla, Range& qVars,
-                                       bool doArithm = true, bool doCore = true)
+                                       bool doArithm = true, bool doCore = true, bool doBool = true)
   {
     if (qVars.size() == 0) return fla;
     ExprSet dsjs, newDsjs;
@@ -762,7 +762,7 @@ namespace ufo
     minusSets(hardVars, qVars);
     ExprSet cnjs;
     getConj(fla, cnjs);
-    constantPropagation(hardVars, cnjs, doArithm);
+    constantPropagation(hardVars, cnjs, doArithm, doBool);
     Expr tmp = simpEquivClasses(hardVars, cnjs, fla->getFactory());
     tmp = simpleQE(tmp, qVars);
     if (doCore)

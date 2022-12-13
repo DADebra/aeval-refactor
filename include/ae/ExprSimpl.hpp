@@ -1575,7 +1575,7 @@ namespace ufo
     return false;
   }
 
-  template<typename Range> static void constantPropagationRec(Range& hardVars, ExprSet& cnjs, ExprMap& repls, bool doArithm)
+  template<typename Range> static void constantPropagationRec(Range& hardVars, ExprSet& cnjs, ExprMap& repls, bool doArithm, bool doBool)
   {
     ExprSet toInsert, toInsertHard;
     for (auto it = cnjs.begin(); it != cnjs.end(); )
@@ -1642,7 +1642,7 @@ namespace ufo
 
       for (auto c : splitted)
       {
-        if (isOpX<NEG>(c) && !isBoolConst(c->left()))
+        if (doBool && isOpX<NEG>(c) && !isBoolConst(c->left()))
           c = mkNeg(c->left());
 
         if (doArithm && isOpX<EQ>(c))
@@ -1700,21 +1700,21 @@ namespace ufo
     {
       Expr b = replaceAll(a, repls);
       if (doArithm) b = simplifyArithm(b);
-      b = simplifyBool(b);
+      if (doBool)   b = simplifyBool(b);
       if (!toRestart && a != b) toRestart = true;
       cnjs.insert(b);
     }
     cnjs.insert(toInsertHard.begin(), toInsertHard.end());
 
     if (toRestart)
-      constantPropagationRec(hardVars, cnjs, repls, doArithm);
+      constantPropagationRec(hardVars, cnjs, repls, doArithm, doBool);
   }
 
   // simplification based on boolean replacements
-  template<typename Range> static void constantPropagation(Range& hardVars, ExprSet& cnjs, bool doArithm = true)
+  template<typename Range> static void constantPropagation(Range& hardVars, ExprSet& cnjs, bool doArithm = true, bool doBool = true)
   {
     ExprMap repls;
-    constantPropagationRec(hardVars, cnjs, repls, doArithm);
+    constantPropagationRec(hardVars, cnjs, repls, doArithm, doBool);
   }
 
   // simplification based on equivalence classes
