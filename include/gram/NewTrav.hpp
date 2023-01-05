@@ -172,17 +172,19 @@ class NewTrav : public Traversal
 
   // True: Should ignore production, False: Should definitely not ignore prod,
   // Indet: Unknown
-  inline tribool prunePath(const Path &path, const Expr &nt, int depth,
-    const Expr &prod)
+  inline tribool prunePath(Path path, const Expr &nt, int depth,
+    const Expr &prod, Path nextpath)
   {
-    auto itr = _prunePathCache.find(path);
+    auto itr = _prunePathCache.find(nextpath);
     if (itr != _prunePathCache.end())
       return itr->second;
     assert(pathToCtx.count(path) != 0);
+    assert(pathToCtx.count(nextpath) != 0);
     const auto &ctx_hole = pathToCtx.at(path);
-    tribool ret = prunePathFn(prod, *ctx_hole.first, ctx_hole.second, nt, depth);
+    const auto &checkctx = pathToCtx.at(nextpath);
+    tribool ret = prunePathFn(prod, *ctx_hole.first, ctx_hole.second, nt, depth, *checkctx.first);
     if (!indeterminate(ret))
-      _prunePathCache[path] = bool(ret);
+      _prunePathCache[nextpath] = bool(ret);
     return ret;
   }
 
@@ -598,7 +600,7 @@ class NewTrav : public Traversal
           findNewCtx(path,nextpath,newdepth,prods[constpos.pos()],0);
 
         if (params.prune)
-          if (prunePath(nextpath, root, currdepth, prods[constpos.pos()]))
+          if (prunePath(path, root, currdepth, prods[constpos.pos()], nextpath))
           {
             travpos.childpop();
             pathToCtx.erase(nextpath);

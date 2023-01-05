@@ -73,8 +73,14 @@ class Grammar
   const decltype(_priomap)& priomap = _priomap;
   const decltype(_vars)& vars = _vars;
   const decltype(_consts)& consts = _consts;
-  const decltype(_graph)& graph = _graph;
   const decltype(_uniqueVars)& uniqueVars = _uniqueVars;
+
+  const decltype(_graph)& graph()
+  {
+    if (graphIsOld)
+      generateGraph();
+    return _graph;
+  }
 
   /*** MODIFIERS ***/
 
@@ -171,7 +177,7 @@ class Grammar
     _varsCache(g._varsCache),_constsCache(g._constsCache),
     _uniqueVars(g._uniqueVars),_strcache(g._strcache),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
-    vars(_vars),consts(_consts),priomap(_priomap),graph(_graph),
+    vars(_vars),consts(_consts),priomap(_priomap),
     uniqueVars(_uniqueVars)
   {
     for (const Constraint& c : g._constraints)
@@ -184,7 +190,7 @@ class Grammar
     _varsCache(std::move(g._varsCache)),_constsCache(std::move(g._constsCache)),
     _uniqueVars(std::move(g._uniqueVars)),_strcache(std::move(g._strcache)),
     root(_root),nts(_nts),prods(_prods),constraints(_constraints),
-    vars(_vars),consts(_consts),priomap(_priomap),graph(_graph),
+    vars(_vars),consts(_consts),priomap(_priomap),
     uniqueVars(_uniqueVars)
   {
     for (const Constraint& c : g._constraints)

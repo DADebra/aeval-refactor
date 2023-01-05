@@ -80,8 +80,8 @@ struct TravContext
 };
 
 // Paramteter is post-replacement
-typedef function<tribool(const Expr&,const TravContext&,const Expr&,const Expr&,int)> PrunePathFn;
-tribool DefaultPrunePathFn(const Expr &prod, const TravContext& ctx, const Expr& hole, const Expr& nt, int currdepth)
+typedef function<tribool(const Expr&,const TravContext&,const Expr&,const Expr&,int,const TravContext&)> PrunePathFn;
+tribool DefaultPrunePathFn(const Expr &prod, const TravContext& ctx, const Expr& hole, const Expr& nt, int currdepth, const TravContext& checkctx)
 { return false; }
 
 typedef function<PruneRetType(const Expr&,const vector<ParseTree>&,const TravContext&,const Expr&,const Expr&,int,int)> PruneArgFn;
