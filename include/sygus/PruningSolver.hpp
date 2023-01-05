@@ -24,17 +24,16 @@ class PruningSolver : public BaseSolver
   // K: input   V: Summary
   typedef vector<std::pair<Expr,std::shared_ptr<NTSummary>>> NTSummaries;
 
-  enum ProblemClass { STREN, NEWIN, REFINE };
   struct Problem
   {
-    int eqc;
-    int depth;
     Expr in;
     Expr cause;
+    ExprUMap assms;
 
-    Problem(int _eqc, int _depth, Expr _in, Expr _cause) :
-      eqc(_eqc), depth(_depth), in(_in), cause(_cause) {}
+    Problem(Expr _in, Expr _cause, const ExprUMap &_h) :
+      in(_in), cause(_cause), assms(_h) {}
   };
+  typedef std::pair<int,int> EqcDepth;
 
   Expr ezero = mkTerm(mpz_class(0), efac), eone = mkTerm(mpz_class(1), efac),
        enegone = mkTerm(mpz_class(-1), efac),
@@ -50,8 +49,10 @@ class PruningSolver : public BaseSolver
     btnt_to_eqc; // K: summ, V: { K: btgram.NT, V: <NT,depth,eq_num> }
   unordered_map<const NTSummary*,ZSolver<EZ3>> btsolver;
   unordered_map<const NTSummary*,Expr> summ_to_in; // K: summ, V: in
-  unordered_map<ProblemClass,vector<Problem>> btprobs;
-  unordered_map<Expr,ExprUSet> needrefine; // K: btnt, V: contexts
+  unordered_map<EqcDepth,vector<Problem>> refine_probs, newin_probs;
+  // K: <btnt, ctx>, V: {prod}
+  unordered_map<std::pair<Expr,WithExtra<Expr,ExprUMap,false>>,ExprUSet>
+    needrefine;
 
   ZSolver<EZ3> wsolver;
 
@@ -397,7 +398,7 @@ class PruningSolver : public BaseSolver
     btsolver.emplace(thissumm, z3);
     btsolver.at(thissumm).assertExpr(root_spec);
     auto btppfn = [&,thissumm,gnt] (const Expr &prod, const TravContext &ctx,
-      const Expr &hole, const Expr &btnt, int depth) -> tribool {
+      const Expr &hole, const Expr &btnt, int depth, const TravContext &checkctx) -> tribool {
       auto &thisntmap = btnt_to_summ[thissumm];
       auto &thissolver = btsolver.at(thissumm);
       if (thisntmap.count(btnt) == 0)
@@ -405,29 +406,34 @@ class PruningSolver : public BaseSolver
       //checkconjs.clear();
       /*faArgs.clear();
       faArgs.push_back(gram.root->left());*/
+      ExprUMap assms;
       thissolver.push();
       thissolver.assertExpr(summ_to_in[thissumm]);
-      for (const auto& hole_nt : ctx.holes)
+      for (const auto& hole_nt : checkctx.holes)
       {
+        if (hole_nt.first == hole)
+          continue;
         //faArgs.push_back(hole_nt.first->left());
-        /*checkconjs.push_back(*/thissolver.assertExpr(replaceAll(
-          thisntmap[hole_nt.second.nt],
-          gnt, hole_nt.first));
+        Expr assm = replaceAll(thisntmap[hole_nt.second.nt],
+          gnt, hole_nt.first);
+        assms[hole_nt.first] = assm;
+        /*checkconjs.push_back(*/thissolver.assertExpr(assm);
         //thissolver.assertExpr(checkconjs.back());
       }
       /*thissolver.push();
       thissolver.assertExpr(root_spec);*/
-      /*checkconjs.push_back(*/thissolver.assertExpr(mk<EQ>(gnt, ctx.holeyCtx));
+      Expr eqctx = mk<EQ>(gnt, checkctx.holeyCtx);
+      /*checkconjs.push_back(*/thissolver.assertExpr(eqctx);
       //thissolver.assertExpr(checkconjs.back());
       tribool ret = thissolver.solve();
       thissolver.pop();
       if (!ret)
       {
-        if (needrefine.count(btnt) != 0)
-          needrefine[btnt].insert(ctx.ctx);
+        auto refret = needrefine[make_pair(btnt, WithExtra<Expr,ExprUMap,false>(ctx.holeyCtx, assms))]
+          .emplace(prod);
+        assert(refret.second);
         return true;
       }
-      needrefine.erase(btnt);
       // I'm fairly confident it's impossible to need to strengthen here
       /*auto eqc_pair = btnt_to_eqc.at(thissumm).at(nt);
       thissolver.pop();
@@ -500,6 +506,26 @@ class PruningSolver : public BaseSolver
     return bool(u.isSat(strenasserts));
   }
 
+  ExprVector stFaArgs; ExprVector stCheckConjs;
+  inline bool canStrengthenAssm(Expr in, Expr summ, Expr nt,
+    const ExprUMap& assms)
+  {
+    stFaArgs.clear();
+    stFaArgs.reserve(assms.size() + 1);
+    stCheckConjs.clear();
+    stCheckConjs.reserve(assms.size() + 1);
+    for (const auto& nt_as : assms)
+    {
+      stFaArgs.push_back(nt_as.first);
+      stCheckConjs.push_back(nt_as.second);
+    }
+    stFaArgs.push_back(nt);
+    stCheckConjs.push_back(root_spec);
+    stFaArgs.push_back(mk<NEG>(conjoin(stCheckConjs, nt->efac())));
+    Expr tocheck = mknary<FORALL>(stFaArgs);
+    return bool(u.isSat(in, tocheck));
+  }
+
   inline Expr strengthen(Expr in, Expr summ, Expr nt, const ExprVector& vars)
   {
     if (!canStrengthen(in, summ, nt))
@@ -524,6 +550,17 @@ class PruningSolver : public BaseSolver
   {
     unrealasserts[0] = in; unrealasserts[1] = summ;
     return bool(!u.isSat(unrealasserts));
+  }
+
+  ExprVector unrealassertsAs;
+  inline bool isUnrealAssm(Expr in, Expr summ, const ExprUMap& assms)
+  {
+    unrealassertsAs.resize(1);
+    unrealassertsAs.reserve(assms.size() + 2);
+    for (const auto &nt_as : assms)
+      unrealassertsAs.push_back(nt_as.second);
+    unrealassertsAs.push_back(in);
+    return bool(!u.isSat(unrealassertsAs));
   }
 
   public:
@@ -558,7 +595,7 @@ class PruningSolver : public BaseSolver
       _errmsg = "Pruning solver currently doesn't work without a grammar given";
       return indeterminate;
     }
-    if (gram.nts.size() > 1)
+    if (gram.graph().at(gram.root).size() > 1)
     {
       _errmsg = "Pruning solver currently doesn't work for grammars with more than one non-terminal";
       return indeterminate;
@@ -589,6 +626,7 @@ class PruningSolver : public BaseSolver
 
     strendisjs[0] = root_notspec;
     unrealasserts[2] = root_spec;
+    unrealassertsAs.push_back(root_spec);
 
     TravParams tparams; tparams.SetDefaults();
     tparams.method = TPMethod::NEWTRAV; tparams.type = TPType::STRIPED;
@@ -781,28 +819,32 @@ class PruningSolver : public BaseSolver
         if (params.debug > 1)
           outs() << "    Backtracking on Class " << i << ":" << endl;
 
-        btprobs.clear();
+        refine_probs.clear();
+        newin_probs.clear();
         ExprUSet donesumms;
-        for (int i = 0; i < summ.size(); ++i)
+        int oldsummnum = summ.size();
+
+        for (int j = 0; j < oldsummnum; ++j)
         {
-          const auto& i_summ = summ[i];
+          const auto& i_summ = summ[j];
           if (i_summ.second->count(thiskey) == 0)
             continue; // Can happen when we add a new input in a previous eqc
           if (!donesumms.insert(i_summ.second->at(thiskey)[i]).second)
             continue; // An eqc can be the same across several inputs
 
           Expr in = i_summ.first;
+          Expr thiseqc = mkeqc(i, maxdepth, gram.root->left()->last());
           if (params.debug > 1)
-            outs() << "      for input " << i << ":" << endl;
+            outs() << "      for input " << j << ":" << endl;
 
           tparams.maxrecdepth = maxdepth;
           Grammar &ig = btgram.at(i_summ.second.get());
-          ig.setRoot(mkeqc(i, maxdepth, gram.root->left()->last()));
+          ig.setRoot(thiseqc);
           needrefine.clear();
-          for (const Expr &nt : ig.nts)
+          /*for (const Expr &nt : ig.nts)
             if (ig.pathExists(ig.root, nt))
               needrefine.emplace(nt, ExprUSet());
-          needrefine.emplace(ig.root, ExprUSet());
+          needrefine.emplace(ig.root, ExprUSet());*/
 
           /*if (ig.prods.count(gram.root) != 0)
           {
@@ -837,62 +879,73 @@ class PruningSolver : public BaseSolver
                     maxdepth << endl;
                 return true;
               }
-              btprobs[NEWIN].emplace_back(-1, -1, Expr(), ret);
+              if (isUnreal(in, mk<EQ>(gram.root, ret)))
+                refine_probs[make_pair(i,maxdepth)].emplace_back(Expr(), ret, ExprUMap());
+              else
+                newin_probs[make_pair(i,maxdepth)].emplace_back(Expr(), ret, ExprUMap());
             }
           }
 
-          for (const auto &btnt_ctxs : needrefine)
+          for (const auto &btnt_prods : needrefine)
           {
-            auto eqc_pair = btnt_to_eqc.at(i_summ.second.get()).at(btnt_ctxs.first);
-            for (const Expr &ctx : btnt_ctxs.second)
+            const Expr& btnt = btnt_prods.first.first;
+            const auto& ctx = btnt_prods.first.second;
+            auto nt_eqc = btnt_to_eqc.at(i_summ.second.get()).at(btnt);
+            /*for (const auto &ctx_holes : btnt_ctxs.second)
               btprobs[REFINE].emplace_back(eqc_pair.second,
-                eqc_pair.first.second, in, ctx);
+                eqc_pair.first.second, in, ctx_holes.obj,
+                std::move(ctx_holes.extra));*/
+            if (btnt_prods.second.size() == ig.prods.at(btnt).size())
+              refine_probs[make_pair(nt_eqc.second, nt_eqc.first.second)]
+                .emplace_back(in, ctx.obj, ctx.extra);
           }
         }
 
-        if (params.debug > 1 && btprobs.size() != 0)
+        if (params.debug > 1 && (refine_probs.size() != 0 || newin_probs.size() != 0))
         {
           outs() << "    Problems found:\n";
-          outs() << "      NEWIN: " << btprobs[NEWIN].size() << "\n";
-          outs() << "      REFINE: " << btprobs[REFINE].size() << endl;
-        }
-
-        int oldsummnum = summ.size();
-
-        for (const Problem &prob : btprobs[NEWIN])
-        {
-          bool probgood = false;
-          int strenin = -1;
-          Expr out = mk<EQ>(gram.root, prob.cause);
-          for (int j = oldsummnum; j < summ.size(); ++j)
-          {
-            if (isUnreal(summ[j].first, out))
-            { probgood = true; break; }
-            else if (canStrengthen(summ[j].first, out, gram.root))
-            { strenin = j; break; }
-          }
-          if (probgood)
-            continue;
-          Expr newin;
-          if (strenin == -1)
-          {
-            newin = strengthen(eallpositive, out, gram.root, funcvars);
-            if (!newin)
-            {
-              assert(0 && "Can't handle non-positive NEWIN");
-            }
-            addInput(newin, gram.root, funcvars);
-          }
+          if (newin_probs.size() > 0)
+            outs() << "      NEWIN: " << newin_probs.begin()->second.size() << "\n";
           else
-          {
-            newin = strengthen(summ[strenin].first,out,gram.root,funcvars);
-            assert(newin);
-            summ[strenin].first = newin;
-            summ_to_in[summ[strenin].second.get()] = newin;
-          }
-          backtrack = true;
+            outs() << "      NEWIN: 0\n";
+          outs() << "      REFINE: " << refine_probs.size() << endl;
         }
-        if (btprobs[REFINE].size() != 0)
+
+        for (const auto& eqc_probs : newin_probs)
+          for (const Problem &prob : eqc_probs.second)
+          {
+            bool probgood = false;
+            int strenin = -1;
+            Expr out = mk<EQ>(gram.root, prob.cause);
+            for (int j = oldsummnum; j < summ.size(); ++j)
+            {
+              if (isUnreal(summ[j].first, out))
+              { probgood = true; break; }
+              else if (canStrengthen(summ[j].first, out, gram.root))
+              { strenin = j; break; }
+            }
+            if (probgood)
+              continue;
+            Expr newin;
+            if (strenin == -1)
+            {
+              newin = strengthen(eallpositive, out, gram.root, funcvars);
+              if (!newin)
+              {
+                assert(0 && "Can't handle non-positive NEWIN");
+              }
+              addInput(newin, gram.root, funcvars);
+            }
+            else
+            {
+              newin = strengthen(summ[strenin].first,out,gram.root,funcvars);
+              assert(newin);
+              summ[strenin].first = newin;
+              summ_to_in[summ[strenin].second.get()] = newin;
+            }
+            backtrack = true;
+          }
+        if (!backtrack && refine_probs.size() != 0)
           assert(0 && "Refining summaries unimplemented");
 
         /*for (int j = 0; j < summ.size(); ++j)
