@@ -152,7 +152,7 @@ string CFGUtils::toSyGuS(Grammar &gram, EZ3 &z3)
     out << "    (" << nt << " " << z3.toSmtLib(typeOf(nt)) << " ";
     out << "( "; // Start of productions
     int strpos;
-    if (constNts.count(nt) != 0)
+    /*if (constNts.count(nt) != 0)
     {
       // I assume (Constant Int) refers to all valid integers
       out << "(Constant " << z3.toSmtLib(typeOf(nt)) << ") ";
@@ -161,7 +161,7 @@ string CFGUtils::toSyGuS(Grammar &gram, EZ3 &z3)
     {
       out << "(Variable " << z3.toSmtLib(typeOf(nt)) << ") ";
     }
-    else
+    else*/
     {
       for (Expr prod : prods)
       {

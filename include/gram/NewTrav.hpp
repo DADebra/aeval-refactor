@@ -43,14 +43,36 @@ class NewTrav : public Traversal
   int currmaxdepth = -1;
 
   // I'm not sure why, but using the Path as the key here won't work
-  unordered_map<const TravPos*,ParseTree>
+  static unordered_map<const TravPos*,ParseTree>
     gettravCache;
-  unordered_map<std::tuple<Expr,int,Expr,Path,const TravParams*>,ParseTree>
+  static unordered_map<std::tuple<Expr,int,Expr,Path,const TravParams*>,ParseTree>
     getfirstCache;
 
-  unordered_map<const TravPos*, unordered_set<Expr>> oldCands;
+  static unordered_map<const TravPos*, unordered_set<Expr>> oldCands;
   // True if all of the given NTs productions are unique
   unordered_map<NTDepth,tribool> _isUnique;
+
+  DynSizeMap dynSize;
+  // Pos' in here are allowed to update dynSize, to avoid those in a queue pos
+  static unordered_set<const TravPos*> travSize;
+  DynUsefulMap dynUseful;
+
+  /*inline void updateSize(const TravPos& travpos, Path path, const ExprVector& prods)
+  {
+    auto ourSizeitr = travSize.find(&travpos);
+    if (ourSizeitr == travSize.end())
+      return;
+    auto& ourSize = ourSizeitr->second;
+    for (int i = 0; i < prods.size(); ++i)
+    {
+      auto& imap = dynSize[prods[i]];
+      auto isizeitr = imap.find(path);
+      if (isizeitr != imap.end())
+        assert(isizeitr->second == ourSize[i]);
+      else
+        imap[path] = ourSize[i];
+    }
+  }*/
 
   inline int oldCandsSize(const TravPos* pos)
   {
@@ -310,7 +332,7 @@ class NewTrav : public Traversal
       //   code. The rest will be pruned later.
       TravPos firstpos;
       ParseTree ret(std::move(newtrav(root, firstpos, currdepth, qvars,
-        currnt, path, oldparams, path, false)));
+        currnt, path, oldparams, path, false, true)));
       if (ret) ptshoulddefer(ret, needdefer);
       if (!nocache) getfirstCache[firstkey] = ret;
       return std::move(ret);
@@ -446,7 +468,7 @@ class NewTrav : public Traversal
 
   ParseTree newtrav(const Expr& root, TravPos& travpos, int currdepth,
     std::shared_ptr<ExprUSet> qvars, Expr currnt, Path path,
-    const TravParams& oldparams, Path mu, bool ro)
+    const TravParams& oldparams, Path mu, bool ro, bool gf)
   {
     // mu: Only increment positions below this path
     // ro: Read-only, don't increment positions
@@ -508,26 +530,31 @@ class NewTrav : public Traversal
         return NULL;
       }
 
+      bool wasnew = (bool)params.enumnts && travpos.pos() == (unsigned short)-1;
       if (travpos.isnew())
       {
         assert(!ro);
         // First-time initialize
         travpos = TravPos(0, prods.size());
-        oldCands.erase(&travpos); // Our address might have been used already
-
         if (params.enumnts)
           return ParseTree(root);
 
-        if (params.type != TPType::STRIPED)
-        {
-          if (params.order == TPOrder::FOR)
-            travpos.nextpos();
-          else if (params.order == TPOrder::REV)
-            travpos.prevpos();
-        }
+        wasnew = true;
       }
 
-      if (!ro && (params.type == TPType::STRIPED || (params.enumnts && travpos.pos() == (unsigned short)-1)))
+      if (!ro && !gf && wasnew)
+      {
+        assert(oldCands.count(&travpos) == 0);
+        assert(travSize.count(&travpos) == 0);
+        //travSize[&travpos].resize(prods.size());
+        if (dynSize.count(prods[0])==0 || dynSize.at(prods[0]).count(path)==0)
+          travSize.insert(&travpos);
+        /*oldCands.erase(&travpos);
+        auto& ourSize = travSize[&travpos];
+        ourSize.clear(); ourSize.resize(prods.size());*/
+      }
+
+      if (!ro && (params.type == TPType::STRIPED || wasnew))
       {
         if (params.order == TPOrder::FOR)
           travpos.nextpos();
@@ -579,7 +606,8 @@ class NewTrav : public Traversal
                 checkprio = false;
               else
               {
-                oldCands.erase(&travpos);
+                /*if (!gf)
+                  updateSize(travpos, path, prods);*/
                 pathToCtx.erase(path);
                 travpos.makenull();
                 return NULL;
@@ -610,7 +638,7 @@ class NewTrav : public Traversal
         ret = ParseTree(root, std::move(newtrav(prods[travpos.pos()],
           alwaysro ? (TravPos&)constpos.childat(travpos.pos()) :
           travpos.childat(travpos.pos()), newdepth, qvars, currnt,
-          nextpath, nextparams, mu, ro)), true);
+          nextpath, nextparams, mu, ro, gf)), true);
         if (ntdeferror)
           return NULL;
 
@@ -619,7 +647,7 @@ class NewTrav : public Traversal
           continue;
 
         bool docontinue = false;
-        if (params.simplify && (prods.size() != 1 || !gram.isNt(prods[0])) &&
+        if (params.simplify && !gf && (prods.size() != 1 || !gram.isNt(prods[0])) &&
             !bool(isUnique(root, currdepth)))
           if (!oldCands[&travpos].insert(ret.toSortedExpr()).second)
           {
@@ -632,6 +660,14 @@ class NewTrav : public Traversal
 
         if (!ro)
         {
+          if (!gf)
+          {
+            /*auto sizeitr = travSize.find(&travpos);
+            if (sizeitr != travSize.end())
+              sizeitr->second[travpos.pos()]++;*/
+            if (travSize.count(&travpos) != 0)
+              dynSize[prods[travpos.pos()]][path]++;
+          }
           // Check to see if we're done.
           startpos = travpos.pos();
           CircularInt checkpos = travpos;
@@ -654,7 +690,8 @@ class NewTrav : public Traversal
 
           if (alldone || recdone)
           {
-            oldCands.erase(&travpos);
+            /*if (!gf)
+              updateSize(travpos, path, prods);*/
             pathToCtx.erase(path);
             travpos.makedone();
             break;
@@ -666,6 +703,7 @@ class NewTrav : public Traversal
         break;
       }
 
+      if (!gf) dynUseful[prods[travpos.pos()]].insert(path);
       assert(ret);
       bool unused = false;
       ParseTree getpt(std::move(gettrav(root, constpos, currdepth,
@@ -831,12 +869,12 @@ class NewTrav : public Traversal
         ParseTree ret(NULL);
         ret = std::move(newtrav(root, alwaysro ?
           (TravPos&)constpos.queueat(travpos.pos()) : travpos.queueat(travpos.pos()),
-          currdepth, localqvars, currnt, np(path,Q,travpos.pos()), oldparams, mu, ro));
+          currdepth, localqvars, currnt, np(path,Q,travpos.pos()), oldparams, mu, ro, gf));
         if (ntdeferror)
           return NULL;
         if (!ret)
           return std::move(newtrav(root, travpos, currdepth,
-            qvars, currnt, path, oldparams, mu, ro));
+            qvars, currnt, path, oldparams, mu, ro, gf));
 
         if (!ro)
         {
@@ -888,7 +926,7 @@ class NewTrav : public Traversal
           if (constposchildat(i).isnew())
           {
             newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
-              localqvars, currnt, nextpath, nextparams, mu, ro);
+              localqvars, currnt, nextpath, nextparams, mu, ro, gf);
             if (ntdeferror)
               return NULL;
           }
@@ -911,7 +949,7 @@ class NewTrav : public Traversal
                 travposchildat(i) = TravPos();
               newexprat(i) = newtrav(rootarg(i), travposchildat(i),
                 currdepth, localqvars, currnt, np(path,C,dind(i)),
-                nextparams, mu, ro);
+                nextparams, mu, ro, gf);
             }*/
           }
         }
@@ -920,7 +958,7 @@ class NewTrav : public Traversal
           if (!ro) assert(!constposchildat(i).isdone());
 
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
-            localqvars, currnt, nextpath, nextparams, mu, ro);
+            localqvars, currnt, nextpath, nextparams, mu, ro, gf);
           if (ntdeferror)
             return NULL;
 
@@ -942,7 +980,7 @@ class NewTrav : public Traversal
               if (params.prune || pruneArgFn)
                 findNewCtx(path,np(childpath,C,dind(c)),currdepth,NULL,dind(c));
               newtrav(rootarg(c), childpos->childat(dind(c)), currdepth,
-                localqvars, currnt, np(childpath,C,dind(c)),nextparams,mu,ro);
+                localqvars, currnt, np(childpath,C,dind(c)),nextparams,mu,ro,gf);
               if (ntdeferror)
                 return NULL;
             }
@@ -967,7 +1005,7 @@ class NewTrav : public Traversal
       for (const auto& p : newexpr)
         if (!p)
           return std::move(newtrav(root, travpos, currdepth,
-            qvars, currnt, path, oldparams, mu, ro));
+            qvars, currnt, path, oldparams, mu, ro, gf));
 
       if (params.simplify)
       {
@@ -997,10 +1035,7 @@ class NewTrav : public Traversal
               // This child is useless, so just set it as done so we skip
               // over it.
               if (dind(pi) >= constpos.childmin())
-              {
                 travpos.childat(pi).makedone();
-                gettravCache.erase(&travpos.childat(pi));
-              }
             }
           }
           // Otherwise, no more to do, just use the new candidate
@@ -1050,7 +1085,7 @@ class NewTrav : public Traversal
           if (params.prune || pruneArgFn)
             findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newexprat(i) = newtrav(rootarg(i), travposchildat(i), currdepth,
-            localqvars, currnt, nextpath, nextparams, mu, ro);
+            localqvars, currnt, nextpath, nextparams, mu, ro, gf);
           if (ntdeferror)
             return NULL;
           if (!newexprat(i) && !wasdone)
@@ -1084,7 +1119,7 @@ class NewTrav : public Traversal
           if (params.prune || pruneArgFn)
             findNewCtx(path,nextpath,currdepth,NULL,dind(i));
           newtrav(rootarg(i), travposchildat(i), currdepth, localqvars,
-            currnt, nextpath, nextparams, mu, ro);
+            currnt, nextpath, nextparams, mu, ro, gf);
           if (ntdeferror)
             return NULL;
         }
@@ -1096,13 +1131,13 @@ class NewTrav : public Traversal
           if (constposchildat(i).isdone())
             travposchildat(i) = TravPos();
           newexprat(i) = newtrav(rootarg(i), travposchildat(i),
-            currdepth, localqvars, currnt, np(path,C,dind(i)), nextparams, mu, ro);
+            currdepth, localqvars, currnt, np(path,C,dind(i)), nextparams, mu, ro, gf);
         }*/
       }
       for (const auto& p : newexpr)
         if (!p)
           return std::move(newtrav(root, travpos, currdepth,
-            qvars, currnt, path, oldparams, mu, ro));
+            qvars, currnt, path, oldparams, mu, ro, gf));
 
       if (!ro)
       {
@@ -1129,7 +1164,7 @@ class NewTrav : public Traversal
         return NULL;
       }
       return std::move(newtrav(root, travpos, currdepth,
-        qvars, currnt, path, oldparams, mu, ro));
+        qvars, currnt, path, oldparams, mu, ro, gf));
     }
     if (!ret)
       ret = ParseTree(root, std::move(newexpr), false);
@@ -1210,6 +1245,13 @@ class NewTrav : public Traversal
     nosimplparams.goverride = true;
 
     makeRootCtx();
+
+    oldCands.clear();
+    travSize.clear();
+    gettravCache.clear();
+    getfirstCache.clear();
+
+    TravPos::onDel = NewTrav::onTravPosDel;
   }
 
   virtual ~NewTrav()
@@ -1227,6 +1269,16 @@ class NewTrav : public Traversal
   {
     if (grammodified) handleGramMod();
     return rootpos.isdone();
+  }
+
+  virtual const DynSizeMap& DynamicSize()
+  {
+    return dynSize;
+  }
+
+  virtual const DynUsefulMap& DynamicUseful()
+  {
+    return dynUseful;
   }
 
   virtual int GetCurrDepth()
@@ -1261,6 +1313,7 @@ class NewTrav : public Traversal
       pathToCtx.clear();
       _prunePathCache.clear();
       oldCands.clear();
+      travSize.clear();
       makeRootCtx(); // Will have been deleted when last depth finished
       rootpos = TravPos();
       gettravCache.clear();
@@ -1270,7 +1323,7 @@ class NewTrav : public Traversal
       currmaxdepth++;
     }
     uniqvars.clear();
-    lastcand = std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root, rootpath, gparams, rootpath, false));
+    lastcand = std::move(newtrav(gram.root, rootpos, 0, NULL, gram.root, rootpath, gparams, rootpath, false, false));
     lastcand.fixchildren();
     bool unused = false;
     if (lastcand)
@@ -1280,9 +1333,26 @@ class NewTrav : public Traversal
 
   virtual void Finish(bool success)
   {
+    oldCands.clear();
+    travSize.clear();
+    gettravCache.clear();
+    getfirstCache.clear();
+
     return;
   }
+
+  static void onTravPosDel(const TravPos* travpos)
+  {
+    if (gettravCache.size()) gettravCache.erase(travpos);
+    if (oldCands.size()) oldCands.erase(travpos);
+    if (travSize.size()) travSize.erase(travpos);
+  }
 };
+
+decltype(NewTrav::gettravCache) NewTrav::gettravCache;
+decltype(NewTrav::getfirstCache) NewTrav::getfirstCache;
+decltype(NewTrav::oldCands) NewTrav::oldCands;
+decltype(NewTrav::travSize) NewTrav::travSize;
 
 }
 #endif

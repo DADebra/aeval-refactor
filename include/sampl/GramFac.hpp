@@ -260,17 +260,33 @@ namespace ufo
         {
           Expr body = isOpX<AND>(chc.origbody) ?
             chc.origbody : mk<AND>(chc.origbody);
+          body = eliminateQuantifiers(body, chc.dstVars, false, false, false);
           for (const Expr& conj : *body)
           {
             const auto dstbeg = chc.dstVars.begin(),
                        dstend = chc.dstVars.end();
             filter(conj, [&](const Expr& e){
               return !isLit(e) && !IsConst()(e) && !isOpX<FDECL>(e) &&
-                !(isOpX<EQ>(e) && find(dstbeg, dstend, e->left()) != dstend) &&
+                //!(isOpX<EQ>(e) && find(dstbeg, dstend, e->left()) != dstend) &&
+                //!(isOpX<EQ>(e) && find(dstbeg, dstend, e->right()) != dstend) &&
                 isOpX<BOOL_TY>(typeOf(e)); },
               std::inserter(bexprs, bexprs.end()));
           }
+          for (auto itr = bexprs.begin(); itr != bexprs.end();)
+          {
+            bool found = false;
+            for (const Expr& dvar : chc.dstVars)
+              if (contains(*itr, dvar))
+              {
+                itr = bexprs.erase(itr);
+                found = true;
+                break;
+              }
+            if (found) continue;
+            ++itr;
+          }
         }
+
     }
 
     public:

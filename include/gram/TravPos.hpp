@@ -182,6 +182,7 @@ class TravPos
   }
 
   public:
+  static void (*onDel)(const TravPos*);
 
   explicit TravPos(bool _done = false) : state()
   {
@@ -247,7 +248,12 @@ class TravPos
   }
 
   ~TravPos()
-  { emptychildren(); emptyqueue(); }
+  {
+    if (onDel)
+      onDel(this);
+    emptychildren();
+    emptyqueue();
+  }
 
   TravPos& operator=(const TravPos& copy)
   {
@@ -484,6 +490,7 @@ class TravPos
 
 TravPos TravPos::uninitialized_pos;
 TravPos TravPos::done_pos(true);
+void (*TravPos::onDel)(const TravPos*)(NULL);
 
 }
 #endif

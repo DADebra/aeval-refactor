@@ -93,7 +93,7 @@ namespace ufo
   }
 
     // rewrites v1 to contain v1 \ v2
-  template<typename Range> static void minusSets(ExprSet& v1, Range& v2){
+  template<typename Range> static void minusSets(ExprSet& v1, const Range& v2){
     for (auto it = v1.begin(); it != v1.end(); ){
       if (find(v2.begin(), v2.end(), *it) != v2.end())
         it = v1.erase(it);
@@ -2879,10 +2879,36 @@ namespace ufo
     else return mknary<EXISTS>(args);
   }
 
+  static void findFreeVars (Expr def, ExprSet &freevars, std::shared_ptr<ExprSet> qvars = NULL)
+  {
+    if (isOpX<FDECL>(def))
+      return;
+    if (isOpX<FAPP>(def) && def->arity() == 1 && qvars->count(def->first()) == 0)
+    {
+      freevars.insert(def);
+      return;
+    }
+    if (!qvars)
+      qvars.reset(new ExprSet());
+    ExprVector rmvars;
+    if (isOpX<EXISTS>(def) || isOpX<FORALL>(def))
+    {
+      for (int i = 0; i < def->arity() - 1; ++i)
+        if (qvars->insert(def->arg(i)).second)
+          rmvars.push_back(def->arg(i));
+      findFreeVars(def->last(), freevars, qvars);
+      for (const Expr& v : rmvars)
+        qvars->erase(v);
+      return;
+    }
+    for (int i = 0; i < def->arity(); ++i)
+      findFreeVars(def->arg(i), freevars, qvars);
+  }
+
   static Expr mkQFla (Expr def, bool forall = false)
   {
     ExprSet vars;
-    filter (def, IsConst (), inserter(vars, vars.begin()));
+    findFreeVars(def, vars);
     return mkQFla(def, vars, forall);
   }
 

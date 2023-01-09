@@ -86,6 +86,10 @@ tribool DefaultPrunePathFn(const Expr &prod, const TravContext& ctx, const Expr&
 
 typedef function<PruneRetType(const Expr&,const vector<ParseTree>&,const TravContext&,const Expr&,const Expr&,int,int)> PruneArgFn;
 
+typedef unordered_map<Expr, unordered_map<Path,mpz_class>> DynSizeMap;
+
+typedef unordered_map<Expr, unordered_set<Path>> DynUsefulMap;
+
 class Traversal
 {
   public:
@@ -98,6 +102,14 @@ class Traversal
   // Returns true if all candidates at the current recursion depth.
   // have been enumerated.
   virtual bool IsDepthDone() = 0;
+
+  // Get the current dynamic size information.
+  // <K: Prod, V: <K: Path, V: Size (MPZ)>>
+  virtual const DynSizeMap& DynamicSize() = 0;
+
+  // Get the current dynamic usefulness (reachability) information.
+  // <K: Prod, V: Useful?>
+  virtual const DynUsefulMap& DynamicUseful() = 0;
 
   // Get the recursion depth currently used as maximum.
   virtual int GetCurrDepth() = 0;

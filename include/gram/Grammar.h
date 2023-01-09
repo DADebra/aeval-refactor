@@ -75,12 +75,11 @@ class Grammar
   const decltype(_consts)& consts = _consts;
   const decltype(_uniqueVars)& uniqueVars = _uniqueVars;
 
+  const decltype(_graph)& graph() const
+  { assert(!graphIsOld); return _graph; }
+
   const decltype(_graph)& graph()
-  {
-    if (graphIsOld)
-      generateGraph();
-    return _graph;
-  }
+  { if(graphIsOld) generateGraph(); return _graph; }
 
   /*** MODIFIERS ***/
 

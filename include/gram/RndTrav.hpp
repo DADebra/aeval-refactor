@@ -33,6 +33,9 @@ class RndTrav : public Traversal
   // K: NT, V: Distribution of priorities, same order as prods[NT]
   unordered_map<NT, discrete_distribution<int>> distmap;
 
+  DynSizeMap dynSize;
+  DynUsefulMap dynUseful;
+
   void regendistmap()
   {
     distmap.clear();
@@ -196,6 +199,10 @@ class RndTrav : public Traversal
   virtual bool IsDone() { return false; }
 
   virtual bool IsDepthDone() { return false; }
+
+  virtual const DynSizeMap& DynamicSize() { return dynSize; }
+
+  virtual const DynUsefulMap& DynamicUseful() { return dynUseful; }
 
   virtual int GetCurrDepth() { return gparams.maxrecdepth; }
 

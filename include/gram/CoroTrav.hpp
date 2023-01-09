@@ -162,6 +162,9 @@ class CoroTrav : public Traversal
 
   int currmaxdepth = -1;
 
+  DynSizeMap dynSize;
+  DynUsefulMap dynUseful;
+
   // Helper function to convert from our format to Grammar's
   inline double grampriomapat(const pair<Expr,Expr> prod)
   {
@@ -853,6 +856,10 @@ class CoroTrav : public Traversal
     if (grammodified) handleGramMod();
     return !nextcand && !bool(*getNextCandTrav);
   }
+
+  virtual const DynSizeMap& DynamicSize() { return dynSize; }
+
+  virtual const DynUsefulMap& DynamicUseful() { return dynUseful; }
 
   virtual int GetCurrDepth()
   {

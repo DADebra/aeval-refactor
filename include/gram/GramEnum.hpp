@@ -143,22 +143,27 @@ class GramEnum
 
   }
 
-  void printCacheStatistics()
+  void printTravStatistics()
   {
-    /*cout << "gramCands Top: [" << gramCands.top() << "]\n";
-    cout << "gramCands Bottom: [" << gramCands.bottom() << "]\n";*/
-    /*cout << "gramCands Top: [" << gramCands.top().val <<
-      ", " << gramCands.top().extra << "]\n";
-    cout << "gramCands Bottom: [" << gramCands.bottom().val <<
-      ", " << gramCands.bottom().extra << "]\n";
-    int count = 0;
-    float avgextra = 0;
-    for (const auto& itm : gramCands)
+    if (!traversal)
+      return;
+    outs() << "Traversal statistics:\n";
+    const auto& dynSize = traversal->DynamicSize();
+    for (const auto& prod_paths : dynSize)
     {
-      assert(itm.extra >= gramCands.top().extra);
-      avgextra = ((avgextra * count) + itm.extra) / ++count;
+      mpf_class avgSize = 0.0;
+      mpz_class minSize = -1, maxSize = -1;
+      for (const auto& path_size : prod_paths.second)
+      {
+        avgSize += path_size.second;
+        if (minSize == -1 || path_size.second < minSize) minSize = path_size.second;
+        if (maxSize == -1 || path_size.second > maxSize) maxSize = path_size.second;
+      }
+      avgSize /= prod_paths.second.size();
+      outs() << "  dynSize[" << prod_paths.first << "] ~= " << avgSize <<
+        " -- [" << minSize << ", " << maxSize << "]\n";
     }
-    cout << "gramCands Average Frequency: " << avgextra << endl;*/
+    //const auto& dynUse = traversal->GetDynamicUseful();
   }
 
   public:
@@ -220,7 +225,9 @@ class GramEnum
         outs() << "NOTE: Finite grammar but iterative deepening enabled. Disabling iterative deepening (as it does nothing here)" << endl;
       globalparams.iterdeepen = false;
     }
-    if (globalparams.maxrecdepth != -2 && !gram.isInfinite())
+    if (globalparams.maxrecdepth == -2)
+     globalparams.maxrecdepth = 0;
+    if (globalparams.maxrecdepth > 0 && !gram.isInfinite())
     {
       globalparams.maxrecdepth = 0;
       if (debug > 2)
@@ -256,6 +263,12 @@ class GramEnum
     if (!traversal->IsDepthDone())
       return false;
     return deferred_cands.size() == 0;
+  }
+
+  const DynSizeMap& DynamicSize() const
+  {
+    assert(traversal);
+    return traversal->DynamicSize();
   }
 
   int GetCurrDepth() const
@@ -372,8 +385,8 @@ class GramEnum
   {
     if (traversal)
       traversal->Finish(success);
-    if (debug > 1)
-      printCacheStatistics();
+    if (debug)
+      printTravStatistics();
   }
 };
 
