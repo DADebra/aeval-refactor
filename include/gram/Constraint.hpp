@@ -42,16 +42,12 @@ Expr Constraint::stoe(Expr e)
 }
 
 void Constraint::foreachExpans(Expr con, const ExpansionsMap& expmap,
-  function<bool(const PtExpMap&)> func)
+  function<bool(const PtExpMap&)> func) const
 {
-  ExprVector fapps(expmap.size());
-  filter(con, [] (Expr e) {
-    return isOpX<FAPP>(e) && e->arity() == 1; }, fapps.begin());
-  // Note that because of the internal ExprSet that dagVisit uses,
-  //   we don't need to purge duplicates from `fapps`.
   ExprVector from;
-  for (auto &f : fapps)
-    if (f && expmap.count(f) != 0) from.push_back(f);
+  from.reserve(expmap.size());
+  for (const auto &f : fapps)
+    if (expmap.count(f) != 0) from.push_back(f);
   vector<ParseTree> to(from.size());
   auto makemap = [&] () -> PtExpMap
   {
@@ -386,11 +382,11 @@ tribool Constraint::evaluateCmpExpr(Expr cmp, const PtExpMap& expmap,
 bool Constraint::doesSatExpr(Expr con, const ExpansionsMap& expmap) const
 {
   bool needsolver = false;
-  ExprVector assertexps;
+  /*ExprVector assertexps;
   if (any)
     assertexps.push_back(mk<FALSE>(con->efac()));
   else
-    assertexps.push_back(mk<TRUE>(con->efac()));
+    assertexps.push_back(mk<TRUE>(con->efac()));*/
 
   //evalCmpExpr needs some shared state
   seen_type seenexpans;
@@ -422,7 +418,7 @@ bool Constraint::doesSatExpr(Expr con, const ExpansionsMap& expmap) const
       }));
       Expr z3exp = dagVisit(rw, con);
       //m_smt_solver.assertExpr(exp);
-      assertexps.push_back(z3exp);
+      //assertexps.push_back(z3exp);
       needsolver = true;
     }
     else if (!res && !any)
@@ -494,6 +490,7 @@ bool Constraint::doesSat(const ParseTree& pt) const
   findExpansions(pt, expmap);
 
   Expr con = expr;
+#if 0
   RW<function<Expr(Expr)>> fapprw(new function<Expr(Expr)>(
     [&expmap, &pt, this] (Expr e) -> Expr
   {
@@ -584,6 +581,7 @@ bool Constraint::doesSat(const ParseTree& pt) const
       return e;
   }));
   con = dagVisit(fapprw, con);
+#endif
   if (!doesSatExpr(con, expmap))
     return false;
 

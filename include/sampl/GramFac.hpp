@@ -260,7 +260,7 @@ namespace ufo
         {
           Expr body = isOpX<AND>(chc.origbody) ?
             chc.origbody : mk<AND>(chc.origbody);
-          body = eliminateQuantifiers(body, chc.dstVars, false, false, false);
+          //body = eliminateQuantifiers(body, chc.dstVars, false, false, false);
           for (const Expr& conj : *body)
           {
             const auto dstbeg = chc.dstVars.begin(),

@@ -44,27 +44,37 @@ class Constraint
 
   int calculateRecDepth(const ExpansionsMap& expmap, Expr nt) const;
 
-  static void foreachExpans(Expr con, const ExpansionsMap& expmap,
-    function<bool(const PtExpMap&)> func);
+  void foreachExpans(Expr con, const ExpansionsMap& expmap,
+    function<bool(const PtExpMap&)> func) const;
 
   bool doesSatExpr(Expr con, const ExpansionsMap& expmap) const;
+
+  void ctor()
+  {
+    filter(expr, [] (Expr e) {
+      return isOpX<FAPP>(e) && e->arity() == 1; },
+      inserter(fapps, fapps.begin()));
+      // Note that because of the internal ExprSet that dagVisit uses,
+      // we don't need to purge duplicates from `fapps`.
+  }
 
   public:
 
   Expr expr;
   bool any; // 'true' if a 'constraint_any'
   Grammar* gram;
+  ExprVector fapps;
 
   static ExprUMap strcache;
 
   bool doesSat(const ParseTree& pt) const;
 
   Constraint(const Constraint& oth, Grammar* _gram) :
-    expr(oth.expr), any(oth.any), gram(_gram) {}
+    expr(oth.expr), any(oth.any), gram(_gram), fapps(oth.fapps) {}
   Constraint(Constraint&& oth, Grammar* _gram) :
-    expr(oth.expr), any(oth.any), gram(_gram) {}
+    expr(oth.expr), any(oth.any), gram(_gram), fapps(oth.fapps) {}
   Constraint(Expr e, bool _any, Grammar* _gram) : expr(e), any(_any),
-    gram(_gram) {}
+    gram(_gram) { ctor(); }
 
   // Other constructors potentially memory unsafe
   // Use at own risk
