@@ -13,6 +13,8 @@ struct hash<set<T,Comp,Alloc>>
     auto itr = obj.begin();
     auto end = obj.end();
     auto hashT = hash<T>();
+    if (itr == end)
+      return hashT(T());
     size_t outhash = hashT(*itr);
     ++itr;
     for (; itr != end; ++itr)
