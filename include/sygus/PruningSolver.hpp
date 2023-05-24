@@ -172,7 +172,7 @@ class PruningSolver : public BaseSolver
     return plusjoin(ret);
   }
 
-  // Collapses to convex hull (but in diff format) if coefs not linearly related
+  // Collapses to box hull (but in diff format) if coefs not linearly related
   Expr nonlinHull(const vector<WithExtra<Expr,const SynthPred*>>& funcs,
     const ExprUSet &vars, const Expr &nt)
   {
@@ -353,7 +353,7 @@ class PruningSolver : public BaseSolver
         assert(isOpX<GEQ>(min->left())); assert(isOpX<GEQ>(max->left()));
         assert(isOpX<LEQ>(min->right())); assert(isOpX<LEQ>(max->right()));
         Expr ret = mk<AND>(min->left(), max->right());*/
-        Expr ret = convexHull(subparts[i].begin(), subparts[i].end(), vars, nt);
+        Expr ret = boxHull(subparts[i].begin(), subparts[i].end(), vars, nt);
         Expr nonlinret = nonlinHull(subparts[i], vars, nt);
         for (const auto &funcpair : subparts[i])
         {
@@ -491,7 +491,7 @@ class PruningSolver : public BaseSolver
     };
 
     btenum.emplace(thissumm,
-      GramEnum(btgram[thissumm], NULL, btppfn, 0));
+      GramEnum(btgram[thissumm], NULL, btppfn, params.debug));
     for (const Expr& var : vars)
       btgram[thissumm].addVar(var);
     btenum.at(thissumm).SetPAFn(btpafn);
@@ -630,9 +630,9 @@ class PruningSolver : public BaseSolver
 
     TravParams tparams; tparams.SetDefaults();
     tparams.method = TPMethod::NEWTRAV; tparams.type = TPType::STRIPED;
-    tparams.maxrecdepth = 0;
     tparams.iterdeepen = false; tparams.simplify = true;
     tparams.prune = true; tparams.enumnts = true;
+    tparams.maxrecdepth = -1;
 
     // Generate initial input sets
 
@@ -837,7 +837,6 @@ class PruningSolver : public BaseSolver
           if (params.debug > 1)
             outs() << "      for input " << j << ":" << endl;
 
-          tparams.maxrecdepth = maxdepth;
           Grammar &ig = btgram.at(i_summ.second.get());
           ig.setRoot(thiseqc);
           needrefine.clear();
@@ -874,6 +873,7 @@ class PruningSolver : public BaseSolver
               {
                 cands[&func] = ie.GetUnsimplifiedCand();
                 _foundfuncs = cands;
+                ie.Finish(true);
                 if (params.debug)
                   errs() << "Solution found at recursion depth " <<
                     maxdepth << endl;
@@ -885,6 +885,7 @@ class PruningSolver : public BaseSolver
                 newin_probs[make_pair(i,maxdepth)].emplace_back(Expr(), ret, ExprUMap());
             }
           }
+          ie.Finish(false);
 
           for (const auto &btnt_prods : needrefine)
           {

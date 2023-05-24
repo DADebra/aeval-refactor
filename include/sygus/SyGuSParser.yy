@@ -366,13 +366,11 @@ topcommand:
            LPAR SETLOGIC ID RPAR { prob._logic = $3; }
            | LPAR SYNTHFUN ID LPAR funcvars RPAR sort grammar RPAR
                {
-                  /* TODO: Ignoring grammar for now */
                   prob._synthfuncs.push_back(std::move(
                     addFunc(z3, $3, $5, $7, ufo::SynthFuncType::SYNTH)));
                }
            | LPAR SYNTHINV ID LPAR funcvars RPAR grammar RPAR
                {
-                  /* TODO: Ignoring grammar for now */
                   prob._synthfuncs.push_back(std::move(
                     addFunc(z3, $3, $5, expr::op::sort::boolTy(efac),
                       ufo::SynthFuncType::INV)));

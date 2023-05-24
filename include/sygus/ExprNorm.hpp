@@ -16,12 +16,21 @@ Expr plusjoin(const ExprVector &args)
 
 Expr _normalizeLIA(const Expr &e, const ExprUSet& vars, bool normrec = true)
 {
+  static unordered_set<Expr> isNormed;
+  if (isNormed.count(e) != 0)
+    return e;
   Expr eone = mkTerm<mpz_class>(1, e->efac());
   Expr enegone = mkTerm<mpz_class>(-1, e->efac());
   if (isLit(e))
+  {
+    isNormed.insert(e);
     return e;
+  }
   else if (isOpX<FAPP>(e))
+  {
+    isNormed.insert(e);
     return e;
+  }
   else if (isOpX<MULT>(e))
   {
     Expr eleft = e->left(), eright = e->right();
@@ -47,17 +56,27 @@ Expr _normalizeLIA(const Expr &e, const ExprUSet& vars, bool normrec = true)
 
     if (isOpX<FAPP>(erest) ||
         (isOpX<UN_MINUS>(erest) && isOpX<FAPP>(erest->left())))
-      return mk<MULT>(econst, erest);
+    {
+      Expr ret = mk<MULT>(econst, erest);
+      isNormed.insert(ret);
+      return std::move(ret);
+    }
     if (isOpX<MPZ>(erest))
-      return mk<MULT>(
+    {
+      Expr ret = mk<MULT>(
         mkTerm<mpz_class>(c * getTerm<mpz_class>(erest), erest->efac()), eone);
+      isNormed.insert(ret);
+      return std::move(ret);
+    }
 
     if (!isOpX<PLUS>(erest))
     {
       assert(isOpX<MULT>(erest));
-      return mk<MULT>(
+      Expr ret = mk<MULT>(
         mkTerm<mpz_class>(c*getTerm<mpz_class>(erest->left()), erest->efac()),
         erest->right());
+      isNormed.insert(ret);
+      return std::move(ret);
     }
 
     ExprVector newrest;
@@ -68,36 +87,64 @@ Expr _normalizeLIA(const Expr &e, const ExprUSet& vars, bool normrec = true)
         mkTerm<mpz_class>(c * getTerm<mpz_class>(arg->left()), arg->efac()),
         arg->right()));
     }
-    return plusjoin(newrest);
+    Expr ret = plusjoin(newrest);
+    isNormed.insert(ret);
+    return std::move(ret);
   }
   else if (isOpX<UN_MINUS>(e))
   {
     if (isOpX<MPZ>(e->left()))
-      return mkTerm<mpz_class>(-getTerm<mpz_class>(e->left()), e->efac());
+    {
+      Expr ret = mkTerm<mpz_class>(-getTerm<mpz_class>(e->left()), e->efac());
+      isNormed.insert(ret);
+      return std::move(ret);
+    }
     else if (isOpX<FAPP>(e->left()))
-      return mk<MULT>(enegone, e->left());
+    {
+      Expr ret = mk<MULT>(enegone, e->left());
+      isNormed.insert(ret);
+      return std::move(ret);
+    }
     Expr norme = e->left();
     if (normrec) norme = _normalizeLIA(norme, vars, normrec);
     if (isOpX<MULT>(norme))
     {
       const mpz_class &c = getTerm<mpz_class>(norme->left());
       if (norme->right() == eone)
-        return mk<MULT>(mkTerm<mpz_class>(-c, norme->efac()), norme->right());
+      {
+        Expr ret = mk<MULT>(mkTerm<mpz_class>(-c, norme->efac()), norme->right());
+        isNormed.insert(ret);
+        return std::move(ret);
+      }
       else if (isOpX<UN_MINUS>(norme->right()))
-        return mk<MULT>(norme->left(), norme->right()->left());
+      {
+        Expr ret = mk<MULT>(norme->left(), norme->right()->left());
+        isNormed.insert(ret);
+        return std::move(ret);
+      }
       else
       {
         assert(isOpX<FAPP>(norme->right()));
-        return mk<MULT>(norme->left(), mk<UN_MINUS>(norme->right()));
+        Expr ret = mk<MULT>(norme->left(), mk<UN_MINUS>(norme->right()));
+        isNormed.insert(ret);
+        return std::move(ret);
       }
     }
     assert(isOpX<PLUS>(norme));
     if (!normrec)
-      return norme;
+    {
+      isNormed.insert(norme);
+      return std::move(norme);
+    }
     ExprVector newe;
     for (const Expr &arg : *norme)
-      newe.push_back(_normalizeLIA(e, vars, normrec));
-    return plusjoin(newe);
+    {
+      mpz_class c = getTerm<mpz_class>(arg->left());
+      newe.push_back(mk<MULT>(mkTerm<mpz_class>(-c, arg->efac()), arg->right()));
+    }
+    Expr ret = plusjoin(newe);
+    isNormed.insert(ret);
+    return std::move(ret);
   }
   else if (isOpX<PLUS>(e) || isOpX<MINUS>(e))
   {
@@ -137,7 +184,9 @@ Expr _normalizeLIA(const Expr &e, const ExprUSet& vars, bool normrec = true)
     for (const auto &var_coef : varToCoef)
       newe.push_back(mk<MULT>(
         mkTerm(var_coef.second, e->efac()), var_coef.first));
-    return plusjoin(newe);
+    Expr ret = plusjoin(newe);
+    isNormed.insert(ret);
+    return std::move(ret);
   }
   else
     assert(0 && "Unsupported Op in normalizeLIA");
@@ -160,9 +209,8 @@ Expr normalizeLIA(const Expr &e, const ExprUSet& vars)
   return ret;
 }
 
-// Probably not actually convex hull
 template <typename T>
-Expr convexHull(const T& funcs_begin, const T& funcs_end,
+Expr boxHull(const T& funcs_begin, const T& funcs_end,
   const ExprUSet& vars, const Expr &nt)
 {
   map<Expr,mpz_class> varToMaxCoef, varToMinCoef;

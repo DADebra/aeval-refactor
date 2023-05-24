@@ -35,9 +35,9 @@ static inline Expr OpIneqs(Expr op, Expr l, Expr r, const ExprUSet& vars)
   assert(isOpX<FAPP>(rvar));
   assert(lvar == rvar);
   if (islt)
-    return mk<LEQ>(lvar, simplifyArithm(mk(op->op(), lbound, rbound)));
+    return mk<LEQ>(lvar, normalizeLIA(mk(op->op(), lbound, rbound), vars));
   else
-    return mk<GEQ>(lvar, simplifyArithm(mk(op->op(), lbound, rbound)));
+    return mk<GEQ>(lvar, normalizeLIA(mk(op->op(), lbound, rbound), vars));
 }
 
 inline ExprVector EvalPred(SMTUtils& u, const ExprUMap &assms, Expr toeval, Expr out, const ExprUSet &vars)
@@ -57,14 +57,14 @@ inline ExprVector EvalPred(SMTUtils& u, const ExprUMap &assms, Expr toeval, Expr
   if (assms.count(toeval) != 0)
   {
     Expr ret = replaceAll(assms.at(toeval), toeval, out);
-    /*ret = mk<AND>(
+    ret = mk<AND>(
       mk<GEQ>(out, normalizeLIA(ret->left()->right(), vars)),
-      mk<LEQ>(out, normalizeLIA(ret->right()->right(), vars)));*/
+      mk<LEQ>(out, normalizeLIA(ret->right()->right(), vars)));
     return ExprVector{ret};
   }
   if (isOpX<FAPP>(toeval) || isLit(toeval))
   {
-    Expr ret = /*normalizeLIA(toeval, vars)*/ toeval;
+    Expr ret = normalizeLIA(toeval, vars);
     return ExprVector{mk<AND>(mk<GEQ>(out, ret), mk<LEQ>(out, ret))};
   }
   if (isOpX<ITE>(toeval))
@@ -105,29 +105,39 @@ inline ExprVector EvalPred(SMTUtils& u, const ExprUMap &assms, Expr toeval, Expr
     {
       tmp[0] = l[i % l.size()];
       tmp[1] = r[i / l.size()];
-      ret.push_back(convexHull(tmp.begin(), tmp.end(), vars, out));
+      ret.push_back(boxHull(tmp.begin(), tmp.end(), vars, out));
     }
     return std::move(ret);
   }
   if (isOpX<PLUS>(toeval) || isOpX<MINUS>(toeval))
   {
+    bool isminus = false;
+    if (isOpX<MINUS>(toeval))
+    {
+      isminus = true;
+      toeval = mknary<PLUS>(toeval->args_begin(), toeval->args_end());
+    }
     assert(toeval->arity() == 2);
     ExprVector lv = EvalPred(u, assms, toeval->left(), out, vars);
 
     ExprVector rv = EvalPred(u, assms, toeval->right(), out, vars);
 
-    ExprVector out;
+    ExprVector ret;
     for (int i = 0; i < lv.size() * rv.size(); ++i)
     {
       const Expr& l = lv[i % lv.size()];
-      const Expr& r = rv[i / lv.size()];
+      Expr r = rv[i / lv.size()];
+      if (isminus)
+        r = mk<AND>(
+          mk<GEQ>(out, normalizeLIA(mk<UN_MINUS>(r->right()->right()), vars)),
+          mk<LEQ>(out, normalizeLIA(mk<UN_MINUS>(r->left()->right()), vars)));
       assert(isOpX<AND>(l) && l->arity() == 2);
       assert(isOpX<AND>(r) && r->arity() == 2);
-      out.push_back(mk<AND>(
+      ret.push_back(mk<AND>(
         OpIneqs(toeval, l->left(), r->left(), vars),
         OpIneqs(toeval, l->right(), r->right(), vars)));
     }
-    return std::move(out);
+    return std::move(ret);
   }
   assert(0 && "EvalPred unimplemented for this op type");
 }
