@@ -125,7 +125,7 @@ namespace ufo
   }
 
     // rewrites v1 to contain v1 \ v2
-  template<typename Range> static void minusSets(ExprSet& v1, Range& v2){
+  template<typename Range> static void minusSets(ExprSet& v1, const Range& v2){
     for (auto it = v1.begin(); it != v1.end(); ){
       if (find(v2.begin(), v2.end(), *it) != v2.end())
         it = v1.erase(it);
@@ -1547,6 +1547,7 @@ namespace ufo
     if (exps.empty()) return;
     simplify([](Expr in){ return simplifyArithm(in, false, false); }, exps);
     simplify(simplifyBool, exps);
+    if (exps.empty()) return;
     if (arr && containsOp<ARRAY_TY>(conjoin(exps, (*exps.begin())->getFactory())))
     {
       simplify(simplifyArr, exps);

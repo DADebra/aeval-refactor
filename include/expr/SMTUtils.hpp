@@ -117,7 +117,7 @@ namespace ufo
       }
     }
 
-    template <typename T> boost::tribool isSat(T& cnjs, bool reset=true)
+    template <typename T> boost::tribool isSat(const T& cnjs, bool reset=true)
     {
       if (m != NULL) { free(m); m = NULL; }
       if (reset) smt.reset();
@@ -176,6 +176,12 @@ namespace ufo
     /**
      * SMT-check
      */
+    boost::tribool isSat(ENode *a, bool reset=true)
+    {
+      ExprSet cnjs;
+      getConj(Expr(a), cnjs);
+      return isSat(cnjs, reset);
+    }
     boost::tribool isSat(Expr a, bool reset=true)
     {
       ExprSet cnjs;
@@ -802,7 +808,7 @@ namespace ufo
   /**
    * Horn-based interpolation over particular vars
    */
-  inline Expr getItp(Expr A, Expr B, ExprVector& sharedVars)
+  inline Expr getItp(Expr A, Expr B, const ExprVector& sharedVars)
   {
     ExprFactory &efac = A->getFactory();
     EZ3 z3(efac);
@@ -820,7 +826,7 @@ namespace ufo
     // fixed-point object
     ZFixedPoint<EZ3> fp (z3);
     ZParams<EZ3> params (z3);
-    params.set (":engine", "pdr");
+    //params.set (":engine", "pdr");
     params.set (":xform.slice", false);
     params.set (":xform.inline-linear", false);
     params.set (":xform.inline-eager", false);

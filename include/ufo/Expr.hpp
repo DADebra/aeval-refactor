@@ -225,7 +225,9 @@ namespace expr
 
     bool args_empty () const { return args.empty () ; }
     args_iterator args_begin () const { return args.begin (); }
+    args_iterator begin () const { return args.begin (); }
     args_iterator args_end () const { return args.end (); }
+    args_iterator end () const { return args.end (); }
 
     template <typename iterator>
     void renew_args (iterator b, iterator e);
@@ -3046,20 +3048,11 @@ namespace expr
   }
 
   // pairwise replacing
-  inline Expr replaceAll (Expr exp, const ExprMap& m)
+  template <typename T>
+  inline Expr replaceAll (Expr exp, const T& m)
   {
     if (m.empty()) return exp;
-    RAVALLM<ExprMap> rav(&m);
-    Expr tmp = dagVisit (rav, exp);
-    if (tmp == exp) return tmp;
-    else return replaceAll(tmp, m);
-  }
-
-  // pairwise replacing
-  inline Expr replaceAll (Expr exp, const ExprUMap& m)
-  {
-    if (m.empty()) return exp;
-    RAVALLM<ExprUMap> rav(&m);
+    RAVALLM<T> rav(&m);
     Expr tmp = dagVisit (rav, exp);
     if (tmp == exp) return tmp;
     else return replaceAll(tmp, m);
