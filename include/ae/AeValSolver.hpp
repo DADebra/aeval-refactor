@@ -1232,7 +1232,7 @@ namespace ufo
     return isNonlinear(e);
   }
 
-  inline static Expr coreQE(Expr fla, ExprSet& vars)
+  inline static Expr coreQE(Expr fla, const ExprSet& vars)
   {
     if (!emptyIntersect(fla, vars) &&
         !containsOp<FORALL>(fla) && !containsOp<EXISTS>(fla) && !qeUnsupported(fla))
@@ -1244,14 +1244,14 @@ namespace ufo
     return fla;
   }
 
-  inline static Expr coreQE(Expr fla, ExprVector& vars)
+  inline static Expr coreQE(Expr fla, const ExprVector& vars)
   {
     ExprSet varsSet;
     for (auto & v : vars) varsSet.insert(v);
     return coreQE(fla, varsSet);
   }
 
-  template<typename Range> static Expr eliminateQuantifiers(Expr fla, Range& qVars,
+  template<typename Range> static Expr eliminateQuantifiers(Expr fla, const Range& qVars,
                                        bool doArithm = true, bool doCore = true)
   {
     if (qVars.size() == 0) return fla;
@@ -1277,7 +1277,7 @@ namespace ufo
       return tmp;
   }
 
-  template<typename Range> static Expr eliminateQuantifiersRepl(Expr fla, Range& vars)
+  template<typename Range> static Expr eliminateQuantifiersRepl(Expr fla, const Range& vars)
   {
     ExprFactory &efac = fla->getFactory();
     SMTUtils u(efac);
@@ -1298,7 +1298,7 @@ namespace ufo
     return eliminateQuantifiers(tmp, vars);
   }
 
-  inline static Expr keepQuantifiers(Expr fla, ExprVector& vars)
+  inline static Expr keepQuantifiers(Expr fla, const ExprVector& vars)
   {
     ExprSet varsSet;
     filter (fla, bind::IsConst (), inserter(varsSet, varsSet.begin()));
@@ -1306,7 +1306,7 @@ namespace ufo
     return eliminateQuantifiers(fla, varsSet);
   }
 
-  inline static Expr keepQuantifiersRepl(Expr fla, ExprVector& vars)
+  inline static Expr keepQuantifiersRepl(Expr fla, const ExprVector& vars)
   {
     ExprSet varsSet;
     filter (fla, bind::IsConst (), inserter(varsSet, varsSet.begin()));
@@ -1419,6 +1419,7 @@ namespace ufo
           ExprVector sepSkols;
           for (auto & evar : ex_qvars) sepSkols.push_back(mk<EQ>(evar,
                            simplifyBool(simplifyArithm(ae.getSeparateSkol(evar)))));
+          //pprint(sepSkols);
           u.serialize_formula(sepSkols);
           bool check = (bool)(u.implies(mk<AND>(s, conjoin(sepSkols, s->getFactory())), t_orig));
           if (!check)
